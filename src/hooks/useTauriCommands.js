@@ -121,7 +121,37 @@ export function useGhostGame() {
 	const [error, setError] = useState(null);
 	/** @type {React.MutableRefObject<NodeJS.Timeout|null>} */
 	const hintTimerRef = useRef(null);
+	/** @type {React.MutableRefObject<PageContentPayload|null>} */
+	const latestContentRef = useRef(null);
 
+	/**
+	 * Handle page content events from Chrome extension.
+	 * Can be used for deeper content analysis.
+	 * @param {PageContentPayload} payload - Page content data
+	 * @returns {Promise<void>}
+	 */
+
+	const handlePageContent = useCallback(async (payload) => {
+		latestContentRef.current = payload;
+	}, []);
+
+	/**
+	 * Wrapper to generate puzzle from current context
+	 */
+	const triggerDynamicPuzzle = async () => {
+		if (latestContentRef.current) {
+			const { url, body_text, title } = latestContentRef.current;
+			// Use title if available, otherwise fallback
+			// Note: PageContentPayload usually has url/body, NavigationPayload has title
+			// We might need to merge them or just use what we have.
+			// Ideally we use the title from gameState.currentUrl if it matches?
+
+			return await generateDynamicPuzzle(url, "Current Page", body_text);
+		} else {
+			console.warn("[Ghost] No content available for generation");
+			return null;
+		}
+	};
 	// Load persistent state and check API key on mount
 	useEffect(() => {
 		initializeGame();
@@ -147,21 +177,48 @@ export function useGhostGame() {
 
 	// Listen for browser navigation events from Chrome extension
 	useEffect(() => {
-		const unlistenNav = listen("browser_navigation", (event) => {
-			handleNavigation(/** @type {NavigationPayload} */ (event.payload));
-		});
+		// Store unlisten functions
+		let unlistenNav = null;
+		let unlistenContent = null;
+		let unlistenAutonomous = null;
 
-		const unlistenContent = listen("page_content", (event) => {
-			handlePageContent(
-				/** @type {PageContentPayload} */ (event.payload)
-			);
-		});
+		const setupListeners = async () => {
+			unlistenNav = await listen("browser_navigation", (event) => {
+				handleNavigation(
+					/** @type {NavigationPayload} */ (event.payload)
+				);
+			});
+
+			unlistenContent = await listen("page_content", (event) => {
+				handlePageContent(
+					/** @type {PageContentPayload} */ (event.payload)
+				);
+			});
+
+			// Listen for autonomous mode progress events
+			unlistenAutonomous = await listen("autonomous_progress", (event) => {
+				const { proximity, message, solved, finished } = event.payload;
+				setGameState((prev) => ({
+					...prev,
+					proximity,
+					dialogue: message,
+					state: solved ? "celebrate" : finished ? "idle" : "searching",
+				}));
+
+				if (solved) {
+					setTimeout(() => advanceToNextPuzzle(), 5000);
+				}
+			});
+		};
+
+		setupListeners();
 
 		return () => {
-			unlistenNav.then((f) => f());
-			unlistenContent.then((f) => f());
+			if (unlistenNav) unlistenNav();
+			if (unlistenContent) unlistenContent();
+			if (unlistenAutonomous) unlistenAutonomous();
 		};
-	}, [gameState.puzzleId]);
+	}, [handleNavigation, handlePageContent, advanceToNextPuzzle]);
 
 	/**
 	 * Initialize game by loading persistent state and puzzles from backend.
@@ -275,17 +332,6 @@ export function useGhostGame() {
 			gameState.hints,
 		]
 	);
-
-	/**
-	 * Handle page content events from Chrome extension.
-	 * Can be used for deeper content analysis.
-	 * @param {PageContentPayload} payload - Page content data
-	 * @returns {Promise<void>}
-	 */
-	const handlePageContent = async (payload) => {
-		// Could be used for deeper content analysis
-		console.log("[Ghost] Page content received:", payload.url);
-	};
 
 	/**
 	 * Update game state based on proximity value.
@@ -534,5 +580,6 @@ export function useGhostGame() {
 		advanceToNextPuzzle,
 		resetGame,
 		generateDynamicPuzzle,
+		triggerDynamicPuzzle,
 	};
 }

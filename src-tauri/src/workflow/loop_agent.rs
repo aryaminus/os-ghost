@@ -93,16 +93,16 @@ impl Workflow for LoopWorkflow {
     }
 }
 
-/// Create a hot/cold feedback loop
-pub fn create_hotcold_loop(observer: Arc<dyn Agent>) -> LoopWorkflow {
+/// Create a hot/cold feedback loop for autonomous monitoring
+pub fn create_hotcold_loop(observer: Arc<dyn Agent>, max_iter: usize, delay: u64) -> LoopWorkflow {
     LoopWorkflow::new(
         "HotColdLoop",
         observer,
         Box::new(|output| {
             // Stop when puzzle is solved or very close
-            matches!(output.next_action, Some(NextAction::PuzzleSolved)) || output.confidence > 0.9
+            matches!(output.next_action, Some(NextAction::PuzzleSolved)) || output.confidence > 0.8
         }),
     )
-    .max_iterations(100)
-    .delay_ms(2000) // Poll every 2 seconds
+    .max_iterations(max_iter)
+    .delay_ms(delay)
 }

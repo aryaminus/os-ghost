@@ -80,6 +80,7 @@ impl Workflow for SequentialWorkflow {
 }
 
 /// Helper to create a standard clue-validation pipeline
+/// Note: stop_on_solved is false so Narrator always runs (for success/failure dialogue)
 pub fn create_puzzle_pipeline(
     observer: Arc<dyn Agent>,
     verifier: Arc<dyn Agent>,
@@ -89,5 +90,5 @@ pub fn create_puzzle_pipeline(
         .add_agent(observer)
         .add_agent(verifier)
         .add_agent(narrator)
-        .stop_on_solved(true)
+        .stop_on_solved(false) // Let Narrator run even when solved for celebration dialogue
 }

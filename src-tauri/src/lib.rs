@@ -127,6 +127,8 @@ pub fn run() {
             ipc::check_api_key,
             ipc::generate_dynamic_puzzle,
             ipc::process_agent_cycle,
+            ipc::start_background_checks,
+            ipc::enable_autonomous_mode,
             game_state::get_game_state,
             game_state::reset_game,
             game_state::check_hint_available,

@@ -168,8 +168,21 @@ const ProximityBar = ({ proximity }) => {
  * <Ghost />
  */
 const Ghost = () => {
-	const { gameState, setClickable, showHint, captureAndAnalyze } =
-		useGhostGame();
+	const {
+		gameState,
+		setClickable,
+		showHint,
+		captureAndAnalyze,
+		triggerDynamicPuzzle,
+	} = useGhostGame();
+
+	// Expose triggerDynamicPuzzle for the button handler
+	useEffect(() => {
+		window.__triggerDynamic = triggerDynamicPuzzle;
+		return () => {
+			delete window.__triggerDynamic;
+		};
+	}, [triggerDynamicPuzzle]);
 
 	const [isHovered, setIsHovered] = useState(false);
 
@@ -237,6 +250,30 @@ const Ghost = () => {
 				<div className="warning-box">
 					⚠️ GEMINI_API_KEY not set. AI features disabled.
 				</div>
+			)}
+
+			{/* Dynamic Puzzle Trigger */}
+			{gameState.apiKeyConfigured && gameState.state === "idle" && (
+				<button
+					className="dynamic-trigger-btn"
+					onClick={(e) => {
+						e.stopPropagation();
+						// Import dynamically if needed or passed from hook
+						if (window.__triggerDynamic) window.__triggerDynamic();
+					}}
+					style={{
+						marginTop: "10px",
+						background: "rgba(0, 255, 255, 0.1)",
+						border: "1px solid var(--ghost-glow)",
+						color: "var(--ghost-glow)",
+						padding: "5px 10px",
+						cursor: "pointer",
+						fontSize: "0.8em",
+						borderRadius: "4px",
+					}}
+				>
+					🌀 Investigate This Signal
+				</button>
 			)}
 
 			{/* Puzzle Counter */}

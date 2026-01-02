@@ -8,7 +8,7 @@ use anyhow::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 
 /// Game state exposed to frontend
 #[derive(Debug, Serialize, Clone)]
@@ -184,6 +184,11 @@ pub async fn process_agent_cycle(
         .find(|p| p.id == context.puzzle_id)
         .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
 
+    // Record URL visit for session tracking
+    if let Err(e) = orchestrator.record_url(&context.url) {
+        tracing::warn!("Failed to record URL: {}", e);
+    }
+
     // Build agent context
     let agent_context = crate::agents::traits::AgentContext {
         current_url: context.url,
@@ -204,4 +209,119 @@ pub async fn process_agent_cycle(
         .process(&agent_context)
         .await
         .map_err(|e| format!("Agent cycle failed: {}", e))
+}
+
+/// Trigger background analysis (Parallel Workflow)
+#[tauri::command]
+pub async fn start_background_checks(
+    context: PageContext,
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+    puzzles: State<'_, Vec<Puzzle>>,
+) -> Result<String, String> {
+    // Lookup pattern
+    let puzzle = puzzles
+        .iter()
+        .find(|p| p.id == context.puzzle_id)
+        .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
+
+    let agent_context = crate::agents::traits::AgentContext {
+        current_url: context.url,
+        current_title: context.title,
+        page_content: context.content,
+        puzzle_id: context.puzzle_id,
+        puzzle_clue: context.puzzle_clue,
+        target_pattern: puzzle.target_url_pattern.clone(),
+        hints: context.hints,
+        hints_revealed: context.hints_revealed,
+        proximity: 0.0,
+        ghost_mood: "analytical".to_string(), // Different mood for background tasks
+        metadata: std::collections::HashMap::new(),
+    };
+
+    let results = orchestrator
+        .run_parallel_checks(&agent_context)
+        .await
+        .map_err(|e| format!("Background checks failed: {}", e))?;
+
+    Ok(format!("Completed {} background checks", results.len()))
+}
+
+/// Autonomous mode progress event payload
+#[derive(Clone, Serialize)]
+pub struct AutonomousProgress {
+    pub iteration: usize,
+    pub proximity: f32,
+    pub message: String,
+    pub solved: bool,
+    pub finished: bool,
+}
+
+/// Start autonomous monitoring (Loop Workflow) - runs in background with events
+#[tauri::command]
+pub async fn enable_autonomous_mode(
+    context: PageContext,
+    app_handle: tauri::AppHandle,
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+    puzzles: State<'_, Vec<Puzzle>>,
+) -> Result<String, String> {
+    // Lookup pattern
+    let puzzle = puzzles
+        .iter()
+        .find(|p| p.id == context.puzzle_id)
+        .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
+
+    let agent_context = crate::agents::traits::AgentContext {
+        current_url: context.url,
+        current_title: context.title,
+        page_content: context.content,
+        puzzle_id: context.puzzle_id,
+        puzzle_clue: context.puzzle_clue,
+        target_pattern: puzzle.target_url_pattern.clone(),
+        hints: context.hints,
+        hints_revealed: context.hints_revealed,
+        proximity: 0.0,
+        ghost_mood: "observant".to_string(),
+        metadata: std::collections::HashMap::new(),
+    };
+
+    // Clone orchestrator for the spawned task
+    let orchestrator = orchestrator.inner().clone();
+
+    // Spawn background task - doesn't block the command
+    tauri::async_runtime::spawn(async move {
+        match orchestrator.run_autonomous_loop(&agent_context).await {
+            Ok(outputs) => {
+                // Emit progress for each iteration
+                for (i, output) in outputs.iter().enumerate() {
+                    let solved = matches!(
+                        output.next_action,
+                        Some(crate::agents::traits::NextAction::PuzzleSolved)
+                    );
+                    let progress = AutonomousProgress {
+                        iteration: i + 1,
+                        proximity: output.confidence,
+                        message: output.result.clone(),
+                        solved,
+                        finished: i == outputs.len() - 1,
+                    };
+                    let _ = app_handle.emit("autonomous_progress", progress);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Autonomous loop failed: {}", e);
+                let _ = app_handle.emit(
+                    "autonomous_progress",
+                    AutonomousProgress {
+                        iteration: 0,
+                        proximity: 0.0,
+                        message: format!("Error: {}", e),
+                        solved: false,
+                        finished: true,
+                    },
+                );
+            }
+        }
+    });
+
+    Ok("Autonomous mode started - listen for 'autonomous_progress' events".to_string())
 }

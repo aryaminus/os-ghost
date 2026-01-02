@@ -62,12 +62,11 @@ impl Workflow for ParallelWorkflow {
     }
 }
 
-/// Create a background monitoring workflow
-pub fn create_background_workflow(
-    safety_monitor: Arc<dyn Agent>,
-    puzzle_generator: Arc<dyn Agent>,
-) -> ParallelWorkflow {
-    ParallelWorkflow::new("BackgroundMonitoring")
-        .add_agent(safety_monitor)
-        .add_agent(puzzle_generator)
+/// Create a parallel workflow for background checks
+pub fn create_parallel_checks(agents: Vec<Arc<dyn Agent>>) -> ParallelWorkflow {
+    let mut workflow = ParallelWorkflow::new("BackgroundChecks");
+    for agent in agents {
+        workflow = workflow.add_agent(agent);
+    }
+    workflow
 }
