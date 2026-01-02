@@ -33,19 +33,19 @@ impl GhostWindow {
 
     #[cfg(target_os = "macos")]
     fn setup_macos(&self) -> Result<()> {
-        use cocoa::appkit::{NSMainMenuWindowLevel, NSWindow, NSWindowCollectionBehavior};
-        use cocoa::base::id;
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
 
         unsafe {
-            let ns_window: id = self.window.ns_window()? as id;
+            let ns_window = self.window.ns_window()? as *mut AnyObject;
 
-            // Set window level to float above others (main menu level + 1)
-            let floating_level = NSMainMenuWindowLevel + 1;
-            NSWindow::setLevel_(ns_window, floating_level as i64);
+            // Set window level to floating (level 25 is above main menu level 24)
+            // NSMainMenuWindowLevel = 24, we use 25 to float above
+            let _: () = msg_send![ns_window, setLevel: 25_i64];
 
             // Make window appear on all spaces
-            let behavior = NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces;
-            NSWindow::setCollectionBehavior_(ns_window, behavior);
+            // NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0 = 1
+            let _: () = msg_send![ns_window, setCollectionBehavior: 1_u64];
         }
 
         Ok(())
