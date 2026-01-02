@@ -1,5 +1,20 @@
+# ============================================
+# The OS Ghost - .gitignore
+# ============================================
+
+# ============================================
+# Environment & Secrets
+# ============================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ============================================
 # Logs
-logs
+# ============================================
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,18 +22,82 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# ============================================
+# Node.js / JavaScript / React
+# ============================================
+node_modules/
+dist/
+dist-ssr/
+build/
 *.local
+.cache/
+.parcel-cache/
 
-# Editor directories and files
+# ============================================
+# Rust / Cargo
+# ============================================
+target/
+Cargo.lock
+**/*.rs.bk
+*.rlib
+
+# ============================================
+# Tauri
+# ============================================
+src-tauri/target/
+src-tauri/WixTools/
+src-tauri/gen/
+*.app
+*.dmg
+*.deb
+*.AppImage
+*.msi
+*.exe
+
+# ============================================
+# Chrome Extension (generated)
+# ============================================
+ghost-extension/*.crx
+ghost-extension/*.pem
+ghost-extension/*.zip
+
+# ============================================
+# OS Generated Files
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ============================================
+# IDE / Editor
+# ============================================
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+!.vscode/settings.json
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.sublime-*
+
+# ============================================
+# Testing / Coverage
+# ============================================
+coverage/
+.nyc_output/
+*.lcov
+
+# ============================================
+# Game State (local to user)
+# ============================================
+ghost_state.json
+privacy_settings.json

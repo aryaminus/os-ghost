@@ -5,6 +5,11 @@
 			"name": "The Manifesto",
 			"clue": "In 1995, a manifesto appeared in newspapers. Find where it first published online.",
 			"hint": "The Washington Post was one of the first to publish it digitally...",
+			"hints": [
+				"The manifesto was written by someone who rejected modern technology...",
+				"It was published in major newspapers like The Washington Post and New York Times.",
+				"Search for 'unabomber manifesto washington post 1995'"
+			],
 			"target_url_pattern": "(washingtonpost\\.com|nytimes\\.com).*manifesto",
 			"target_description": "Unabomber manifesto newspaper publication 1995",
 			"difficulty": 1
@@ -14,6 +19,11 @@
 			"name": "The Cipher Machine",
 			"clue": "Before computers, there were wheels within wheels. Find the machine that cracked the impossible.",
 			"hint": "Bletchley Park holds many secrets...",
+			"hints": [
+				"This machine was used to encrypt German military communications in WWII.",
+				"A brilliant mathematician at Bletchley Park helped decode it.",
+				"Search for 'enigma machine wikipedia'"
+			],
 			"target_url_pattern": "(enigma|bletchley|turing)",
 			"target_description": "Enigma machine decryption Bletchley Park Alan Turing",
 			"difficulty": 2
@@ -23,6 +33,11 @@
 			"name": "The Archive",
 			"clue": "The ghost once lived in a place where 140 characters ruled. Now it's 280, but the old archives remain.",
 			"hint": "Internet Archive remembers everything...",
+			"hints": [
+				"There's a 'wayback' to see old versions of websites...",
+				"The Internet Archive preserves the web's history.",
+				"Visit archive.org and search for old Twitter pages"
+			],
 			"target_url_pattern": "(web\\.archive\\.org|archive\\.org).*twitter",
 			"target_description": "Twitter Internet Archive Wayback Machine history",
 			"difficulty": 3
@@ -31,6 +46,7 @@
 	"game_settings": {
 		"proximity_threshold_win": 0.9,
 		"proximity_update_interval_ms": 5000,
-		"hint_delay_seconds": 60
+		"hint_delay_seconds": 60,
+		"max_hints_per_puzzle": 3
 	}
 }

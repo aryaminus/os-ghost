@@ -1,0 +1,216 @@
+//! Persistent game state management
+//! Stores player progress, solved puzzles, and hint timers
+
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const STATE_FILE: &str = "ghost_state.json";
+const HINT_DELAY_SECS: u64 = 60; // First hint after 60 seconds
+const MAX_HINTS: usize = 3;
+
+/// Persistent game state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameState {
+    pub current_puzzle_index: usize,
+    pub solved_puzzles: Vec<String>,
+    pub puzzle_start_time: Option<u64>,
+    pub hints_revealed: usize,
+    pub total_playtime_secs: u64,
+    pub discoveries: Vec<Discovery>,
+}
+
+/// A player discovery/memory fragment
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Discovery {
+    pub puzzle_id: String,
+    pub url: String,
+    pub title: String,
+    pub timestamp: u64,
+}
+
+impl Default for GameState {
+    fn default() -> Self {
+        Self {
+            current_puzzle_index: 0,
+            solved_puzzles: Vec::new(),
+            puzzle_start_time: Some(current_timestamp()),
+            hints_revealed: 0,
+            total_playtime_secs: 0,
+            discoveries: Vec::new(),
+        }
+    }
+}
+
+impl GameState {
+    /// Load state from disk or create default
+    pub fn load() -> Self {
+        let path = Self::state_path();
+        if path.exists() {
+            match fs::read_to_string(&path) {
+                Ok(contents) => match serde_json::from_str(&contents) {
+                    Ok(state) => {
+                        tracing::info!(
+                            "Loaded game state: {} puzzles solved",
+                            serde_json::from_str::<GameState>(&contents)
+                                .map(|s| s.solved_puzzles.len())
+                                .unwrap_or(0)
+                        );
+                        return state;
+                    }
+                    Err(e) => tracing::warn!("Failed to parse state file: {}", e),
+                },
+                Err(e) => tracing::warn!("Failed to read state file: {}", e),
+            }
+        }
+
+        tracing::info!("Creating new game state");
+        Self::default()
+    }
+
+    /// Save state to disk
+    pub fn save(&self) -> Result<()> {
+        let path = Self::state_path();
+        let contents = serde_json::to_string_pretty(self)?;
+        fs::write(&path, contents)?;
+        tracing::debug!("Saved game state to {:?}", path);
+        Ok(())
+    }
+
+    /// Get the state file path
+    fn state_path() -> PathBuf {
+        // Store in config directory
+        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("os-ghost");
+
+        // Create directory if needed
+        if !path.exists() {
+            let _ = fs::create_dir_all(&path);
+        }
+
+        path.push(STATE_FILE);
+        path
+    }
+
+    /// Mark a puzzle as solved
+    pub fn solve_puzzle(&mut self, puzzle_id: &str, url: &str, title: &str) {
+        if !self.solved_puzzles.contains(&puzzle_id.to_string()) {
+            self.solved_puzzles.push(puzzle_id.to_string());
+            self.discoveries.push(Discovery {
+                puzzle_id: puzzle_id.to_string(),
+                url: url.to_string(),
+                title: title.to_string(),
+                timestamp: current_timestamp(),
+            });
+            self.current_puzzle_index += 1;
+            self.hints_revealed = 0;
+            self.puzzle_start_time = Some(current_timestamp());
+
+            let _ = self.save();
+        }
+    }
+
+    /// Start timing for current puzzle
+    pub fn start_puzzle_timer(&mut self) {
+        self.puzzle_start_time = Some(current_timestamp());
+        self.hints_revealed = 0;
+        let _ = self.save();
+    }
+
+    /// Check if a hint should be revealed
+    pub fn should_reveal_hint(&self) -> bool {
+        if self.hints_revealed >= MAX_HINTS {
+            return false;
+        }
+
+        if let Some(start_time) = self.puzzle_start_time {
+            let elapsed = current_timestamp().saturating_sub(start_time);
+            let threshold = HINT_DELAY_SECS * (self.hints_revealed as u64 + 1);
+            return elapsed >= threshold;
+        }
+
+        false
+    }
+
+    /// Reveal the next hint
+    pub fn reveal_hint(&mut self) -> Option<usize> {
+        if self.hints_revealed < MAX_HINTS {
+            self.hints_revealed += 1;
+            let _ = self.save();
+            Some(self.hints_revealed - 1)
+        } else {
+            None
+        }
+    }
+
+    /// Get time until next hint
+    pub fn time_until_next_hint(&self) -> Option<Duration> {
+        if self.hints_revealed >= MAX_HINTS {
+            return None;
+        }
+
+        if let Some(start_time) = self.puzzle_start_time {
+            let elapsed = current_timestamp().saturating_sub(start_time);
+            let threshold = HINT_DELAY_SECS * (self.hints_revealed as u64 + 1);
+
+            if elapsed < threshold {
+                return Some(Duration::from_secs(threshold - elapsed));
+            }
+        }
+
+        Some(Duration::from_secs(0))
+    }
+
+    /// Reset game to start
+    pub fn reset(&mut self) {
+        *self = Self::default();
+        let _ = self.save();
+    }
+
+    /// Check if game is complete
+    pub fn is_complete(&self, total_puzzles: usize) -> bool {
+        self.solved_puzzles.len() >= total_puzzles
+    }
+}
+
+/// Get current Unix timestamp
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// Tauri command to get current game state
+#[tauri::command]
+pub fn get_game_state() -> GameState {
+    GameState::load()
+}
+
+/// Tauri command to reset game
+#[tauri::command]
+pub fn reset_game() -> Result<(), String> {
+    let mut state = GameState::load();
+    state.reset();
+    Ok(())
+}
+
+/// Tauri command to check for available hint
+#[tauri::command]
+pub fn check_hint_available() -> bool {
+    let state = GameState::load();
+    state.should_reveal_hint()
+}
+
+/// Tauri command to get next hint
+#[tauri::command]
+pub fn get_next_hint(hints: Vec<String>) -> Option<String> {
+    let mut state = GameState::load();
+    if let Some(hint_index) = state.reveal_hint() {
+        hints.get(hint_index).cloned()
+    } else {
+        None
+    }
+}

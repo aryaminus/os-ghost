@@ -1,13 +1,28 @@
 /**
- * OS Ghost - Content Script
- * Runs on every page to enable visual effects and content extraction
+ * @fileoverview Chrome Extension content script.
+ * Runs on every page to enable visual effects and content extraction for OS Ghost.
+ * @module content
  */
 
-// Track active effects
-let activeEffects = new Set();
+/**
+ * @typedef {Object} PageContent
+ * @property {string} bodyText - Page body text (first 5000 chars)
+ * @property {string} title - Page title
+ * @property {string} url - Page URL
+ */
 
 /**
- * Apply visual effect to the page
+ * @typedef {"glitch" | "scanlines" | "static" | "pulse" | "flicker"} EffectType
+ */
+
+/** @type {Set<string>} Track active effects to prevent duplicates */
+const activeEffects = new Set();
+
+/**
+ * Apply visual effect to the page.
+ * @param {EffectType} effect - Effect type to apply
+ * @param {number} duration - Effect duration in milliseconds
+ * @returns {void}
  */
 function applyEffect(effect, duration) {
 	const effectId = effect + "_" + Date.now();
@@ -39,7 +54,10 @@ function applyEffect(effect, duration) {
 }
 
 /**
- * Glitch effect - distorts the page briefly
+ * Apply glitch distortion effect to page.
+ * Creates clip-path animation that distorts the view.
+ * @param {number} duration - Effect duration in ms
+ * @returns {void}
  */
 function applyGlitchEffect(duration) {
 	const style = document.createElement("style");
@@ -81,7 +99,9 @@ function applyGlitchEffect(duration) {
 }
 
 /**
- * Scanlines overlay effect
+ * Apply CRT scanlines overlay effect.
+ * @param {number} duration - Effect duration in ms
+ * @returns {void}
  */
 function applyScanlines(duration) {
 	const overlay = document.createElement("div");
@@ -123,7 +143,9 @@ function applyScanlines(duration) {
 }
 
 /**
- * TV static noise effect
+ * Apply TV static noise effect using canvas.
+ * @param {number} duration - Effect duration in ms
+ * @returns {void}
  */
 function applyStaticNoise(duration) {
 	const canvas = document.createElement("canvas");
@@ -144,7 +166,12 @@ function applyStaticNoise(duration) {
 	canvas.width = window.innerWidth;
 	canvas.height = window.innerHeight;
 
+	/** @type {number} */
 	let animationId;
+
+	/**
+	 * Draw random noise to canvas.
+	 */
 	function drawNoise() {
 		const imageData = ctx.createImageData(canvas.width, canvas.height);
 		for (let i = 0; i < imageData.data.length; i += 4) {
@@ -166,7 +193,9 @@ function applyStaticNoise(duration) {
 }
 
 /**
- * Pulse glow effect
+ * Apply pulse glow effect around page edges.
+ * @param {number} duration - Effect duration in ms
+ * @returns {void}
  */
 function applyPulseGlow(duration) {
 	const style = document.createElement("style");
@@ -190,7 +219,9 @@ function applyPulseGlow(duration) {
 }
 
 /**
- * Screen flicker effect
+ * Apply screen flicker effect.
+ * @param {number} duration - Effect duration in ms
+ * @returns {void}
  */
 function applyFlicker(duration) {
 	const style = document.createElement("style");
@@ -214,35 +245,40 @@ function applyFlicker(duration) {
 }
 
 /**
- * Highlight specific text on the page
+ * Highlight specific text on the page with glowing effect.
+ * @param {string} searchText - Text to search and highlight
+ * @returns {void}
  */
 function highlightText(searchText) {
 	if (!searchText) return;
 
 	// Remove existing highlights
 	document.querySelectorAll(".ghost-highlight").forEach((el) => {
-		el.outerHTML = el.textContent;
+		el.outerHTML = el.textContent || "";
 	});
 
 	// Create TreeWalker to find text nodes
 	const walker = document.createTreeWalker(
 		document.body,
 		NodeFilter.SHOW_TEXT,
-		null,
-		false
+		null
 	);
 
+	/** @type {Text[]} */
 	const nodesToHighlight = [];
+	/** @type {Text|null} */
 	let node;
-	while ((node = walker.nextNode())) {
-		if (node.textContent.toLowerCase().includes(searchText.toLowerCase())) {
+	while ((node = /** @type {Text} */ (walker.nextNode()))) {
+		if (
+			node.textContent?.toLowerCase().includes(searchText.toLowerCase())
+		) {
 			nodesToHighlight.push(node);
 		}
 	}
 
 	// Highlight found text
 	nodesToHighlight.forEach((textNode) => {
-		const text = textNode.textContent;
+		const text = textNode.textContent || "";
 		const lowerText = text.toLowerCase();
 		const lowerSearch = searchText.toLowerCase();
 		const index = lowerText.indexOf(lowerSearch);
@@ -267,7 +303,7 @@ function highlightText(searchText) {
 			fragment.appendChild(span);
 			if (after) fragment.appendChild(document.createTextNode(after));
 
-			textNode.parentNode.replaceChild(fragment, textNode);
+			textNode.parentNode?.replaceChild(fragment, textNode);
 		}
 	});
 
@@ -286,14 +322,16 @@ function highlightText(searchText) {
 }
 
 /**
- * Get page content for analysis
+ * Get page content for analysis.
+ * Extracts visible text content, title, and URL.
+ * @returns {PageContent} Page content object
  */
 function getPageContent() {
-	// Get visible text content
+	// Get visible text content (first 5000 chars)
 	const bodyText = document.body.innerText
 		.replace(/\s+/g, " ")
 		.trim()
-		.substring(0, 5000); // Limit to 5000 chars
+		.substring(0, 5000);
 
 	return {
 		bodyText,

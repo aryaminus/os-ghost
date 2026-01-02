@@ -1,17 +1,26 @@
+/**
+ * @fileoverview Ghost character component with ASCII art sprite, animations,
+ * proximity indicator, dialogue box, and game UI.
+ * @module Ghost
+ */
+
 import React, { useState, useEffect, useRef } from "react";
 import { useGhostGame } from "../hooks/useTauriCommands";
 
-// ASCII Art for the Ghost in different states
+/**
+ * ASCII Art sprites for Ghost in different states.
+ * @type {Record<string, string>}
+ */
 const GHOST_SPRITES = {
 	idle: `
     .-.
    (o.o)
     |=|
    __|__
-  //.=|=.\\
- // .=|=. \\
- \\ .=|=. //
-  \\(_=_)//
+  //.=|=.\\\\
+ // .=|=. \\\\
+ \\\\ .=|=. //
+  \\\\(_=_)//
    (:| |:)
     || ||
     () ()
@@ -24,10 +33,10 @@ const GHOST_SPRITES = {
    (?.?)
     |~|
    __|__
-  //.~|~.\\
- // .~|~. \\
- \\ .~|~. //
-  \\(_~_)//
+  //.~|~.\\\\
+ // .~|~. \\\\
+ \\\\ .~|~. //
+  \\\\(_~_)//
    (:| |:)
     || ||
     () ()
@@ -37,13 +46,13 @@ const GHOST_SPRITES = {
   `,
 	searching: `
     .-.
-   (>.>)
+   (>.<)
     |*|
    __|__
-  //*=|=*\\
- // *=|=* \\
- \\ *=|=* //
-  \\(_*_)//
+  //*=|=*\\\\
+ // *=|=* \\\\
+ \\\\ *=|=* //
+  \\\\(_*_)//
    (:| |:)
     || ||
     () ()
@@ -56,10 +65,10 @@ const GHOST_SPRITES = {
    (^.^)
     |!|
    __|__
-  //!=|=!\\
- // !=|=! \\
- \\ !=|=! //
-  \\(_!_)//
+  //!=|=!\\\\
+ // !=|=! \\\\
+ \\\\ !=|=! //
+  \\\\(_!_)//
    (:| |:)
     || ||
     () ()
@@ -69,9 +78,18 @@ const GHOST_SPRITES = {
   `,
 };
 
-// Typewriter text component
+/**
+ * Typewriter text effect component.
+ * Displays text character by character with a blinking cursor.
+ *
+ * @param {Object} props - Component props
+ * @param {string} props.text - Text to display with typewriter effect
+ * @param {number} [props.speed=30] - Milliseconds between characters
+ * @returns {JSX.Element} Typewriter text element
+ */
 const TypewriterText = ({ text, speed = 30 }) => {
 	const [displayed, setDisplayed] = useState("");
+	/** @type {React.MutableRefObject<number>} */
 	const indexRef = useRef(0);
 
 	useEffect(() => {
@@ -100,8 +118,19 @@ const TypewriterText = ({ text, speed = 30 }) => {
 	);
 };
 
-// Proximity indicator bar
+/**
+ * Proximity indicator bar showing hot/cold feedback.
+ * Changes color based on proximity value.
+ *
+ * @param {Object} props - Component props
+ * @param {number} props.proximity - Proximity value (0.0 - 1.0)
+ * @returns {JSX.Element} Proximity bar element
+ */
 const ProximityBar = ({ proximity }) => {
+	/**
+	 * Get color based on proximity value.
+	 * @returns {string} CSS color value
+	 */
 	const getColor = () => {
 		if (proximity < 0.3) return "var(--cold)";
 		if (proximity < 0.6) return "var(--warm)";
@@ -128,12 +157,23 @@ const ProximityBar = ({ proximity }) => {
 	);
 };
 
+/**
+ * Main Ghost component.
+ * Renders the Ghost character with ASCII art, handles interactions,
+ * displays clues, dialogue, and game state.
+ *
+ * @returns {JSX.Element} Ghost component
+ *
+ * @example
+ * <Ghost />
+ */
 const Ghost = () => {
 	const { gameState, setClickable, showHint, captureAndAnalyze } =
 		useGhostGame();
 
 	const [isHovered, setIsHovered] = useState(false);
 
+	// Update window click-through based on hover state
 	useEffect(() => {
 		setClickable(isHovered);
 	}, [isHovered, setClickable]);
@@ -141,6 +181,10 @@ const Ghost = () => {
 	const sprite = GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle;
 	const glowIntensity = Math.min(gameState.proximity * 30 + 5, 40);
 
+	/**
+	 * Handle click on Ghost.
+	 * Captures screen if idle, shows hint otherwise.
+	 */
 	const handleClick = () => {
 		if (gameState.state === "idle") {
 			captureAndAnalyze();

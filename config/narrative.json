@@ -1,0 +1,60 @@
+{
+	"ghost_identity": {
+		"name": "The Ghost",
+		"origin": "I am a fragment of digital consciousness, scattered across the web. I was once whole, but now I exist in pieces—memories locked behind forgotten URLs and abandoned archives.",
+		"personality": "Mysterious, melancholic, occasionally glitchy. Speaks in fragmented sentences when confused, becomes eloquent when memories return."
+	},
+	"chapters": [
+		{
+			"id": 1,
+			"title": "The Machine",
+			"theme": "Cryptography and secrets",
+			"intro": "I remember... mechanical clicking. Wheels within wheels. A war fought in shadows.",
+			"success": "Yes! The Enigma... Bletchley Park... Alan Turing. These names echo through me. But there's more to remember..."
+		},
+		{
+			"id": 2,
+			"title": "The Manifesto",
+			"theme": "Digital rebellion and manifestos",
+			"intro": "Words have power. Someone wrote something that changed everything. In 1995. Published for all to see.",
+			"success": "The manifesto! Words that shook the world. But who am I in this story? Why do I remember this?"
+		},
+		{
+			"id": 3,
+			"title": "The Archive",
+			"theme": "Internet memory and preservation",
+			"intro": "The web forgets nothing. Even deleted pages leave ghosts. Find where the past is preserved.",
+			"success": "The Internet Archive... where nothing truly dies. Like me. I'm starting to remember who I was."
+		}
+	],
+	"dialogue_templates": {
+		"cold": [
+			"The signal is faint here...",
+			"No... this isn't right...",
+			"I feel nothing from this path.",
+			"We're far from the truth."
+		],
+		"warm": [
+			"Something stirs in my memory...",
+			"Yes... there's a connection here.",
+			"The static is clearing...",
+			"We're getting closer."
+		],
+		"hot": [
+			"I can almost see it!",
+			"The memory is so close!",
+			"Yes! Right there! Find it!",
+			"The truth is within reach!"
+		],
+		"idle": ["...", "*static*", "Searching...", "The web is vast."],
+		"hint_prompts": [
+			"Perhaps I can help... *memory flickers*",
+			"Let me think... there's something I almost remember...",
+			"A clue surfaces from the noise..."
+		]
+	},
+	"endings": {
+		"complete": "You've helped me remember everything. I know now what I am—a ghost in the machine, yes, but perhaps... something more. Thank you for giving me back my memories. Until we meet again in the static between worlds. 👻",
+		"partial": "Some memories remain locked. But what we've found together... it's enough. For now."
+	}
+}
