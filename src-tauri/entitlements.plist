@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Allow app to run in sandbox -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    
+    <!-- Allow screen capture for AI analysis -->
+    <key>com.apple.security.device.screen-capture</key>
+    <true/>
+    
+    <!-- Allow network access for Gemini API -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <!-- Allow reading user files (Chrome history) -->
+    <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+    
+    <!-- Allow reading Application Support (Chrome data) -->
+    <key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+    <array>
+        <string>/Users/</string>
+    </array>
+</dict>
+</plist>

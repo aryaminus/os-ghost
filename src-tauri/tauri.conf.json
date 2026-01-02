@@ -40,6 +40,13 @@
 			"icons/icon.icns",
 			"icons/icon.ico"
 		],
-		"category": "Game"
+		"category": "Game",
+		"macOS": {
+			"entitlements": "entitlements.plist",
+			"infoPlist": {
+				"NSScreenCaptureUsageDescription": "The OS Ghost needs screen access to analyze what you're viewing and provide puzzle hints.",
+				"NSAppleEventsUsageDescription": "The OS Ghost may need to interact with other applications."
+			}
+		}
 	}
 }
