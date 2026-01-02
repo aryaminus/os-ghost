@@ -1,0 +1,7 @@
+{
+	"name": "com.osghost.game",
+	"description": "OS Ghost Native Messaging Bridge",
+	"path": "/path/to/os-ghost/src-tauri/target/release/os-ghost",
+	"type": "stdio",
+	"allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID/"]
+}

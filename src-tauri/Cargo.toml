@@ -1,0 +1,51 @@
+[package]
+name = "os-ghost"
+version = "0.1.0"
+description = "The OS Ghost - A screen-aware meta-game"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "os_ghost_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "native_bridge"
+path = "src/bin/native_bridge.rs"
+
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.35", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22"
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+image = "0.25"
+dotenvy = "0.15"
+
+# SQLite for Chrome history reading
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Screen capture - screenshots crate is more stable
+screenshots = "0.8"
+
+# macOS specific bindings (optional, for advanced window control)
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
+
+# Windows specific bindings
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
