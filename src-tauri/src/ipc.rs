@@ -140,3 +140,68 @@ pub fn get_all_puzzles(puzzles: State<'_, Vec<Puzzle>>) -> Vec<Puzzle> {
 pub fn check_api_key() -> Result<bool, String> {
     Ok(std::env::var("GEMINI_API_KEY").is_ok())
 }
+
+/// Generate a dynamic puzzle based on current page context
+#[tauri::command]
+pub async fn generate_dynamic_puzzle(
+    url: String,
+    title: String,
+    content: String,
+    gemini: State<'_, Arc<GeminiClient>>,
+) -> Result<crate::ai_client::DynamicPuzzle, String> {
+    let redacted_url = crate::privacy::redact_pii(&url);
+    let redacted_content = crate::privacy::redact_pii(&content);
+
+    gemini
+        .generate_dynamic_puzzle(&redacted_url, &title, &redacted_content)
+        .await
+        .map_err(|e| format!("Failed to generate puzzle: {}", e))
+}
+
+/// Helper struct for frontend context
+#[derive(Deserialize)]
+pub struct PageContext {
+    pub url: String,
+    pub title: String,
+    pub content: String,
+    pub puzzle_id: String,
+    pub puzzle_clue: String,
+    pub target_pattern: String,
+    pub hints: Vec<String>,
+    pub hints_revealed: usize,
+}
+
+/// Run a full multi-agent cycle (Observer -> Verifier -> Narrator)
+#[tauri::command]
+pub async fn process_agent_cycle(
+    context: PageContext,
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+    puzzles: State<'_, Vec<Puzzle>>,
+) -> Result<crate::agents::orchestrator::OrchestrationResult, String> {
+    // Lookup puzzle to get target_pattern
+    let puzzle = puzzles
+        .iter()
+        .find(|p| p.id == context.puzzle_id)
+        .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
+
+    // Build agent context
+    let agent_context = crate::agents::traits::AgentContext {
+        current_url: context.url,
+        current_title: context.title,
+        page_content: context.content,
+        puzzle_id: context.puzzle_id,
+        puzzle_clue: context.puzzle_clue,
+        target_pattern: puzzle.target_url_pattern.clone(),
+        hints: context.hints,
+        hints_revealed: context.hints_revealed,
+        proximity: 0.0,                       // start fresh
+        ghost_mood: "mysterious".to_string(), // default
+        metadata: std::collections::HashMap::new(),
+    };
+
+    // Run pipeline
+    orchestrator
+        .process(&agent_context)
+        .await
+        .map_err(|e| format!("Agent cycle failed: {}", e))
+}

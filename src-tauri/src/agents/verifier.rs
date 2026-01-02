@@ -1,0 +1,171 @@
+//! Verifier Agent - Solution validation
+//! Validates puzzle solutions using URL patterns and content matching
+
+use super::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
+use async_trait::async_trait;
+use regex::Regex;
+use std::collections::HashMap;
+
+/// Verifier agent for puzzle solution validation
+pub struct VerifierAgent {
+    /// Cache of compiled regex patterns
+    pattern_cache: std::sync::RwLock<HashMap<String, Regex>>,
+}
+
+impl VerifierAgent {
+    pub fn new() -> Self {
+        Self {
+            pattern_cache: std::sync::RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// Validate URL against pattern
+    fn validate_url(&self, url: &str, pattern: &str) -> AgentResult<bool> {
+        // Check cache first
+        {
+            let cache = self.pattern_cache.read().unwrap();
+            if let Some(regex) = cache.get(pattern) {
+                return Ok(regex.is_match(url));
+            }
+        }
+
+        // Compile and cache the pattern
+        let regex = Regex::new(pattern)
+            .map_err(|e| AgentError::ConfigError(format!("Invalid pattern: {}", e)))?;
+
+        let matches = regex.is_match(url);
+
+        // Cache for future use
+        {
+            let mut cache = self.pattern_cache.write().unwrap();
+            cache.insert(pattern.to_string(), regex);
+        }
+
+        Ok(matches)
+    }
+
+    /// Check if page content contains expected keywords
+    #[allow(dead_code)]
+    fn validate_content(&self, content: &str, keywords: &[&str]) -> bool {
+        let content_lower = content.to_lowercase();
+        keywords
+            .iter()
+            .any(|kw| content_lower.contains(&kw.to_lowercase()))
+    }
+}
+
+impl Default for VerifierAgent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Agent for VerifierAgent {
+    fn name(&self) -> &str {
+        "Verifier"
+    }
+
+    fn description(&self) -> &str {
+        "Validates puzzle solutions by checking URL patterns and page content"
+    }
+
+    async fn process(&self, context: &AgentContext) -> AgentResult<AgentOutput> {
+        // Skip if no URL or pattern
+        if context.current_url.is_empty() || context.target_pattern.is_empty() {
+            return Ok(AgentOutput {
+                agent_name: self.name().to_string(),
+                result: "Nothing to verify".to_string(),
+                confidence: 0.0,
+                data: HashMap::new(),
+                next_action: Some(NextAction::Continue),
+            });
+        }
+
+        // Validate URL pattern
+        let url_matches = self.validate_url(&context.current_url, &context.target_pattern)?;
+
+        let mut data = HashMap::new();
+        data.insert(
+            "url_matches".to_string(),
+            serde_json::Value::Bool(url_matches),
+        );
+        data.insert(
+            "pattern".to_string(),
+            serde_json::Value::String(context.target_pattern.clone()),
+        );
+
+        if url_matches {
+            Ok(AgentOutput {
+                agent_name: self.name().to_string(),
+                result: "PUZZLE SOLVED! Pattern matched!".to_string(),
+                confidence: 1.0,
+                data,
+                next_action: Some(NextAction::PuzzleSolved),
+            })
+        } else {
+            // Calculate partial match confidence
+            let url_lower = context.current_url.to_lowercase();
+            let pattern_parts: Vec<&str> = context
+                .target_pattern
+                .split('|')
+                .flat_map(|p| p.split(&['(', ')', '[', ']'][..]))
+                .filter(|p| p.len() > 2)
+                .collect();
+
+            let partial_matches = pattern_parts
+                .iter()
+                .filter(|p| url_lower.contains(&p.to_lowercase()))
+                .count();
+
+            let confidence = if pattern_parts.is_empty() {
+                0.0
+            } else {
+                partial_matches as f32 / pattern_parts.len() as f32
+            };
+
+            data.insert(
+                "partial_confidence".to_string(),
+                serde_json::Value::Number(serde_json::Number::from_f64(confidence as f64).unwrap()),
+            );
+
+            Ok(AgentOutput {
+                agent_name: self.name().to_string(),
+                result: format!(
+                    "Pattern not matched. Partial confidence: {:.0}%",
+                    confidence * 100.0
+                ),
+                confidence,
+                data,
+                next_action: Some(NextAction::Continue),
+            })
+        }
+    }
+
+    fn can_handle(&self, context: &AgentContext) -> bool {
+        !context.current_url.is_empty() && !context.target_pattern.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_validation() {
+        let verifier = VerifierAgent::new();
+
+        // Test simple pattern
+        assert!(verifier
+            .validate_url(
+                "https://en.wikipedia.org/wiki/Alan_Turing",
+                "(turing|bletchley)"
+            )
+            .unwrap());
+
+        // Test non-match
+        assert!(!verifier
+            .validate_url("https://example.com", "(turing|bletchley)")
+            .unwrap());
+    }
+}

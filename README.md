@@ -53,21 +53,11 @@ npm run tauri dev
 
 ## Project Structure
 
-```
+```text
 os-ghost/
 ├── src/                    # React frontend
-│   ├── components/Ghost.jsx
-│   └── hooks/useTauriCommands.js
 ├── src-tauri/              # Rust backend
-│   └── src/
-│       ├── lib.rs          # Entry point
-│       ├── window.rs       # Overlay window
-│       ├── capture.rs      # Screen capture
-│       ├── history.rs      # Chrome history
-│       ├── ai_client.rs    # Gemini API
-│       └── bridge.rs       # Native messaging
 ├── ghost-extension/        # Chrome extension
-├── config/                 # Puzzles & narrative
 └── scripts/                # Installation
 ```
 
@@ -83,13 +73,9 @@ os-ghost/
 
 ### Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GEMINI_API_KEY` | Yes | Google Gemini API key |
-
-### Puzzles
-
-Edit `config/puzzles.json` to customize puzzles.
+| Variable         | Required | Description           |
+|------------------|----------|-----------------------|
+| `GEMINI_API_KEY` | Yes      | Google Gemini API key |
 
 ## Development
 

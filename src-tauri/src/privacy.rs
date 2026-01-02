@@ -144,3 +144,40 @@ By continuing, you consent to these data practices.
 pub fn get_privacy_notice() -> String {
     PRIVACY_NOTICE.to_string()
 }
+
+/// Redact PII from text before sending to AI
+pub fn redact_pii(text: &str) -> String {
+    use regex::Regex;
+    use std::sync::OnceLock;
+
+    static EMAIL_REGEX: OnceLock<Regex> = OnceLock::new();
+    static PHONE_REGEX: OnceLock<Regex> = OnceLock::new();
+
+    let email_re = EMAIL_REGEX
+        .get_or_init(|| Regex::new(r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}").unwrap());
+
+    let phone_re = PHONE_REGEX.get_or_init(|| {
+        // Basic phone pattern: (123) 456-7890, 123-456-7890, etc.
+        Regex::new(r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}").unwrap()
+    });
+
+    let redacted = email_re.replace_all(text, "[REDACTED_EMAIL]");
+    let redacted = phone_re.replace_all(&redacted, "[REDACTED_PHONE]");
+
+    redacted.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_redaction() {
+        let text = "Contact me at test@example.com or 555-0123-4567"; // Invalid phone for this regex but let's try standard
+        let text2 = "Contact me at test@example.com or 555-123-4567";
+        let redacted = redact_pii(text2);
+        assert!(redacted.contains("[REDACTED_EMAIL]"));
+        assert!(redacted.contains("[REDACTED_PHONE]"));
+        assert!(!redacted.contains("test@example.com"));
+    }
+}

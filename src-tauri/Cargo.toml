@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "The OS Ghost - A screen-aware meta-game"
 authors = ["you"]
 edition = "2021"
+default-run = "os-ghost"
 
 [lib]
 name = "os_ghost_lib"
@@ -36,16 +37,21 @@ image = "0.25"
 dotenvy = "0.15"
 dirs = "5"
 
+# Multi-agent system
+sled = "0.34"
+async-trait = "0.1"
+futures = "0.3"
+tempfile = "3"
+
 # SQLite for Chrome history reading
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Screen capture - screenshots crate is more stable
 screenshots = "0.8"
 
-# macOS specific bindings (optional, for advanced window control)
+# macOS specific bindings - using objc2 for low-level control
 [target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26"
-objc = "0.2"
+objc2 = "0.5"
 
 # Windows specific bindings
 [target.'cfg(target_os = "windows")'.dependencies]

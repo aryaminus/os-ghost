@@ -57,6 +57,17 @@ import { useState, useEffect, useCallback, useRef } from "react";
  */
 
 /**
+ * Result from backend agent orchestration
+ * @typedef {Object} OrchestrationResult
+ * @property {string} message - Combined dialogue/message
+ * @property {number} proximity - Proximity score (0.0 - 1.0)
+ * @property {boolean} solved - Whether puzzle was solved
+ * @property {number|null} show_hint - Suggested hint index (if any)
+ * @property {string} ghost_state - Ghost state (idle, thinking, searching, celebrate)
+ * @property {Object[]} agent_outputs - Debug outputs from agents
+ */
+
+/**
  * Return type for useGhostGame hook
  * @typedef {Object} UseGhostGameReturn
  * @property {GameState} gameState - Current game state
@@ -195,81 +206,75 @@ export function useGhostGame() {
 
 	/**
 	 * Handle browser navigation events from Chrome extension.
-	 * Validates puzzle solution or updates proximity.
+	 * Delegates to backend Agent Orchestrator for analysis and game state updates.
 	 * @param {NavigationPayload} payload - Navigation event data
 	 * @returns {Promise<void>}
 	 */
-	const handleNavigation = async (payload) => {
-		const { url } = payload;
-		setGameState((prev) => ({
-			...prev,
-			currentUrl: url,
-			state: "thinking",
-		}));
+	const handleNavigation = useCallback(
+		async (payload) => {
+			const { url, title } = payload;
+			setGameState((prev) => ({
+				...prev,
+				currentUrl: url,
+				state: "thinking",
+			}));
 
-		try {
-			// Validate if this solves the puzzle
-			const isValid = await invoke("validate_puzzle", {
-				url,
-				puzzleId: gameState.puzzleId,
-			});
+			// Skip if API key not configured
+			if (!gameState.apiKeyConfigured) return;
 
-			if (isValid) {
-				// Generate AI success dialogue
-				let successDialogue =
-					"✨ MEMORY UNLOCKED! The fragments are aligning...";
+			try {
+				// Call multi-agent orchestrator
+				const result = /** @type {OrchestrationResult} */ (
+					await invoke("process_agent_cycle", {
+						context: {
+							url,
+							title,
+							content: "", // Content might come from separate event or fetch
+							puzzle_id: gameState.puzzleId,
+							puzzle_clue: gameState.clue,
+							target_pattern: "", // Backend handles this from puzzle ID
+							hints: gameState.hints,
+							hints_revealed: 0, // Should be tracked in session state
+						},
+					})
+				);
 
-				if (gameState.apiKeyConfigured) {
-					try {
-						const puzzle = puzzles[gameState.currentPuzzle];
-						const aiDialogue = await invoke(
-							"generate_ghost_dialogue",
-							{
-								context: `Player just solved puzzle "${puzzle?.clue}". Generate a mysterious, grateful response about recovering a memory. Keep it to 2 sentences.`,
-							}
-						);
-						if (aiDialogue)
-							successDialogue = /** @type {string} */ (
-								aiDialogue
-							);
-					} catch (err) {
-						console.warn(
-							"[Ghost] AI dialogue failed, using default:",
-							err
-						);
+				if (result) {
+					setGameState((prev) => ({
+						...prev,
+						proximity: result.proximity,
+						dialogue: result.message,
+						state: result.ghost_state,
+					}));
+
+					// Handle solved state
+					if (result.solved) {
+						setTimeout(() => {
+							advanceToNextPuzzle();
+						}, 5000);
+					}
+
+					// Handle dynamic hints
+					if (
+						result.show_hint !== null &&
+						result.show_hint !== undefined
+					) {
+						// Backend suggests showing a hint
+						// Logic to unlock hint here if needed
 					}
 				}
-
-				setGameState((prev) => ({
-					...prev,
-					state: "celebrate",
-					dialogue: successDialogue,
-				}));
-
-				// After celebration, move to next puzzle
-				setTimeout(() => {
-					advanceToNextPuzzle();
-				}, 5000);
-			} else {
-				// Calculate proximity (hot/cold)
-				try {
-					const proximity = /** @type {number} */ (
-						await invoke("calculate_proximity", {
-							currentUrl: url,
-							puzzleId: gameState.puzzleId,
-						})
-					);
-
-					updateProximityState(proximity);
-				} catch (err) {
-					console.warn("[Ghost] Proximity calculation failed:", err);
-				}
+			} catch (err) {
+				console.error("[Ghost] Agent cycle failed:", err);
+				setGameState((prev) => ({ ...prev, state: "idle" }));
 			}
-		} catch (err) {
-			console.error("[Ghost] Navigation handling error:", err);
-			setGameState((prev) => ({ ...prev, state: "idle" }));
-		}
-	};
+		},
+		[
+			gameState.apiKeyConfigured,
+			gameState.puzzleId,
+			gameState.clue,
+			gameState.hints,
+		]
+	);
 
 	/**
 	 * Handle page content events from Chrome extension.
@@ -402,13 +407,13 @@ export function useGhostGame() {
 	 * @param {boolean} clickable - Whether window should receive clicks
 	 * @returns {Promise<void>}
 	 */
-	const setClickable = async (clickable) => {
+	const setClickable = useCallback(async (clickable) => {
 		try {
 			await invoke("set_window_clickable", { clickable });
 		} catch (err) {
 			console.error("[Ghost] Failed to set clickable:", err);
 		}
-	};
+	}, []);
 
 	/**
 	 * Show the next available hint if timer has elapsed.
@@ -464,6 +469,59 @@ export function useGhostGame() {
 		}
 	};
 
+	/**
+	 * Generate a dynamic puzzle based on current page content.
+	 * Creates unique contextual puzzles from what the user is viewing.
+	 * @param {string} url - Current page URL
+	 * @param {string} title - Current page title
+	 * @param {string} content - Page body text (first 500 chars)
+	 * @returns {Promise<Object|null>} Generated puzzle or null if failed
+	 */
+	const generateDynamicPuzzle = async (url, title, content) => {
+		if (!gameState.apiKeyConfigured) {
+			console.warn("[Ghost] Cannot generate dynamic puzzle - no API key");
+			return null;
+		}
+
+		try {
+			setGameState((prev) => ({
+				...prev,
+				state: "thinking",
+				dialogue: "Crafting a new mystery from the digital ether...",
+			}));
+
+			const puzzle = await invoke("generate_dynamic_puzzle", {
+				url,
+				title,
+				content: content.slice(0, 500),
+			});
+
+			if (puzzle) {
+				setGameState((prev) => ({
+					...prev,
+					puzzleId: `dynamic_${Date.now()}`,
+					clue: puzzle.clue,
+					hint: puzzle.hints?.[0] || "",
+					hints: puzzle.hints || [],
+					state: "idle",
+					dialogue:
+						"A new fragment materializes from your journey...",
+				}));
+
+				return puzzle;
+			}
+		} catch (err) {
+			console.error("[Ghost] Failed to generate dynamic puzzle:", err);
+			setGameState((prev) => ({
+				...prev,
+				state: "idle",
+				dialogue: "The static obscures this memory...",
+			}));
+		}
+
+		return null;
+	};
+
 	return {
 		gameState,
 		puzzles,
@@ -475,5 +533,6 @@ export function useGhostGame() {
 		showHint,
 		advanceToNextPuzzle,
 		resetGame,
+		generateDynamicPuzzle,
 	};
 }

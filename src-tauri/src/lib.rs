@@ -1,6 +1,7 @@
 //! The OS Ghost - Tauri Application Library
 //! A screen-aware meta-game where an AI entity lives in your desktop
 
+// Core modules
 pub mod ai_client;
 pub mod bridge;
 pub mod capture;
@@ -9,6 +10,11 @@ pub mod history;
 pub mod ipc;
 pub mod privacy;
 pub mod window;
+
+// Multi-agent system
+pub mod agents;
+pub mod memory;
+pub mod workflow;
 
 use ai_client::GeminiClient;
 use ipc::Puzzle;
@@ -66,22 +72,30 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            // Load puzzles
+            let puzzles = default_puzzles();
+            tracing::info!("Loaded {} puzzles", puzzles.len());
+            app.manage(puzzles);
+
             // Initialize Gemini client
             let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| {
                 tracing::warn!("GEMINI_API_KEY not set, AI features will be disabled");
                 String::new()
             });
 
-            if !api_key.is_empty() {
-                let gemini = Arc::new(GeminiClient::new(api_key));
-                app.manage(gemini);
-                tracing::info!("Gemini AI client initialized");
-            }
+            // Create shared Gemini client
+            let gemini_client = Arc::new(GeminiClient::new(api_key));
 
-            // Load puzzles
-            let puzzles = default_puzzles();
-            tracing::info!("Loaded {} puzzles", puzzles.len());
-            app.manage(puzzles);
+            // Register client for direct access by IPC commands
+            app.manage(gemini_client.clone());
+
+            match crate::agents::AgentOrchestrator::new(gemini_client) {
+                Ok(orchestrator) => {
+                    app.manage(Arc::new(orchestrator));
+                    tracing::info!("Agent Orchestrator initialized");
+                }
+                Err(e) => tracing::error!("Failed to initialize orchestrator: {}", e),
+            }
 
             // Setup Ghost window
             if let Some(window) = app.get_webview_window("main") {
@@ -111,6 +125,8 @@ pub fn run() {
             ipc::get_puzzle,
             ipc::get_all_puzzles,
             ipc::check_api_key,
+            ipc::generate_dynamic_puzzle,
+            ipc::process_agent_cycle,
             game_state::get_game_state,
             game_state::reset_game,
             game_state::check_hint_available,

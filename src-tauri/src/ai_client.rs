@@ -85,6 +85,10 @@ impl GeminiClient {
 
     /// Analyze screenshot with Gemini Vision
     pub async fn analyze_image(&self, base64_image: &str, prompt: &str) -> Result<String> {
+        if self.api_key.is_empty() {
+            return Ok("AI Analysis unavailable (No API Key)".to_string());
+        }
+
         let request = GeminiRequest {
             contents: vec![Content {
                 parts: vec![
@@ -133,6 +137,10 @@ impl GeminiClient {
 
     /// Calculate semantic similarity between two URLs (returns 0.0-1.0)
     pub async fn calculate_url_similarity(&self, url1: &str, url2: &str) -> Result<f32> {
+        if self.api_key.is_empty() {
+            return Ok(0.0);
+        }
+
         let prompt = format!(
             "Compare these two URLs semantically. Consider the topic, domain, and content they represent.
             Return ONLY a single number between 0.0 and 1.0 representing their similarity.
@@ -185,6 +193,10 @@ impl GeminiClient {
 
     /// Generate Ghost dialogue based on context
     pub async fn generate_dialogue(&self, context: &str, personality: &str) -> Result<String> {
+        if self.api_key.is_empty() {
+            return Ok("...".to_string());
+        }
+
         let prompt = format!(
             "You are a mysterious AI ghost character with this personality: {}
             
@@ -230,4 +242,83 @@ impl GeminiClient {
 
         Ok(text.trim().to_string())
     }
+
+    /// Generate a dynamic puzzle based on current page context
+    /// Creates unique puzzles based on what the user is currently viewing
+    pub async fn generate_dynamic_puzzle(
+        &self,
+        url: &str,
+        page_title: &str,
+        page_content: &str,
+    ) -> Result<DynamicPuzzle> {
+        let prompt = format!(
+            r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
+
+URL: {}
+Title: {}
+Content snippet: {}
+
+Generate a JSON object with these fields:
+- "clue": A mysterious, cryptic clue that relates to this page's topic but leads to a DIFFERENT related page (max 100 chars)
+- "target_description": What the player should find (a related but different topic/page)
+- "target_url_pattern": A regex pattern that would match the solution URL
+- "hints": An array of 3 progressive hints
+
+Example response format (respond ONLY with valid JSON, no markdown):
+{{"clue": "The cipher machine's nemesis worked at a park...", "target_description": "Alan Turing Bletchley Park", "target_url_pattern": "(turing|bletchley)", "hints": ["Think about who cracked the code...", "A British mathematician...", "Search for Alan Turing"]}}
+
+Make the puzzle interesting and educational. The target should be related but not the same page."#,
+            url,
+            page_title,
+            &page_content.chars().take(500).collect::<String>()
+        );
+
+        let request = GeminiRequest {
+            contents: vec![Content {
+                parts: vec![Part::Text { text: prompt }],
+            }],
+            generation_config: Some(GenerationConfig {
+                temperature: 0.8,
+                max_output_tokens: 300,
+            }),
+        };
+
+        let response = self
+            .client
+            .post(&self.get_api_url())
+            .json(&request)
+            .send()
+            .await?
+            .json::<GeminiResponse>()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Gemini API error: {}", error.message));
+        }
+
+        let candidates = response
+            .candidates
+            .ok_or_else(|| anyhow::anyhow!("No candidates"))?;
+
+        let text = candidates
+            .first()
+            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
+            .flatten()
+            .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
+
+        // Parse JSON response
+        let puzzle: DynamicPuzzle = serde_json::from_str(text.trim())
+            .map_err(|e| anyhow::anyhow!("Failed to parse puzzle JSON: {} - Raw: {}", e, text))?;
+
+        Ok(puzzle)
+    }
+}
+
+/// A dynamically generated puzzle based on screen context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicPuzzle {
+    pub clue: String,
+    pub target_description: String,
+    pub target_url_pattern: String,
+    pub hints: Vec<String>,
 }
