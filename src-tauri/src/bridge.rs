@@ -72,13 +72,23 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                     );
                 }
                 "page_content" => {
-                    let _ = app.emit(
+                    let url = message.url.unwrap_or_default();
+                    let body_len = message.body_text.as_ref().map(|s| s.len()).unwrap_or(0);
+                    tracing::info!(
+                        "Emitting page_content event: url={}, body_len={}",
+                        url,
+                        body_len
+                    );
+                    let emit_result = app.emit(
                         "page_content",
                         serde_json::json!({
-                            "url": message.url.unwrap_or_default(),
+                            "url": url,
                             "body_text": message.body_text.unwrap_or_default()
                         }),
                     );
+                    if let Err(e) = emit_result {
+                        tracing::error!("Failed to emit page_content event: {}", e);
+                    }
                 }
                 _ => {
                     tracing::debug!("Unknown message type: {}", message.msg_type);

@@ -178,11 +178,20 @@ pub async fn process_agent_cycle(
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
     puzzles: State<'_, Vec<Puzzle>>,
 ) -> Result<crate::agents::orchestrator::OrchestrationResult, String> {
+    tracing::info!(
+        "Starting agent cycle for puzzle '{}' at URL: {}",
+        context.puzzle_id,
+        context.url
+    );
+
     // Lookup puzzle to get target_pattern
     let puzzle = puzzles
         .iter()
         .find(|p| p.id == context.puzzle_id)
-        .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
+        .ok_or_else(|| {
+            tracing::warn!("Puzzle '{}' not found in puzzle list", context.puzzle_id);
+            format!("Puzzle {} not found", context.puzzle_id)
+        })?;
 
     // Record URL visit for session tracking
     if let Err(e) = orchestrator.record_url(&context.url) {
@@ -205,10 +214,23 @@ pub async fn process_agent_cycle(
     };
 
     // Run pipeline
-    orchestrator
+    tracing::debug!("Running orchestrator pipeline...");
+    let result = orchestrator
         .process(&agent_context)
         .await
-        .map_err(|e| format!("Agent cycle failed: {}", e))
+        .map_err(|e| {
+            tracing::error!("Agent cycle failed: {}", e);
+            format!("Agent cycle failed: {}", e)
+        })?;
+
+    tracing::info!(
+        "Agent cycle completed: proximity={}, solved={}, state={}",
+        result.proximity,
+        result.solved,
+        result.ghost_state
+    );
+
+    Ok(result)
 }
 
 /// Trigger background analysis (Parallel Workflow)

@@ -78,7 +78,7 @@ impl GeminiClient {
 
     fn get_api_url(&self) -> String {
         format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={}",
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
             self.api_key
         )
     }
@@ -251,6 +251,12 @@ impl GeminiClient {
         page_title: &str,
         page_content: &str,
     ) -> Result<DynamicPuzzle> {
+        tracing::info!(
+            "Generating dynamic puzzle for URL: {} (title: {})",
+            url,
+            page_title
+        );
+
         let prompt = format!(
             r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
 
@@ -283,6 +289,8 @@ Make the puzzle interesting and educational. The target should be related but no
             }),
         };
 
+        tracing::debug!("Sending request to Gemini API...");
+
         let response = self
             .client
             .post(&self.get_api_url())
@@ -292,7 +300,10 @@ Make the puzzle interesting and educational. The target should be related but no
             .json::<GeminiResponse>()
             .await?;
 
+        tracing::debug!("Gemini response received: {:?}", response);
+
         if let Some(error) = response.error {
+            tracing::error!("Gemini API error: {}", error.message);
             return Err(anyhow::anyhow!("Gemini API error: {}", error.message));
         }
 
@@ -306,9 +317,24 @@ Make the puzzle interesting and educational. The target should be related but no
             .flatten()
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
+        tracing::debug!("Raw AI response text: {}", text);
+
+        // Clean up markdown code blocks if present
+        let clean_text = text
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
         // Parse JSON response
-        let puzzle: DynamicPuzzle = serde_json::from_str(text.trim())
-            .map_err(|e| anyhow::anyhow!("Failed to parse puzzle JSON: {} - Raw: {}", e, text))?;
+        let puzzle: DynamicPuzzle = serde_json::from_str(clean_text)
+            .map_err(|e| {
+                tracing::error!("Failed to parse puzzle JSON: {} - Raw: {}", e, text);
+                anyhow::anyhow!("Failed to parse puzzle JSON: {} - Raw: {}", e, text)
+            })?;
+
+        tracing::info!("Successfully generated puzzle: {:?}", puzzle.clue);
 
         Ok(puzzle)
     }
