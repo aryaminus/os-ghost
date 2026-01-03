@@ -57,7 +57,7 @@ impl GhostWindow {
         use windows::Win32::UI::WindowsAndMessaging::*;
 
         unsafe {
-            let hwnd = HWND(self.window.hwnd()?.0 as isize);
+            let hwnd = HWND(self.window.hwnd()?.0 as *mut std::ffi::c_void);
 
             // Set extended style for layered window
             let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
