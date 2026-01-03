@@ -145,6 +145,7 @@ pub fn run() {
             ipc::validate_puzzle,
             ipc::calculate_proximity,
             ipc::generate_ghost_dialogue,
+            ipc::verify_screenshot_proof,
             ipc::get_puzzle,
             ipc::get_all_puzzles,
             ipc::check_api_key,
