@@ -76,11 +76,68 @@ We have a Python script to safely export your local Apple Certificate to the for
 
 For the pipeline to work, these secrets must be present in the repository:
 
-| Secret Name | Description |
-|---|---|
-| `GH_OWNER_TOKEN` | **Critical.** Personal Access Token (PAT) with `repo` and `workflow` scopes. Allows `bump_version` to trigger `release`. |
-| `APPLE_CERTIFICATE` | Base64 encoded `.p12` file (Output of export script). |
-| `APPLE_CERTIFICATE_PASSWORD` | Password to decrypt the p12. |
-| `APPLE_SIGNING_IDENTITY` | The name of the cert (e.g., `Apple Distribution: ...`). |
-| `APPLE_API_ISSUER` | (Optional) For Notarization. |
-| `APPLE_API_KEY` | (Optional) For Notarization. |
+| Secret Name | Description | Required |
+|---|---|---|
+| `GH_OWNER_TOKEN` | **Critical.** Personal Access Token (PAT) with `repo` and `workflow` scopes. Allows `bump_version` to trigger `release`. | Yes |
+| `APPLE_CERTIFICATE` | Base64 encoded `.p12` file (Output of export script). | For macOS signing |
+| `APPLE_CERTIFICATE_PASSWORD` | Password to decrypt the p12. | For macOS signing |
+| `APPLE_SIGNING_IDENTITY` | The name of the cert (e.g., `Apple Distribution: ...`). | For macOS signing |
+| `KEYCHAIN_PASSWORD` | Password for temporary keychain used during signing. | For macOS signing |
+| `APPLE_API_ISSUER` | For Notarization. | Optional |
+| `APPLE_API_KEY` | For Notarization. | Optional |
+| `TAURI_PRIVATE_KEY` | Private key for signing updater artifacts. | For updater feature |
+| `TAURI_KEY_PASSWORD` | Password for the Tauri signing key. | For updater feature |
+| `AZURE_CLIENT_ID` | Azure credentials for Windows code signing. | For Windows signing |
+| `AZURE_CLIENT_SECRET` | Azure credentials for Windows code signing. | For Windows signing |
+| `AZURE_TENANT_ID` | Azure credentials for Windows code signing. | For Windows signing |
+
+---
+
+## 📦 Tauri Updater Configuration
+
+The Tauri updater feature allows the app to automatically update itself. However, it requires proper signing configuration.
+
+### Current Status
+
+**Updater artifacts are currently DISABLED** (`createUpdaterArtifacts: false` in `src-tauri/tauri.conf.json`).
+
+This was done to allow builds to succeed without requiring the `TAURI_PRIVATE_KEY` and `TAURI_KEY_PASSWORD` secrets to be properly configured.
+
+### Enabling the Updater
+
+To re-enable automatic updates:
+
+1. **Generate signing keys**:
+   ```bash
+   # Install Tauri CLI
+   npm install -g @tauri-apps/cli
+   
+   # Generate keypair
+   tauri signer generate -w ~/.tauri/myapp.key
+   ```
+   
+   This will output a public key and create a private key file.
+
+2. **Add GitHub Secrets**:
+   - `TAURI_PRIVATE_KEY`: Contents of the private key file
+   - `TAURI_KEY_PASSWORD`: Password you set during key generation
+
+3. **Update configuration**:
+   - Set `createUpdaterArtifacts: true` in `src-tauri/tauri.conf.json`
+   - The public key is already configured in the `updater.pubkey` field
+
+4. **Update workflow** (`.github/workflows/release.yml`):
+   - Add back the environment variables:
+     ```yaml
+     TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+     TAURI_SIGNING_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+     ```
+
+### Why It Was Disabled
+
+Without proper signing keys, the build process would fail with:
+```
+failed to decode secret key: incorrect updater private key password: Wrong password for that key
+```
+
+By disabling updater artifacts, the application can still be built and released, just without the automatic update capability.

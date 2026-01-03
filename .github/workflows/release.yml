@@ -75,13 +75,18 @@ jobs:
               if: matrix.platform == 'macos-latest'
               id: cert
               run: |
-                  CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Apple Distribution" || true)
-                  if [ -n "$CERT_INFO" ]; then
+                  # Try to find Apple Distribution certificate
+                  set +e  # Don't exit on error
+                  CERT_INFO=$(security find-identity -v -p codesigning build.keychain 2>&1 | grep "Apple Distribution")
+                  EXIT_CODE=$?
+                  set -e  # Re-enable exit on error
+                  
+                  if [ $EXIT_CODE -eq 0 ] && [ -n "$CERT_INFO" ]; then
                       CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
                       echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> $GITHUB_OUTPUT
                       echo "Certificate imported: $CERT_ID"
                   else
-                      echo "No Apple Distribution certificate found, using default signing"
+                      echo "No Apple Distribution certificate found, using default ad-hoc signing"
                       echo "APPLE_SIGNING_IDENTITY=-" >> $GITHUB_OUTPUT
                   fi
 
