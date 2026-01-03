@@ -4,7 +4,13 @@
  * @module Ghost
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+	useState,
+	useEffect,
+	useRef,
+	useCallback,
+	useMemo,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { useGhostGame } from "../hooks/useTauriCommands";
@@ -89,7 +95,7 @@ const GHOST_SPRITES = {
  * @param {number} [props.speed=30] - Milliseconds between characters
  * @returns {JSX.Element} Typewriter text element
  */
-const TypewriterText = ({ text, speed = 30 }) => {
+const TypewriterText = React.memo(({ text, speed = 30 }) => {
 	const [displayed, setDisplayed] = useState("");
 	/** @type {React.MutableRefObject<number>} */
 	const indexRef = useRef(0);
@@ -118,7 +124,7 @@ const TypewriterText = ({ text, speed = 30 }) => {
 			<span className="cursor">▌</span>
 		</span>
 	);
-};
+});
 
 /**
  * Proximity indicator bar showing hot/cold feedback.
@@ -128,16 +134,23 @@ const TypewriterText = ({ text, speed = 30 }) => {
  * @param {number} props.proximity - Proximity value (0.0 - 1.0)
  * @returns {JSX.Element} Proximity bar element
  */
-const ProximityBar = ({ proximity }) => {
+const ProximityBar = React.memo(({ proximity }) => {
 	/**
-	 * Get color based on proximity value.
-	 * @returns {string} CSS color value
+	 * Get color based on proximity value - memoized for performance
 	 */
-	const getColor = () => {
+	const color = React.useMemo(() => {
 		if (proximity < 0.3) return "var(--cold)";
 		if (proximity < 0.6) return "var(--warm)";
 		return "var(--hot)";
-	};
+	}, [proximity]);
+
+	const fillStyle = React.useMemo(
+		() => ({
+			width: `${proximity * 100}%`,
+			backgroundColor: color,
+		}),
+		[proximity, color]
+	);
 
 	return (
 		<div className="proximity-container">
@@ -147,17 +160,11 @@ const ProximityBar = ({ proximity }) => {
 				<span className="hot-indicator">🔥</span>
 			</div>
 			<div className="proximity-bar">
-				<div
-					className="proximity-fill"
-					style={{
-						width: `${proximity * 100}%`,
-						backgroundColor: getColor(),
-					}}
-				/>
+				<div className="proximity-fill" style={fillStyle} />
 			</div>
 		</div>
 	);
-};
+});
 
 /**
  * Main Ghost component.
@@ -172,9 +179,7 @@ const ProximityBar = ({ proximity }) => {
 const Ghost = () => {
 	const {
 		gameState,
-		puzzles,
 		extensionConnected,
-		setClickable,
 		showHint,
 		captureAndAnalyze,
 		triggerDynamicPuzzle,
@@ -182,44 +187,26 @@ const Ghost = () => {
 		enableAutonomousMode,
 	} = useGhostGame();
 
-	// Expose triggerDynamicPuzzle for the button handler
-	useEffect(() => {
-		window.__triggerDynamic = triggerDynamicPuzzle;
-		return () => {
-			delete window.__triggerDynamic;
-		};
-	}, [triggerDynamicPuzzle]);
-
-	const [isHovered, setIsHovered] = useState(false);
-
-	// Note: Click-through disabled for better UX - window is always clickable
-	// The window stays on top but doesn't block interaction with other apps
-	// To re-enable click-through when not hovering, uncomment:
-	// useEffect(() => {
-	// 	setClickable(isHovered);
-	// }, [isHovered, setClickable]);
-
 	const sprite = GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle;
 	const glowIntensity = Math.min(gameState.proximity * 30 + 5, 40);
 
 	/**
-	 * Handle click on Ghost.
+	 * Handle click on Ghost - memoized for performance.
 	 * Captures screen if idle, shows hint otherwise.
 	 */
-	const handleClick = () => {
+	const handleClick = useCallback(() => {
 		if (gameState.state === "idle") {
 			captureAndAnalyze();
 		} else {
 			showHint();
 		}
-	};
+	}, [gameState.state, captureAndAnalyze, showHint]);
 
 	/**
-	 * Handle drag to move window (Clippy-style).
+	 * Handle drag to move window (Clippy-style) - memoized.
 	 * Starts window dragging unless the click is on an interactive element.
-	 * @param {React.MouseEvent} e - Mouse event
 	 */
-	const handleDrag = async (e) => {
+	const handleDrag = useCallback(async (e) => {
 		// Don't drag if clicking on buttons or other interactive elements
 		const tagName = e.target.tagName.toUpperCase();
 		if (tagName === "BUTTON" || tagName === "INPUT" || tagName === "A") {
@@ -230,26 +217,27 @@ const Ghost = () => {
 		} catch (err) {
 			console.error("Failed to start drag:", err);
 		}
-	};
+	}, []);
+
+	// Memoize sprite style to avoid object recreation
+	const spriteStyle = useMemo(
+		() => ({
+			"--glow-intensity": `${glowIntensity}px`,
+			"--glow-color":
+				gameState.state === "celebrate"
+					? "var(--celebrate-glow)"
+					: "var(--ghost-glow)",
+		}),
+		[glowIntensity, gameState.state]
+	);
 
 	return (
-		<div
-			className="ghost-container"
-			onMouseEnter={() => setIsHovered(true)}
-			onMouseLeave={() => setIsHovered(false)}
-			onMouseDown={handleDrag}
-		>
+		<div className="ghost-container" onMouseDown={handleDrag}>
 			{/* Ghost Sprite */}
 			<div
 				className={`ghost-sprite state-${gameState.state}`}
 				onClick={handleClick}
-				style={{
-					"--glow-intensity": `${glowIntensity}px`,
-					"--glow-color":
-						gameState.state === "celebrate"
-							? "var(--celebrate-glow)"
-							: "var(--ghost-glow)",
-				}}
+				style={spriteStyle}
 			>
 				<pre className="ascii-art">{sprite}</pre>
 			</div>
@@ -347,8 +335,7 @@ const Ghost = () => {
 
 					{/* Puzzle Counter */}
 					<div className="puzzle-counter">
-						Memory Fragment: {gameState.currentPuzzle + 1}/
-						{puzzles.length || 3}
+						Memory Fragment: {gameState.currentPuzzle + 1}/∞
 					</div>
 				</>
 			)}

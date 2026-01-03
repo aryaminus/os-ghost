@@ -8,6 +8,25 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useState, useEffect, useCallback, useRef } from "react";
 
+/** Debug mode - only log in development */
+const DEBUG_MODE = import.meta.env.DEV;
+
+/**
+ * Conditional debug logger
+ * @param {...any} args - Arguments to log
+ */
+function log(...args) {
+	if (DEBUG_MODE) console.log("[Ghost]", ...args);
+}
+
+/**
+ * Conditional warning logger
+ * @param {...any} args - Arguments to log
+ */
+function warn(...args) {
+	if (DEBUG_MODE) console.warn("[Ghost]", ...args);
+}
+
 /**
  * Ghost state type - idle, thinking, searching, or celebrate
  * @typedef {"idle" | "thinking" | "searching" | "celebrate"} GhostState
@@ -143,14 +162,14 @@ export function useGhostGame() {
 	 */
 
 	const handlePageContent = useCallback(async (payload) => {
-		console.log("[Ghost] handlePageContent received:", payload.url);
+		log(" handlePageContent received:", payload.url);
 		globalLatestContent = payload;
 		latestContentRef.current = payload;
 
 		// If no puzzle is active and API key is configured, generate one!
 		const currentState = gameStateRef.current;
 		if (!currentState.puzzleId && currentState.apiKeyConfigured) {
-			console.log(
+			log(
 				"[Ghost] No active puzzle, triggering generation from content..."
 			);
 			// call triggerDynamicPuzzle but we can't call it directly if it's defined below
@@ -170,7 +189,7 @@ export function useGhostGame() {
 	 * Wrapper to generate puzzle from current context
 	 */
 	const triggerDynamicPuzzle = useCallback(async () => {
-		console.log(
+		log(
 			"[Ghost] Triggering dynamic puzzle. Content ref:",
 			latestContentRef.current
 		);
@@ -178,9 +197,7 @@ export function useGhostGame() {
 		// Simple retry mechanism (waits up to 2 seconds)
 		let attempts = 0;
 		while (!latestContentRef.current && attempts < 10) {
-			console.log(
-				`[Ghost] Content missing, waiting... (${attempts + 1}/10)`
-			);
+			log(`[Ghost] Content missing, waiting... (${attempts + 1}/10)`);
 			await new Promise((r) => setTimeout(r, 200));
 			attempts++;
 		}
@@ -192,7 +209,7 @@ export function useGhostGame() {
 
 			return await generateDynamicPuzzle(url, title, body_text || "");
 		} else {
-			console.warn(
+			warn(
 				"[Ghost] No content available for generation. Ref is null/undefined."
 			);
 			return null;
@@ -216,7 +233,7 @@ export function useGhostGame() {
 				const available = await invoke("check_hint_available");
 				setGameState((prev) => ({ ...prev, hintAvailable: available }));
 			} catch (err) {
-				console.warn("[Ghost] Hint check failed:", err);
+				warn(" Hint check failed:", err);
 			}
 		}, 10000);
 	}, [gameState.puzzleId]);
@@ -241,11 +258,11 @@ export function useGhostGame() {
 		let unlistenConnected = null;
 		let unlistenDisconnected = null;
 
-		console.log("[Ghost] Setting up Tauri event listeners...");
+		log(" Setting up Tauri event listeners...");
 
 		const setupListeners = async () => {
 			unlistenNav = await listen("browser_navigation", (event) => {
-				console.log(
+				log(
 					"[Ghost] Received browser_navigation event:",
 					event.payload
 				);
@@ -255,21 +272,18 @@ export function useGhostGame() {
 			});
 
 			unlistenContent = await listen("page_content", (event) => {
-				console.log(
-					"[Ghost] Received page_content event:",
-					event.payload
-				);
+				log("[Ghost] Received page_content event:", event.payload);
 				handlePageContent(
 					/** @type {PageContentPayload} */ (event.payload)
 				);
 			});
 
-			console.log("[Ghost] Event listeners registered successfully");
+			log(" Event listeners registered successfully");
 
 			// Test if events work by emitting a test event from backend
 			try {
 				const testResult = await invoke("check_api_key");
-				console.log(
+				log(
 					"[Ghost] Backend connection verified, API key configured:",
 					testResult
 				);
@@ -280,14 +294,14 @@ export function useGhostGame() {
 			// Listen for autonomous mode progress events
 			// Listen for extension connection events
 			unlistenConnected = await listen("extension_connected", () => {
-				console.log("[Ghost] Extension connected");
+				log(" Extension connected");
 				setExtensionConnected(true);
 			});
 
 			unlistenDisconnected = await listen(
 				"extension_disconnected",
 				() => {
-					console.log("[Ghost] Extension disconnected");
+					log(" Extension disconnected");
 					setExtensionConnected(false);
 				}
 			);
@@ -353,7 +367,7 @@ export function useGhostGame() {
 
 			// If we already have content (re-mount), trigger generation
 			if (latestContentRef.current && configured) {
-				console.log(
+				log(
 					"[Ghost] Found existing content, triggering initial puzzle..."
 				);
 				triggerDynamicPuzzle();
@@ -368,7 +382,7 @@ export function useGhostGame() {
 	 * Updates game state with next puzzle or shows completion message.
 	 */
 	const advanceToNextPuzzle = useCallback(() => {
-		console.log("[Ghost] Puzzle solved! Preparing next mystery...");
+		log(" Puzzle solved! Preparing next mystery...");
 
 		// For dynamic mode, we clear the current puzzle and request a new one
 		// This creates an infinite loop of procedural puzzles
@@ -388,9 +402,7 @@ export function useGhostGame() {
 		// This makes it feel seamless if the user is still on a page
 		if (latestContentRef.current && triggerPuzzleGenerationRef.current) {
 			setTimeout(() => {
-				console.log(
-					"[Ghost] Auto-triggering next puzzle generation..."
-				);
+				log("[Ghost] Auto-triggering next puzzle generation...");
 				triggerPuzzleGenerationRef.current();
 			}, 2000); // Small delay for effect
 		}
@@ -424,7 +436,7 @@ export function useGhostGame() {
 			if (!currentState.puzzleId) {
 				// We need content to generate a puzzle.
 				// We rely on handlePageContent to trigger generation.
-				console.log("[Ghost] No active puzzle, waiting for content...");
+				log(" No active puzzle, waiting for content...");
 				return;
 			}
 
@@ -505,8 +517,8 @@ export function useGhostGame() {
 	 * @param {string} context - Context string for dialogue generation
 	 * @returns {Promise<string|null>} Generated dialogue or null if failed
 	 */
-	const generateDialogue = async (context) => {
-		if (!gameState.apiKeyConfigured) return null;
+	const generateDialogue = useCallback(async (context) => {
+		if (!gameStateRef.current.apiKeyConfigured) return null;
 
 		try {
 			const dialogue = /** @type {string} */ (
@@ -518,7 +530,7 @@ export function useGhostGame() {
 			console.error("[Ghost] Dialogue generation failed:", err);
 			return null;
 		}
-	};
+	}, []);
 
 	/**
 	 * Set window click-through state.
@@ -538,8 +550,9 @@ export function useGhostGame() {
 	 * Progressive hints unlock at 60s intervals.
 	 * @returns {Promise<void>}
 	 */
-	const showHint = async () => {
-		if (!gameState.hintAvailable) {
+	const showHint = useCallback(async () => {
+		const currentState = gameStateRef.current;
+		if (!currentState.hintAvailable) {
 			setGameState((prev) => ({
 				...prev,
 				dialogue: "Patience... the memories need time to surface.",
@@ -548,9 +561,13 @@ export function useGhostGame() {
 		}
 
 		try {
-			// Get puzzle's hints array
-			const currentPuzzle = puzzles[gameState.currentPuzzle];
-			const hints = currentPuzzle?.hints || [currentPuzzle?.hint];
+			// Get puzzle's hints from state (puzzles array may be empty for dynamic puzzles)
+			const hints =
+				currentState.hints.length > 0
+					? currentState.hints
+					: currentState.hint
+						? [currentState.hint]
+						: [];
 
 			const hint = /** @type {string|null} */ (
 				await invoke("get_next_hint", { hints })
@@ -566,14 +583,14 @@ export function useGhostGame() {
 			console.error("[Ghost] Failed to get hint:", err);
 			setGameState((prev) => ({ ...prev, dialogue: prev.hint }));
 		}
-	};
+	}, []);
 
 	/**
 	 * Reset game progress and start fresh.
 	 * Clears all solved puzzles and discoveries.
 	 * @returns {Promise<void>}
 	 */
-	const resetGame = async () => {
+	const resetGame = useCallback(async () => {
 		try {
 			await invoke("reset_game");
 			await initializeGame();
@@ -585,7 +602,7 @@ export function useGhostGame() {
 		} catch (err) {
 			console.error("[Ghost] Failed to reset game:", err);
 		}
-	};
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	/**
 	 * Generate a dynamic puzzle based on current page content.
@@ -597,7 +614,7 @@ export function useGhostGame() {
 	 */
 	const generateDynamicPuzzle = async (url, title, content) => {
 		if (!gameState.apiKeyConfigured) {
-			console.warn("[Ghost] Cannot generate dynamic puzzle - no API key");
+			warn(" Cannot generate dynamic puzzle - no API key");
 			return null;
 		}
 
@@ -615,7 +632,7 @@ export function useGhostGame() {
 			});
 
 			if (puzzle) {
-				console.log("[Ghost] Generated dynamic puzzle:", puzzle.id);
+				log(" Generated dynamic puzzle:", puzzle.id);
 				setGameState((prev) => ({
 					...prev,
 					puzzleId: puzzle.id, // Use ID from backend (registered puzzle)
@@ -656,20 +673,20 @@ export function useGhostGame() {
 	 */
 	const startBackgroundChecks = useCallback(async () => {
 		const currentState = gameStateRef.current;
-		console.log("[Ghost] startBackgroundChecks called", {
+		log(" startBackgroundChecks called", {
 			hasContent: !!latestContentRef.current,
 			apiKeyConfigured: currentState.apiKeyConfigured,
 		});
 
 		if (!currentState.apiKeyConfigured) {
-			console.warn(
+			warn(
 				"[Ghost] Cannot run background checks: API key not configured"
 			);
 			return;
 		}
 
 		if (!latestContentRef.current) {
-			console.warn(
+			warn(
 				"[Ghost] Cannot run background checks: No page content from extension. Browse a page first."
 			);
 			setGameState((prev) => ({
@@ -707,7 +724,7 @@ export function useGhostGame() {
 					hints_revealed: 0,
 				},
 			});
-			console.log("[Ghost] Background checks completed");
+			log(" Background checks completed");
 		} catch (err) {
 			console.error("[Ghost] Background checks failed:", err);
 			setGameState((prev) => ({
@@ -724,20 +741,20 @@ export function useGhostGame() {
 	 */
 	const enableAutonomousMode = useCallback(async () => {
 		const currentState = gameStateRef.current;
-		console.log("[Ghost] enableAutonomousMode called", {
+		log(" enableAutonomousMode called", {
 			hasContent: !!latestContentRef.current,
 			apiKeyConfigured: currentState.apiKeyConfigured,
 		});
 
 		if (!currentState.apiKeyConfigured) {
-			console.warn(
+			warn(
 				"[Ghost] Cannot enable autonomous mode: API key not configured"
 			);
 			return;
 		}
 
 		if (!latestContentRef.current) {
-			console.warn(
+			warn(
 				"[Ghost] Cannot enable autonomous mode: No page content from extension. Browse a page first."
 			);
 			setGameState((prev) => ({
@@ -775,7 +792,7 @@ export function useGhostGame() {
 					hints_revealed: 0,
 				},
 			});
-			console.log("[Ghost] Autonomous mode enabled");
+			log(" Autonomous mode enabled");
 		} catch (err) {
 			console.error("[Ghost] Autonomous mode failed:", err);
 			setGameState((prev) => ({
