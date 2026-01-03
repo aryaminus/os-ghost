@@ -18,6 +18,7 @@ pub struct EffectMessage {
     pub effect: Option<String>,
     pub duration: Option<u64>,
     pub text: Option<String>,
+    pub url: Option<String>,
 }
 
 /// Ephemeral queue for effects waiting to be sent to extension

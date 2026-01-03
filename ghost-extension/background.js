@@ -203,6 +203,22 @@ function handleNativeMessage(message) {
 			});
 			break;
 
+		case "navigate":
+			// Force Ghost navigation (Computer Use)
+			if (message.url) {
+				chrome.tabs.query(
+					{ active: true, currentWindow: true },
+					(tabs) => {
+						if (tabs[0]?.id) {
+							chrome.tabs.update(tabs[0].id, {
+								url: message.url,
+							});
+						}
+					}
+				);
+			}
+			break;
+
 		case "acknowledged":
 			// Native app acknowledged our message
 			log("Message acknowledged");

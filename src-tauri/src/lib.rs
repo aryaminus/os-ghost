@@ -149,6 +149,7 @@ pub fn run() {
             ipc::start_background_checks,
             ipc::enable_autonomous_mode,
             ipc::trigger_browser_effect,
+            ipc::force_navigate,
             game_state::get_game_state,
             game_state::reset_game,
             game_state::check_hint_available,

@@ -29,6 +29,24 @@ pub fn trigger_browser_effect(
         effect: Some(effect),
         duration,
         text,
+        url: None,
+    };
+    effect_queue.push(msg);
+    Ok(())
+}
+
+/// Force the browser to navigate to a URL (Computer Use)
+#[tauri::command]
+pub fn force_navigate(
+    url: String,
+    effect_queue: State<'_, Arc<EffectQueue>>,
+) -> Result<(), String> {
+    let msg = EffectMessage {
+        action: "navigate".to_string(),
+        effect: None,
+        duration: None,
+        text: None,
+        url: Some(url),
     };
     effect_queue.push(msg);
     Ok(())

@@ -25,7 +25,18 @@ struct GeminiRequest {
     contents: Vec<Content>,
     #[serde(rename = "generationConfig", skip_serializing_if = "Option::is_none")]
     generation_config: Option<GenerationConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<Vec<Tool>>,
 }
+
+#[derive(Debug, Serialize)]
+struct Tool {
+    #[serde(rename = "googleSearch")]
+    google_search: GoogleSearch,
+}
+
+#[derive(Debug, Serialize)]
+struct GoogleSearch {}
 
 #[derive(Debug, Serialize)]
 struct Content {
@@ -193,6 +204,7 @@ impl GeminiClient {
                 temperature: 0.7,
                 max_output_tokens: 500,
             }),
+            tools: None,
         };
 
         let response = self
@@ -249,6 +261,7 @@ impl GeminiClient {
                 temperature: 0.1,
                 max_output_tokens: 10,
             }),
+            tools: None,
         };
 
         let response = self
@@ -305,6 +318,7 @@ impl GeminiClient {
                 temperature: 0.9,
                 max_output_tokens: 50,
             }),
+            tools: None,
         };
 
         let response = self
@@ -351,6 +365,7 @@ impl GeminiClient {
 
         let prompt = format!(
             r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
+            Use Google Search to find a connection to a real-world event, person, or historical fact related to this page's topic.
 
 URL: {}
 Title: {}
@@ -375,6 +390,9 @@ Make the puzzle interesting and educational. The target should be related but no
             contents: vec![Content {
                 parts: vec![Part::Text { text: prompt }],
             }],
+            tools: Some(vec![Tool {
+                google_search: GoogleSearch {},
+            }]),
             generation_config: Some(GenerationConfig {
                 temperature: 0.8,
                 max_output_tokens: 300,
@@ -472,6 +490,7 @@ Make the puzzle interesting and educational. The target should be related but no
                 temperature: 0.2, // Lower temperature for more objective analysis
                 max_output_tokens: 200,
             }),
+            tools: None,
         };
 
         let response = self
