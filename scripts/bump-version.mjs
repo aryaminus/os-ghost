@@ -42,6 +42,14 @@ if (cargoContent.includes(`version = "${currentVersion}"`)) {
 	);
 	fs.writeFileSync(cargoPath, cargoContent);
 	console.log(`Updated src-tauri/Cargo.toml to ${newVersion}`);
+
+	// Update Cargo.lock
+	console.log("Updating Cargo.lock...");
+	execSync("cargo check", { cwd: "src-tauri", stdio: "inherit" });
+
+	// Ensure package-lock.json is synced (although npm version usually handles it, this is a safety net)
+	console.log("Ensuring package-lock.json is synced...");
+	execSync("npm install", { stdio: "inherit" });
 } else {
 	console.warn(
 		"Could not find exact version string in Cargo.toml, skipping update (manual check required?)"

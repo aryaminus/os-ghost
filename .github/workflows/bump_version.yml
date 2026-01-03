@@ -25,6 +25,9 @@ jobs:
               with:
                   node-version: "lts/*"
 
+            - name: Setup Rust
+              uses: dtolnay/rust-toolchain@stable
+
             - name: Configure Git
               run: |
                   git config --global user.name "github-actions[bot]"
@@ -42,7 +45,7 @@ jobs:
 
             - name: Commit and Push
               run: |
-                  git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+                  git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
                   git commit -m "chore(release): bump version to ${{ steps.version.outputs.NEW_VERSION }}"
                   git push origin main
 
