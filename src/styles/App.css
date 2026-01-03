@@ -45,7 +45,7 @@ body {
 	-webkit-font-smoothing: antialiased;
 }
 
-/* Main container - transparent */
+/* Main container - glassmorphism style */
 .app-container {
 	width: 100%;
 	height: 100%;
@@ -53,8 +53,55 @@ body {
 	flex-direction: column;
 	align-items: center;
 	justify-content: flex-start;
-	padding: var(--spacing-md);
-	background: transparent;
+	padding: var(--spacing-sm);
+	background: rgba(0, 0, 0, 0.75);
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+	border-radius: 16px;
+	border: 1px solid rgba(0, 255, 136, 0.3);
+	box-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.4),
+		0 0 20px rgba(0, 255, 136, 0.1),
+		inset 0 1px 0 rgba(255, 255, 255, 0.05);
+	cursor: grab;
+	transition:
+		box-shadow 0.3s ease,
+		border-color 0.3s ease;
+	overflow: hidden;
+}
+
+.app-container:hover {
+	box-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.5),
+		0 0 30px rgba(0, 255, 136, 0.2),
+		inset 0 1px 0 rgba(255, 255, 255, 0.08);
+	border-color: rgba(0, 255, 136, 0.5);
+}
+
+.app-container:active {
+	cursor: grabbing;
+}
+
+/* Resize handle indicator in bottom-right corner */
+.app-container::after {
+	content: "";
+	position: fixed;
+	bottom: 8px;
+	right: 8px;
+	width: 16px;
+	height: 16px;
+	background:
+		linear-gradient(135deg, transparent 50%, rgba(0, 255, 136, 0.3) 50%),
+		linear-gradient(135deg, transparent 60%, rgba(0, 255, 136, 0.2) 60%),
+		linear-gradient(135deg, transparent 70%, rgba(0, 255, 136, 0.1) 70%);
+	cursor: se-resize;
+	pointer-events: none;
+	opacity: 0.6;
+	transition: opacity 0.2s ease;
+}
+
+.app-container:hover::after {
+	opacity: 1;
 }
 
 /* Ghost container */
@@ -62,9 +109,14 @@ body {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: var(--spacing-md);
-	max-width: 380px;
+	gap: 4px;
+	max-width: 300px;
 	width: 100%;
+	cursor: grab;
+}
+
+.ghost-container:active {
+	cursor: grabbing;
 }
 
 /* Ghost sprite (ASCII art) */
@@ -145,8 +197,8 @@ body {
 /* ASCII art styling */
 .ascii-art {
 	font-family: "Courier New", monospace;
-	font-size: 12px;
-	line-height: 1.2;
+	font-size: 10px;
+	line-height: 1.1;
 	color: var(--ghost-green);
 	text-shadow: 0 0 10px var(--ghost-glow);
 	user-select: none;
@@ -193,22 +245,24 @@ body {
 /* Clue box */
 .clue-box {
 	width: 100%;
-	background: var(--box-bg);
+	background: rgba(0, 0, 0, 0.5);
 	border: 1px solid var(--border-color);
-	border-radius: 8px;
-	padding: var(--spacing-md);
+	border-radius: 6px;
+	padding: 6px;
+	max-height: 70px;
+	overflow: hidden;
 }
 
 .clue-header {
-	font-size: 10px;
+	font-size: 9px;
 	color: var(--text-dim);
-	letter-spacing: 2px;
-	margin-bottom: var(--spacing-sm);
+	letter-spacing: 1px;
+	margin-bottom: 4px;
 }
 
 .clue-text {
-	font-size: 13px;
-	line-height: 1.5;
+	font-size: 10px;
+	line-height: 1.3;
 	color: var(--text-secondary);
 }
 
@@ -216,11 +270,28 @@ body {
 .dialogue-box {
 	width: 100%;
 	background: var(--box-bg);
-	border: 2px solid var(--border-color);
-	border-radius: 8px;
-	padding: var(--spacing-md);
-	min-height: 60px;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 8px;
+	max-height: 80px;
+	overflow-y: auto;
+	overflow-x: hidden;
 	position: relative;
+}
+
+/* Custom scrollbar for dialogue box */
+.dialogue-box::-webkit-scrollbar {
+	width: 4px;
+}
+
+.dialogue-box::-webkit-scrollbar-track {
+	background: rgba(0, 0, 0, 0.3);
+	border-radius: 2px;
+}
+
+.dialogue-box::-webkit-scrollbar-thumb {
+	background: var(--ghost-glow);
+	border-radius: 2px;
 }
 
 .dialogue-box.state-celebrate {
@@ -240,8 +311,8 @@ body {
 }
 
 .typewriter-text {
-	font-size: 14px;
-	line-height: 1.4;
+	font-size: 11px;
+	line-height: 1.3;
 }
 
 .cursor {
@@ -255,23 +326,134 @@ body {
 	}
 }
 
+/* Status section for issues */
+.status-section {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: var(--spacing-sm);
+}
+
 /* Warning box */
 .warning-box {
 	width: 100%;
-	background: rgba(255, 100, 0, 0.2);
+	background: rgba(255, 100, 0, 0.15);
 	border: 1px solid rgba(255, 100, 0, 0.5);
-	border-radius: 4px;
-	padding: var(--spacing-sm);
-	font-size: 11px;
+	border-radius: 6px;
+	padding: 8px;
+	font-size: 10px;
 	color: #ffaa00;
 	text-align: center;
 }
 
+/* Connection box */
+.connection-box {
+	width: 100%;
+	background: rgba(255, 107, 107, 0.1);
+	border: 1px solid rgba(255, 107, 107, 0.4);
+	border-radius: 6px;
+	padding: 10px;
+	text-align: center;
+}
+
+.connection-header {
+	color: #ff6b6b;
+	font-size: 11px;
+	margin-bottom: 6px;
+}
+
+.connection-text {
+	font-size: 9px;
+	opacity: 0.8;
+	margin-bottom: 8px;
+}
+
+.install-btn {
+	background: rgba(255, 107, 107, 0.2);
+	border: 1px solid #ff6b6b;
+	color: #ff6b6b;
+	padding: 4px 10px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 10px;
+	transition: background 0.2s ease;
+}
+
+.install-btn:hover {
+	background: rgba(255, 107, 107, 0.3);
+}
+
+/* Action button (Investigate) */
+.action-btn {
+	width: 100%;
+	margin-top: 6px;
+	background: rgba(0, 255, 136, 0.1);
+	border: 1px solid var(--ghost-glow);
+	color: var(--ghost-glow);
+	padding: 8px 12px;
+	cursor: pointer;
+	font-size: 11px;
+	border-radius: 6px;
+	transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+	background: rgba(0, 255, 136, 0.2);
+	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
 /* Puzzle counter */
 .puzzle-counter {
-	font-size: 10px;
+	font-size: 9px;
 	color: var(--text-dim);
 	letter-spacing: 1px;
+	margin-top: 4px;
+}
+
+/* Dev Tools - Only visible in dev mode */
+.dev-tools {
+	width: 100%;
+	margin-top: 10px;
+	padding: 8px;
+	border-top: 1px dashed rgba(0, 255, 136, 0.3);
+	background: rgba(0, 0, 0, 0.3);
+}
+
+.dev-tools-header {
+	font-size: 9px;
+	opacity: 0.6;
+	margin-bottom: 6px;
+	letter-spacing: 1px;
+}
+
+.dev-tools-buttons {
+	display: flex;
+	gap: 4px;
+}
+
+.dev-btn {
+	flex: 1;
+	padding: 4px 6px;
+	font-size: 9px;
+	border-radius: 3px;
+	cursor: pointer;
+	transition: opacity 0.2s ease;
+}
+
+.dev-btn:hover {
+	opacity: 0.8;
+}
+
+.dev-btn.scan {
+	background: rgba(0, 255, 0, 0.1);
+	border: 1px solid var(--warm);
+	color: var(--warm);
+}
+
+.dev-btn.auto {
+	background: rgba(255, 0, 0, 0.1);
+	border: 1px solid var(--hot);
+	color: var(--hot);
 }
 
 /* Glitch effect for special moments */

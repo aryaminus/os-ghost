@@ -15,8 +15,19 @@
 		"core:window:allow-set-size",
 		"core:window:allow-set-title",
 		"core:window:allow-center",
+		"core:window:allow-start-dragging",
 		"opener:default",
 		"shell:allow-open",
+		{
+			"identifier": "shell:allow-execute",
+			"allow": [
+				{
+					"name": "open-chrome-extensions",
+					"cmd": "open",
+					"args": ["-a", "Google Chrome", "chrome://extensions"]
+				}
+			]
+		},
 		"fs:allow-read-text-file",
 		"fs:allow-write-text-file"
 	]

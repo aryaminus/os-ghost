@@ -5,6 +5,8 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Command } from "@tauri-apps/plugin-shell";
 import { useGhostGame } from "../hooks/useTauriCommands";
 
 /**
@@ -190,10 +192,12 @@ const Ghost = () => {
 
 	const [isHovered, setIsHovered] = useState(false);
 
-	// Update window click-through based on hover state
-	useEffect(() => {
-		setClickable(isHovered);
-	}, [isHovered, setClickable]);
+	// Note: Click-through disabled for better UX - window is always clickable
+	// The window stays on top but doesn't block interaction with other apps
+	// To re-enable click-through when not hovering, uncomment:
+	// useEffect(() => {
+	// 	setClickable(isHovered);
+	// }, [isHovered, setClickable]);
 
 	const sprite = GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle;
 	const glowIntensity = Math.min(gameState.proximity * 30 + 5, 40);
@@ -210,11 +214,30 @@ const Ghost = () => {
 		}
 	};
 
+	/**
+	 * Handle drag to move window (Clippy-style).
+	 * Starts window dragging unless the click is on an interactive element.
+	 * @param {React.MouseEvent} e - Mouse event
+	 */
+	const handleDrag = async (e) => {
+		// Don't drag if clicking on buttons or other interactive elements
+		const tagName = e.target.tagName.toUpperCase();
+		if (tagName === "BUTTON" || tagName === "INPUT" || tagName === "A") {
+			return;
+		}
+		try {
+			await invoke("start_window_drag");
+		} catch (err) {
+			console.error("Failed to start drag:", err);
+		}
+	};
+
 	return (
 		<div
 			className="ghost-container"
 			onMouseEnter={() => setIsHovered(true)}
 			onMouseLeave={() => setIsHovered(false)}
+			onMouseDown={handleDrag}
 		>
 			{/* Ghost Sprite */}
 			<div
@@ -231,148 +254,121 @@ const Ghost = () => {
 				<pre className="ascii-art">{sprite}</pre>
 			</div>
 
-			{/* Proximity Indicator */}
+			{/* Proximity Indicator - Always visible */}
 			<ProximityBar proximity={gameState.proximity} />
 
-			{/* Current Clue */}
-			<div className="clue-box">
-				<div className="clue-header">📜 CURRENT MYSTERY</div>
-				<p className="clue-text">
-					{gameState.clue || "Loading puzzle..."}
-				</p>
-			</div>
+			{/* Status Issues Section - Show when there are problems */}
+			{(!gameState.apiKeyConfigured || !extensionConnected) && (
+				<div className="status-section">
+					{/* API Key Warning */}
+					{!gameState.apiKeyConfigured && (
+						<div className="warning-box">
+							⚠️ GEMINI_API_KEY not set. AI features disabled.
+						</div>
+					)}
 
-			{/* Dialogue Box */}
-			{gameState.dialogue && (
-				<div className={`dialogue-box state-${gameState.state}`}>
-					<TypewriterText text={gameState.dialogue} speed={25} />
+					{/* Extension Connection Status */}
+					{!extensionConnected && (
+						<div className="connection-box">
+							<div className="connection-header">
+								🔗 Browser Not Connected
+							</div>
+							<p className="connection-text">
+								Install the Chrome extension to enable browser
+								tracking.
+							</p>
+							<button
+								className="install-btn"
+								onMouseDown={(e) => e.stopPropagation()}
+								onClick={async () => {
+									try {
+										// Use the pre-configured command from capabilities
+										const cmd = Command.create(
+											"open-chrome-extensions"
+										);
+										await cmd.execute();
+									} catch (err) {
+										console.error(
+											"Failed to open Chrome:",
+											err
+										);
+										alert(
+											'To install the extension:\n\n1. Open Chrome and go to: chrome://extensions\n2. Enable "Developer mode"\n3. Click "Load unpacked"\n4. Select the ghost-extension folder'
+										);
+									}
+								}}
+							>
+								📦 Install Extension
+							</button>
+						</div>
+					)}
 				</div>
 			)}
 
-			{/* Extension Connection Status */}
-			{!extensionConnected && (
-				<div
-					className="connection-box"
-					style={{
-						background: "rgba(255, 107, 107, 0.1)",
-						border: "1px solid rgba(255, 107, 107, 0.5)",
-						borderRadius: "8px",
-						padding: "12px",
-						marginBottom: "10px",
-						textAlign: "center",
-					}}
-				>
-					<div style={{ color: "#ff6b6b", marginBottom: "8px" }}>
-						🔗 Browser Not Connected
+			{/* Game UI Section - Only show when everything is ready */}
+			{gameState.apiKeyConfigured && extensionConnected && (
+				<>
+					{/* Current Clue */}
+					<div className="clue-box">
+						<div className="clue-header">📜 CURRENT MYSTERY</div>
+						<p className="clue-text">
+							{gameState.clue ||
+								(gameState.puzzleId
+									? "Loading puzzle..."
+									: "Waiting for signal...")}
+						</p>
 					</div>
-					<p
-						style={{
-							fontSize: "0.8em",
-							opacity: 0.8,
-							marginBottom: "10px",
-						}}
-					>
-						Install the Chrome extension to enable browser tracking.
-					</p>
-					<button
-						onClick={() => {
-							// Open instructions - can't directly open chrome:// from web context
-							alert(
-								'To install the extension:\n\n1. Open Chrome and go to: chrome://extensions\n2. Enable "Developer mode"\n3. Click "Load unpacked"\n4. Select the ghost-extension folder'
-							);
-						}}
-						style={{
-							background: "rgba(255, 107, 107, 0.2)",
-							border: "1px solid #ff6b6b",
-							color: "#ff6b6b",
-							padding: "6px 12px",
-							borderRadius: "4px",
-							cursor: "pointer",
-							fontSize: "0.85em",
-						}}
-					>
-						📦 Install Extension
-					</button>
-				</div>
-			)}
 
-			{/* API Key Warning */}
-			{!gameState.apiKeyConfigured && (
-				<div className="warning-box">
-					⚠️ GEMINI_API_KEY not set. AI features disabled.
-				</div>
-			)}
+					{/* Dialogue Box */}
+					{gameState.dialogue && (
+						<div
+							className={`dialogue-box state-${gameState.state}`}
+						>
+							<TypewriterText
+								text={gameState.dialogue}
+								speed={25}
+							/>
+						</div>
+					)}
 
-			{/* Dynamic Puzzle Trigger */}
-			{gameState.apiKeyConfigured && gameState.state === "idle" && (
-				<button
-					className="dynamic-trigger-btn"
-					onClick={(e) => {
-						e.stopPropagation();
-						// Import dynamically if needed or passed from hook
-						if (window.__triggerDynamic) window.__triggerDynamic();
-					}}
-					style={{
-						marginTop: "10px",
-						background: "rgba(0, 255, 255, 0.1)",
-						border: "1px solid var(--ghost-glow)",
-						color: "var(--ghost-glow)",
-						padding: "5px 10px",
-						cursor: "pointer",
-						fontSize: "0.8em",
-						borderRadius: "4px",
-					}}
-				>
-					🌀 Investigate This Signal
-				</button>
-			)}
-
-			{/* Puzzle Counter */}
-			<div className="puzzle-counter">
-				Memory Fragment: {gameState.currentPuzzle + 1}/
-				{puzzles.length || 3}
-			</div>
-
-			{/* Dev Tools Panel */}
-			{gameState.apiKeyConfigured && (
-				<div
-					className="dev-tools"
-					style={{
-						marginTop: "20px",
-						padding: "10px",
-						borderTop: "1px dashed var(--ghost-glow)",
-						background: "rgba(0,0,0,0.3)",
-						fontSize: "0.7em",
-						display: "flex",
-						gap: "5px",
-						flexDirection: "column",
-					}}
-				>
-					<div style={{ opacity: 0.7 }}>🛠️ DEVELOPER TOOLS</div>
-					<div style={{ display: "flex", gap: "5px" }}>
+					{/* Dynamic Puzzle Trigger */}
+					{gameState.state === "idle" && (
 						<button
-							onClick={startBackgroundChecks}
-							style={{
-								flex: 1,
-								background: "rgba(0, 255, 0, 0.1)",
-								border: "1px solid var(--warm)",
-								color: "var(--warm)",
-								padding: "4px",
-								cursor: "pointer",
+							className="action-btn"
+							onMouseDown={(e) => e.stopPropagation()}
+							onClick={(e) => {
+								e.stopPropagation();
+								triggerDynamicPuzzle();
 							}}
 						>
-							Scan Background
+							🌀 Investigate This Signal
+						</button>
+					)}
+
+					{/* Puzzle Counter */}
+					<div className="puzzle-counter">
+						Memory Fragment: {gameState.currentPuzzle + 1}/
+						{puzzles.length || 3}
+					</div>
+				</>
+			)}
+
+			{/* Dev Tools Panel - Only visible in development mode */}
+			{import.meta.env.DEV && gameState.apiKeyConfigured && (
+				<div className="dev-tools">
+					<div className="dev-tools-header">🛠️ DEV TOOLS</div>
+					<div className="dev-tools-buttons">
+						<button
+							onMouseDown={(e) => e.stopPropagation()}
+							onClick={startBackgroundChecks}
+							className="dev-btn scan"
+						>
+							Scan BG
 						</button>
 						<button
+							onMouseDown={(e) => e.stopPropagation()}
 							onClick={enableAutonomousMode}
-							style={{
-								flex: 1,
-								background: "rgba(255, 0, 0, 0.1)",
-								border: "1px solid var(--hot)",
-								color: "var(--hot)",
-								padding: "4px",
-								cursor: "pointer",
-							}}
+							className="dev-btn auto"
 						>
 							Auto Mode
 						</button>

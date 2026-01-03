@@ -75,6 +75,31 @@ impl GhostWindow {
         self.window.set_ignore_cursor_events(ignore)?;
         Ok(())
     }
+
+    /// Position window in bottom-right corner of primary monitor
+    pub fn position_bottom_right(&self) -> Result<()> {
+        if let Ok(Some(monitor)) = self.window.primary_monitor() {
+            let monitor_size = monitor.size();
+            let scale = monitor.scale_factor();
+
+            if let Ok(window_size) = self.window.outer_size() {
+                // Calculate position with padding from edges
+                let padding_x = 20.0;
+                let padding_y = 40.0; // Extra padding for taskbar/dock
+
+                let x = (monitor_size.width as f64 / scale)
+                    - (window_size.width as f64 / scale)
+                    - padding_x;
+                let y = (monitor_size.height as f64 / scale)
+                    - (window_size.height as f64 / scale)
+                    - padding_y;
+
+                self.window
+                    .set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)))?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Tauri command to toggle click-through
@@ -84,4 +109,10 @@ pub fn set_window_clickable(window: Window, clickable: bool) -> Result<(), Strin
     ghost_window
         .set_ignore_cursor_events(!clickable)
         .map_err(|e| e.to_string())
+}
+
+/// Tauri command to start dragging the window
+#[tauri::command]
+pub fn start_window_drag(window: Window) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
 }

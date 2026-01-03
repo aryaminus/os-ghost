@@ -14,15 +14,20 @@
 			{
 				"title": "The OS Ghost",
 				"label": "main",
-				"width": 400,
-				"height": 600,
+				"width": 320,
+				"height": 480,
+				"minWidth": 280,
+				"minHeight": 300,
+				"maxWidth": 500,
+				"maxHeight": 700,
 				"transparent": true,
 				"decorations": false,
 				"alwaysOnTop": true,
-				"skipTaskbar": true,
-				"resizable": false,
+				"skipTaskbar": false,
+				"resizable": true,
 				"visible": true,
-				"center": true
+				"x": null,
+				"y": null
 			}
 		],
 		"security": {

@@ -72,9 +72,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
-            // Load puzzles
-            let puzzles = default_puzzles();
-            tracing::info!("Loaded {} puzzles", puzzles.len());
+            // Load puzzles (wrapped in RwLock for dynamic puzzle registration)
+            let puzzles = std::sync::RwLock::new(default_puzzles());
+            tracing::info!(
+                "Loaded {} puzzles",
+                puzzles.read().map(|p| p.len()).unwrap_or(0)
+            );
             app.manage(puzzles);
 
             // Initialize Gemini client
@@ -105,6 +108,12 @@ pub fn run() {
                 } else {
                     tracing::info!("Ghost window configured");
                 }
+                // Position window in bottom-right corner (Clippy-style)
+                if let Err(e) = ghost_window.position_bottom_right() {
+                    tracing::error!("Failed to position window: {}", e);
+                } else {
+                    tracing::info!("Window positioned in bottom-right corner");
+                }
             }
 
             // Start Native Messaging bridge for Chrome extension
@@ -117,6 +126,7 @@ pub fn run() {
             capture::capture_screen,
             history::get_recent_history,
             window::set_window_clickable,
+            window::start_window_drag,
             ipc::capture_and_analyze,
             ipc::get_browsing_history,
             ipc::validate_puzzle,

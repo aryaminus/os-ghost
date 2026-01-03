@@ -69,8 +69,9 @@ pub async fn get_browsing_history(limit: usize) -> Result<Vec<HistoryEntry>, Str
 pub async fn validate_puzzle(
     url: String,
     puzzle_id: String,
-    puzzles: State<'_, Vec<Puzzle>>,
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<bool, String> {
+    let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
     let puzzle = puzzles
         .iter()
         .find(|p| p.id == puzzle_id)
@@ -89,16 +90,20 @@ pub async fn calculate_proximity(
     current_url: String,
     puzzle_id: String,
     gemini: State<'_, Arc<GeminiClient>>,
-    puzzles: State<'_, Vec<Puzzle>>,
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<f32, String> {
-    let puzzle = puzzles
-        .iter()
-        .find(|p| p.id == puzzle_id)
-        .ok_or_else(|| format!("Puzzle {} not found", puzzle_id))?;
+    let target_description = {
+        let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
+        let puzzle = puzzles
+            .iter()
+            .find(|p| p.id == puzzle_id)
+            .ok_or_else(|| format!("Puzzle {} not found", puzzle_id))?;
+        puzzle.target_description.clone()
+    };
 
     // Use AI to calculate semantic similarity
     gemini
-        .calculate_url_similarity(&current_url, &puzzle.target_description)
+        .calculate_url_similarity(&current_url, &target_description)
         .await
         .map_err(|e| format!("Proximity calculation failed: {}", e))
 }
@@ -121,7 +126,11 @@ pub async fn generate_ghost_dialogue(
 
 /// Get current puzzle info
 #[tauri::command]
-pub fn get_puzzle(puzzle_id: String, puzzles: State<'_, Vec<Puzzle>>) -> Result<Puzzle, String> {
+pub fn get_puzzle(
+    puzzle_id: String,
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
+) -> Result<Puzzle, String> {
+    let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
     puzzles
         .iter()
         .find(|p| p.id == puzzle_id)
@@ -131,8 +140,11 @@ pub fn get_puzzle(puzzle_id: String, puzzles: State<'_, Vec<Puzzle>>) -> Result<
 
 /// Get all available puzzles
 #[tauri::command]
-pub fn get_all_puzzles(puzzles: State<'_, Vec<Puzzle>>) -> Vec<Puzzle> {
-    puzzles.iter().cloned().collect()
+pub fn get_all_puzzles(
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
+) -> Result<Vec<Puzzle>, String> {
+    let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
+    Ok(puzzles.iter().cloned().collect())
 }
 
 /// Check if API key is configured
@@ -141,21 +153,80 @@ pub fn check_api_key() -> Result<bool, String> {
     Ok(std::env::var("GEMINI_API_KEY").is_ok())
 }
 
-/// Generate a dynamic puzzle based on current page context
+/// Generated puzzle with ID for frontend
+#[derive(Debug, Serialize, Clone)]
+pub struct GeneratedPuzzle {
+    pub id: String,
+    pub clue: String,
+    pub hint: String,
+    pub hints: Vec<String>,
+    pub target_url_pattern: String,
+    pub target_description: String,
+}
+
+/// Generate a dynamic puzzle based on current page context AND register it
 #[tauri::command]
 pub async fn generate_dynamic_puzzle(
     url: String,
     title: String,
     content: String,
     gemini: State<'_, Arc<GeminiClient>>,
-) -> Result<crate::ai_client::DynamicPuzzle, String> {
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
+) -> Result<GeneratedPuzzle, String> {
     let redacted_url = crate::privacy::redact_pii(&url);
     let redacted_content = crate::privacy::redact_pii(&content);
 
-    gemini
+    let dynamic = gemini
         .generate_dynamic_puzzle(&redacted_url, &title, &redacted_content)
         .await
-        .map_err(|e| format!("Failed to generate puzzle: {}", e))
+        .map_err(|e| format!("Failed to generate puzzle: {}", e))?;
+
+    // Generate unique ID
+    let id = format!(
+        "dynamic_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+
+    // Create puzzle struct
+    let puzzle = Puzzle {
+        id: id.clone(),
+        clue: dynamic.clue.clone(),
+        hint: dynamic.hints.first().cloned().unwrap_or_default(),
+        target_url_pattern: dynamic.target_url_pattern.clone(),
+        target_description: dynamic.target_description.clone(),
+    };
+
+    // Register in backend storage
+    {
+        let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
+        // Count dynamic puzzles before cleanup
+        let dynamic_count = puzzles
+            .iter()
+            .filter(|p| p.id.starts_with("dynamic_"))
+            .count();
+        // Remove oldest dynamic puzzles to prevent buildup (keep max 5)
+        if dynamic_count >= 5 {
+            puzzles.retain(|p| !p.id.starts_with("dynamic_"));
+        }
+        puzzles.push(puzzle);
+        tracing::info!(
+            "Registered dynamic puzzle: {} (total puzzles: {})",
+            id,
+            puzzles.len()
+        );
+    }
+
+    Ok(GeneratedPuzzle {
+        id,
+        clue: dynamic.clue,
+        hint: dynamic.hints.first().cloned().unwrap_or_default(),
+        hints: dynamic.hints,
+        target_url_pattern: dynamic.target_url_pattern,
+        target_description: dynamic.target_description,
+    })
 }
 
 /// Helper struct for frontend context
@@ -176,7 +247,7 @@ pub struct PageContext {
 pub async fn process_agent_cycle(
     context: PageContext,
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
-    puzzles: State<'_, Vec<Puzzle>>,
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<crate::agents::orchestrator::OrchestrationResult, String> {
     tracing::info!(
         "Starting agent cycle for puzzle '{}' at URL: {}",
@@ -185,13 +256,17 @@ pub async fn process_agent_cycle(
     );
 
     // Lookup puzzle to get target_pattern
-    let puzzle = puzzles
-        .iter()
-        .find(|p| p.id == context.puzzle_id)
-        .ok_or_else(|| {
-            tracing::warn!("Puzzle '{}' not found in puzzle list", context.puzzle_id);
-            format!("Puzzle {} not found", context.puzzle_id)
-        })?;
+    let target_url_pattern = {
+        let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
+        let puzzle = puzzles
+            .iter()
+            .find(|p| p.id == context.puzzle_id)
+            .ok_or_else(|| {
+                tracing::warn!("Puzzle '{}' not found in puzzle list", context.puzzle_id);
+                format!("Puzzle {} not found", context.puzzle_id)
+            })?;
+        puzzle.target_url_pattern.clone()
+    };
 
     // Record URL visit for session tracking
     if let Err(e) = orchestrator.record_url(&context.url) {
@@ -205,7 +280,7 @@ pub async fn process_agent_cycle(
         page_content: context.content,
         puzzle_id: context.puzzle_id,
         puzzle_clue: context.puzzle_clue,
-        target_pattern: puzzle.target_url_pattern.clone(),
+        target_pattern: target_url_pattern,
         hints: context.hints,
         hints_revealed: context.hints_revealed,
         proximity: 0.0,                       // start fresh
@@ -215,13 +290,10 @@ pub async fn process_agent_cycle(
 
     // Run pipeline
     tracing::debug!("Running orchestrator pipeline...");
-    let result = orchestrator
-        .process(&agent_context)
-        .await
-        .map_err(|e| {
-            tracing::error!("Agent cycle failed: {}", e);
-            format!("Agent cycle failed: {}", e)
-        })?;
+    let result = orchestrator.process(&agent_context).await.map_err(|e| {
+        tracing::error!("Agent cycle failed: {}", e);
+        format!("Agent cycle failed: {}", e)
+    })?;
 
     tracing::info!(
         "Agent cycle completed: proximity={}, solved={}, state={}",
@@ -238,13 +310,17 @@ pub async fn process_agent_cycle(
 pub async fn start_background_checks(
     context: PageContext,
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
-    puzzles: State<'_, Vec<Puzzle>>,
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<String, String> {
     // Lookup pattern
-    let puzzle = puzzles
-        .iter()
-        .find(|p| p.id == context.puzzle_id)
-        .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
+    let target_url_pattern = {
+        let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
+        let puzzle = puzzles
+            .iter()
+            .find(|p| p.id == context.puzzle_id)
+            .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
+        puzzle.target_url_pattern.clone()
+    };
 
     let agent_context = crate::agents::traits::AgentContext {
         current_url: context.url,
@@ -252,7 +328,7 @@ pub async fn start_background_checks(
         page_content: context.content,
         puzzle_id: context.puzzle_id,
         puzzle_clue: context.puzzle_clue,
-        target_pattern: puzzle.target_url_pattern.clone(),
+        target_pattern: target_url_pattern,
         hints: context.hints,
         hints_revealed: context.hints_revealed,
         proximity: 0.0,
@@ -284,13 +360,17 @@ pub async fn enable_autonomous_mode(
     context: PageContext,
     app_handle: tauri::AppHandle,
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
-    puzzles: State<'_, Vec<Puzzle>>,
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<String, String> {
     // Lookup pattern
-    let puzzle = puzzles
-        .iter()
-        .find(|p| p.id == context.puzzle_id)
-        .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
+    let target_url_pattern = {
+        let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
+        let puzzle = puzzles
+            .iter()
+            .find(|p| p.id == context.puzzle_id)
+            .ok_or_else(|| format!("Puzzle {} not found", context.puzzle_id))?;
+        puzzle.target_url_pattern.clone()
+    };
 
     let agent_context = crate::agents::traits::AgentContext {
         current_url: context.url,
@@ -298,7 +378,7 @@ pub async fn enable_autonomous_mode(
         page_content: context.content,
         puzzle_id: context.puzzle_id,
         puzzle_clue: context.puzzle_clue,
-        target_pattern: puzzle.target_url_pattern.clone(),
+        target_pattern: target_url_pattern,
         hints: context.hints,
         hints_revealed: context.hints_revealed,
         proximity: 0.0,
