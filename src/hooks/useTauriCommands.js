@@ -149,6 +149,25 @@ export function useGhostGame() {
 	/** @type {React.MutableRefObject<GameState>} */
 	const gameStateRef = useRef(gameState);
 
+	/**
+	 * Trigger a visual effect in the browser.
+	 * @param {string} effect - Effect name (glitch, scanlines, static, flash, start_trail, stop_trail)
+	 * @param {number} [duration] - Effect duration in ms
+	 * @param {string} [text] - Optional text to highlight
+	 * @returns {Promise<void>}
+	 */
+	const triggerBrowserEffect = useCallback(async (effect, duration, text) => {
+		try {
+			await invoke("trigger_browser_effect", {
+				effect,
+				duration,
+				text,
+			});
+		} catch (err) {
+			console.error("[Ghost] Failed to trigger effect:", err);
+		}
+	}, []);
+
 	// Manage Ghost Trail effect based on state
 	useEffect(() => {
 		if (gameState.state === "searching" || gameState.state === "thinking") {

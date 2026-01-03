@@ -17,6 +17,7 @@ pub mod memory;
 pub mod workflow;
 
 use ai_client::GeminiClient;
+use game_state::EffectQueue;
 use ipc::Puzzle;
 use std::sync::Arc;
 use tauri::Manager;
@@ -108,6 +109,9 @@ pub fn run() {
                 }
                 Err(e) => tracing::error!("Failed to initialize orchestrator: {}", e),
             }
+
+            // Initialize EffectQueue for browser visual effects
+            app.manage(Arc::new(EffectQueue::default()));
 
             // Setup Ghost window
             if let Some(window) = app.get_webview_window("main") {
