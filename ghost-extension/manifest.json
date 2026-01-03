@@ -3,8 +3,23 @@
 	"name": "OS Ghost Bridge",
 	"version": "1.0.0",
 	"description": "Bridge between Chrome browser and The OS Ghost game",
-	"permissions": ["activeTab", "tabs", "nativeMessaging", "scripting"],
+	"permissions": [
+		"activeTab",
+		"tabs",
+		"nativeMessaging",
+		"scripting",
+		"storage"
+	],
 	"host_permissions": ["<all_urls>"],
+	"action": {
+		"default_popup": "popup.html",
+		"default_icon": {
+			"16": "icons/icon16.png",
+			"48": "icons/icon48.png",
+			"128": "icons/icon128.png"
+		},
+		"default_title": "OS Ghost"
+	},
 	"background": {
 		"service_worker": "background.js"
 	},
@@ -14,5 +29,10 @@
 			"js": ["content.js"],
 			"run_at": "document_idle"
 		}
-	]
+	],
+	"icons": {
+		"16": "icons/icon16.png",
+		"48": "icons/icon48.png",
+		"128": "icons/icon128.png"
+	}
 }

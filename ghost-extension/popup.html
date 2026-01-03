@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="UTF-8" />
+		<title>OS Ghost</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			body {
+				width: 280px;
+				padding: 16px;
+				font-family:
+					-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+					sans-serif;
+				background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+				color: #e0e0e0;
+			}
+
+			.header {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				margin-bottom: 16px;
+			}
+
+			.ghost-icon {
+				font-size: 32px;
+				filter: drop-shadow(0 0 8px rgba(0, 255, 136, 0.5));
+			}
+
+			h1 {
+				font-size: 18px;
+				font-weight: 600;
+				color: #00ff88;
+			}
+
+			.status {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 12px;
+				border-radius: 8px;
+				margin-bottom: 12px;
+			}
+
+			.status.connected {
+				background: rgba(0, 255, 136, 0.1);
+				border: 1px solid rgba(0, 255, 136, 0.3);
+			}
+
+			.status.disconnected {
+				background: rgba(255, 107, 107, 0.1);
+				border: 1px solid rgba(255, 107, 107, 0.3);
+			}
+
+			.status-dot {
+				width: 10px;
+				height: 10px;
+				border-radius: 50%;
+			}
+
+			.status.connected .status-dot {
+				background: #00ff88;
+				box-shadow: 0 0 8px #00ff88;
+				animation: pulse 2s infinite;
+			}
+
+			.status.disconnected .status-dot {
+				background: #ff6b6b;
+			}
+
+			@keyframes pulse {
+				0%,
+				100% {
+					opacity: 1;
+				}
+				50% {
+					opacity: 0.5;
+				}
+			}
+
+			.status-text {
+				font-size: 13px;
+			}
+
+			.status.connected .status-text {
+				color: #00ff88;
+			}
+
+			.status.disconnected .status-text {
+				color: #ff6b6b;
+			}
+
+			.message {
+				font-size: 12px;
+				color: #888;
+				margin-bottom: 12px;
+				line-height: 1.4;
+			}
+
+			.btn {
+				width: 100%;
+				padding: 10px 16px;
+				border: none;
+				border-radius: 6px;
+				font-size: 13px;
+				font-weight: 500;
+				cursor: pointer;
+				transition: all 0.2s;
+				text-decoration: none;
+				display: block;
+				text-align: center;
+			}
+
+			.btn-primary {
+				background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
+				color: #1a1a2e;
+			}
+
+			.btn-primary:hover {
+				transform: translateY(-1px);
+				box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+			}
+
+			.btn-secondary {
+				background: rgba(255, 255, 255, 0.1);
+				color: #e0e0e0;
+				margin-top: 8px;
+			}
+
+			.btn-secondary:hover {
+				background: rgba(255, 255, 255, 0.15);
+			}
+
+			.hidden {
+				display: none !important;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="header">
+			<span class="ghost-icon">👻</span>
+			<h1>OS Ghost</h1>
+		</div>
+
+		<div id="status-connected" class="status connected hidden">
+			<div class="status-dot"></div>
+			<span class="status-text">App Connected</span>
+		</div>
+
+		<div id="status-disconnected" class="status disconnected hidden">
+			<div class="status-dot"></div>
+			<span class="status-text">App Not Connected</span>
+		</div>
+
+		<p id="message-connected" class="message hidden">
+			The Ghost is watching your browser. Navigate to solve puzzles!
+		</p>
+
+		<p id="message-disconnected" class="message hidden">
+			The OS Ghost app needs to be running for the game to work.
+		</p>
+
+		<a
+			id="btn-download"
+			href="https://github.com/aryaminus/os-ghost/releases"
+			target="_blank"
+			class="btn btn-primary hidden"
+		>
+			Download App
+		</a>
+
+		<a
+			id="btn-help"
+			href="https://github.com/aryaminus/os-ghost#readme"
+			target="_blank"
+			class="btn btn-secondary"
+		>
+			How to Play
+		</a>
+
+		<script src="popup.js"></script>
+	</body>
+</html>

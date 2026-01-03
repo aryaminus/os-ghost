@@ -171,6 +171,7 @@ const Ghost = () => {
 	const {
 		gameState,
 		puzzles,
+		extensionConnected,
 		setClickable,
 		showHint,
 		captureAndAnalyze,
@@ -245,6 +246,53 @@ const Ghost = () => {
 			{gameState.dialogue && (
 				<div className={`dialogue-box state-${gameState.state}`}>
 					<TypewriterText text={gameState.dialogue} speed={25} />
+				</div>
+			)}
+
+			{/* Extension Connection Status */}
+			{!extensionConnected && (
+				<div
+					className="connection-box"
+					style={{
+						background: "rgba(255, 107, 107, 0.1)",
+						border: "1px solid rgba(255, 107, 107, 0.5)",
+						borderRadius: "8px",
+						padding: "12px",
+						marginBottom: "10px",
+						textAlign: "center",
+					}}
+				>
+					<div style={{ color: "#ff6b6b", marginBottom: "8px" }}>
+						🔗 Browser Not Connected
+					</div>
+					<p
+						style={{
+							fontSize: "0.8em",
+							opacity: 0.8,
+							marginBottom: "10px",
+						}}
+					>
+						Install the Chrome extension to enable browser tracking.
+					</p>
+					<button
+						onClick={() => {
+							// Open instructions - can't directly open chrome:// from web context
+							alert(
+								'To install the extension:\n\n1. Open Chrome and go to: chrome://extensions\n2. Enable "Developer mode"\n3. Click "Load unpacked"\n4. Select the ghost-extension folder'
+							);
+						}}
+						style={{
+							background: "rgba(255, 107, 107, 0.2)",
+							border: "1px solid #ff6b6b",
+							color: "#ff6b6b",
+							padding: "6px 12px",
+							borderRadius: "4px",
+							cursor: "pointer",
+							fontSize: "0.85em",
+						}}
+					>
+						📦 Install Extension
+					</button>
 				</div>
 			)}
 

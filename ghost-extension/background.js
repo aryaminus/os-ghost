@@ -37,31 +37,42 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 /**
+ * Update connection status in storage for popup
+ * @param {boolean} connected
+ */
+function updateConnectionStatus(connected) {
+	isConnected = connected;
+	chrome.storage.local.set({ appConnected: connected });
+}
+
+/**
  * Helper to fetch and send content for a specific tab
  * @param {chrome.tabs.Tab} tab
  */
 function fetchContentForTab(tab) {
+	// Skip non-http URLs (chrome://, about:, etc.)
 	if (!tab?.id || !tab?.url || !tab.url.startsWith("http")) return;
 
-	chrome.tabs.sendMessage(tab.id, { type: "get_content" }, (response) => {
-		// Check for runtime error (e.g. content script not ready)
-		if (chrome.runtime.lastError) {
-			console.log(
-				"[OS Ghost] Content script not ready:",
-				chrome.runtime.lastError.message
-			);
-			return;
-		}
+	try {
+		chrome.tabs.sendMessage(tab.id, { type: "get_content" }, (response) => {
+			// Check for runtime error (e.g. content script not ready or restricted)
+			if (chrome.runtime.lastError) {
+				// Suppress expected errors on restricted pages
+				return;
+			}
 
-		if (response?.bodyText) {
-			sendToNative({
-				type: "page_content",
-				url: tab.url,
-				body_text: response.bodyText.slice(0, 5000),
-				timestamp: Date.now(),
-			});
-		}
-	});
+			if (response?.bodyText) {
+				sendToNative({
+					type: "page_content",
+					url: tab.url,
+					body_text: response.bodyText.slice(0, 5000),
+					timestamp: Date.now(),
+				});
+			}
+		});
+	} catch (e) {
+		// Silently fail for restricted tabs
+	}
 }
 
 /**
@@ -72,13 +83,14 @@ function fetchContentForTab(tab) {
 function connectToNative() {
 	if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
 		console.error("[OS Ghost] Max reconnect attempts reached");
+		updateConnectionStatus(false);
 		return;
 	}
 
 	try {
 		port = chrome.runtime.connectNative(NATIVE_HOST);
 		console.log("[OS Ghost] Connected to native host");
-		isConnected = true;
+		updateConnectionStatus(true);
 		reconnectAttempts = 0;
 
 		// Fetch content immediately upon connection
@@ -91,7 +103,7 @@ function connectToNative() {
 		port.onMessage.addListener(handleNativeMessage);
 
 		port.onDisconnect.addListener(() => {
-			isConnected = false;
+			updateConnectionStatus(false);
 			const error = chrome.runtime.lastError;
 			if (error) {
 				console.error(
@@ -111,44 +123,10 @@ function connectToNative() {
 		});
 	} catch (error) {
 		console.error("[OS Ghost] Failed to connect:", error);
-		isConnected = false;
+		updateConnectionStatus(false);
 	}
 }
 
-// ... (handleNativeMessage and sendToNative remain unchanged)
-
-// Listen for tab updates (page loads)
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-	if (changeInfo.status === "complete" && tab.url) {
-		// Send page load event to native app
-		sendToNative({
-			type: "page_load",
-			url: tab.url,
-			title: tab.title || "",
-			timestamp: Date.now(),
-		});
-
-		// Also fetch page content for deeper analysis
-		fetchContentForTab(tab);
-	}
-});
-
-// Listen for tab activation (switching tabs)
-chrome.tabs.onActivated.addListener((activeInfo) => {
-	chrome.tabs.get(activeInfo.tabId, (tab) => {
-		if (tab?.url) {
-			sendToNative({
-				type: "tab_changed",
-				url: tab.url,
-				title: tab.title || "",
-				timestamp: Date.now(),
-			});
-
-			// Fetch content on tab switch too
-			fetchContentForTab(tab);
-		}
-	});
-});
 /**
  * Handle messages from native app.
  * Routes commands to appropriate content script handlers.
@@ -225,7 +203,7 @@ function sendToNative(message) {
 			console.log("[OS Ghost] Sent to native:", message);
 		} catch (error) {
 			console.error("[OS Ghost] Failed to send:", error);
-			isConnected = false;
+			updateConnectionStatus(false);
 		}
 	} else {
 		console.warn("[OS Ghost] Not connected to native host");
@@ -245,16 +223,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 		});
 
 		// Also fetch page content for deeper analysis
-		chrome.tabs.sendMessage(tabId, { type: "get_content" }, (response) => {
-			if (response?.bodyText) {
-				sendToNative({
-					type: "page_content",
-					url: tab.url,
-					body_text: response.bodyText.slice(0, 5000),
-					timestamp: Date.now(),
-				});
-			}
-		});
+		fetchContentForTab(tab);
 	}
 });
 
@@ -268,6 +237,9 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 				title: tab.title || "",
 				timestamp: Date.now(),
 			});
+
+			// Fetch content on tab switch too
+			fetchContentForTab(tab);
 		}
 	});
 });
@@ -286,5 +258,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Initialize connection on startup
+updateConnectionStatus(false); // Start as disconnected
 connectToNative();
 console.log("[OS Ghost] Background service worker initialized");

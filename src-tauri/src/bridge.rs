@@ -31,6 +31,12 @@ pub struct NativeResponse {
 fn handle_client(mut stream: TcpStream, app: &AppHandle) {
     tracing::info!("Native bridge connected from {:?}", stream.peer_addr());
 
+    // Emit connection event to frontend
+    let _ = app.emit(
+        "extension_connected",
+        serde_json::json!({ "connected": true }),
+    );
+
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(30)))
         .ok();
@@ -111,6 +117,11 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
         }
     }
 
+    // Emit disconnection event to frontend
+    let _ = app.emit(
+        "extension_disconnected",
+        serde_json::json!({ "connected": false }),
+    );
     tracing::info!("Native bridge disconnected");
 }
 

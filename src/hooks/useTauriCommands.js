@@ -122,6 +122,7 @@ export function useGhostGame() {
 	const [isLoading, setIsLoading] = useState(false);
 	/** @type {[string|null, function(string|null): void]} */
 	const [error, setError] = useState(null);
+	const [extensionConnected, setExtensionConnected] = useState(false);
 	/** @type {React.MutableRefObject<NodeJS.Timeout|null>} */
 	const hintTimerRef = useRef(null);
 	/** @type {React.MutableRefObject<PageContentPayload|null>} */
@@ -251,6 +252,23 @@ export function useGhostGame() {
 			}
 
 			// Listen for autonomous mode progress events
+			// Listen for extension connection events
+			const unlistenConnected = await listen(
+				"extension_connected",
+				() => {
+					console.log("[Ghost] Extension connected");
+					setExtensionConnected(true);
+				}
+			);
+
+			const unlistenDisconnected = await listen(
+				"extension_disconnected",
+				() => {
+					console.log("[Ghost] Extension disconnected");
+					setExtensionConnected(false);
+				}
+			);
+
 			unlistenAutonomous = await listen(
 				"autonomous_progress",
 				(event) => {
@@ -283,6 +301,8 @@ export function useGhostGame() {
 			if (unlistenNav) unlistenNav();
 			if (unlistenContent) unlistenContent();
 			if (unlistenAutonomous) unlistenAutonomous();
+			if (unlistenConnected) unlistenConnected();
+			if (unlistenDisconnected) unlistenDisconnected();
 		};
 	}, [handlePageContent]); // Only handlePageContent is stable (empty deps useCallback)
 
@@ -662,6 +682,7 @@ export function useGhostGame() {
 		puzzles,
 		isLoading,
 		error,
+		extensionConnected,
 		captureAndAnalyze,
 		generateDialogue,
 		setClickable,
