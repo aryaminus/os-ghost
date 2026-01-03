@@ -19,18 +19,25 @@ impl VerifierAgent {
         }
     }
 
-    /// Validate URL against pattern
+    /// Validate URL against pattern (case-insensitive)
     fn validate_url(&self, url: &str, pattern: &str) -> AgentResult<bool> {
+        // Make pattern case-insensitive by prepending (?i) if not already
+        let case_insensitive_pattern = if pattern.starts_with("(?i)") {
+            pattern.to_string()
+        } else {
+            format!("(?i){}", pattern)
+        };
+
         // Check cache first
         {
             let cache = self.pattern_cache.read().unwrap();
-            if let Some(regex) = cache.get(pattern) {
+            if let Some(regex) = cache.get(&case_insensitive_pattern) {
                 return Ok(regex.is_match(url));
             }
         }
 
         // Compile and cache the pattern
-        let regex = Regex::new(pattern)
+        let regex = Regex::new(&case_insensitive_pattern)
             .map_err(|e| AgentError::ConfigError(format!("Invalid pattern: {}", e)))?;
 
         let matches = regex.is_match(url);
@@ -38,7 +45,7 @@ impl VerifierAgent {
         // Cache for future use
         {
             let mut cache = self.pattern_cache.write().unwrap();
-            cache.insert(pattern.to_string(), regex);
+            cache.insert(case_insensitive_pattern, regex);
         }
 
         Ok(matches)

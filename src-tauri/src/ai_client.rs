@@ -4,10 +4,20 @@
 use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Rate limiting configuration
+const MAX_REQUESTS_PER_MINUTE: u64 = 10;
+const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
 pub struct GeminiClient {
     client: Client,
     api_key: String,
+    /// Timestamp of window start (seconds since epoch)
+    rate_limit_window_start: AtomicU64,
+    /// Request count in current window
+    request_count: AtomicU64,
 }
 
 #[derive(Debug, Serialize)]
@@ -70,9 +80,47 @@ struct GeminiError {
 
 impl GeminiClient {
     pub fn new(api_key: String) -> Self {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         Self {
             client: Client::new(),
             api_key,
+            rate_limit_window_start: AtomicU64::new(now),
+            request_count: AtomicU64::new(0),
+        }
+    }
+
+    /// Check and update rate limit, returns true if request is allowed
+    fn check_rate_limit(&self) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let window_start = self.rate_limit_window_start.load(Ordering::Relaxed);
+
+        // If window has expired, reset
+        if now - window_start >= RATE_LIMIT_WINDOW_SECS {
+            self.rate_limit_window_start.store(now, Ordering::Relaxed);
+            self.request_count.store(1, Ordering::Relaxed);
+            return true;
+        }
+
+        // Check if under limit
+        let count = self.request_count.fetch_add(1, Ordering::Relaxed);
+        if count < MAX_REQUESTS_PER_MINUTE {
+            true
+        } else {
+            // Revert the increment since we're rejecting
+            self.request_count.fetch_sub(1, Ordering::Relaxed);
+            tracing::warn!(
+                "Rate limit exceeded: {} requests in {} seconds",
+                count,
+                now - window_start
+            );
+            false
         }
     }
 
@@ -87,6 +135,10 @@ impl GeminiClient {
     pub async fn analyze_image(&self, base64_image: &str, prompt: &str) -> Result<String> {
         if self.api_key.is_empty() {
             return Ok("AI Analysis unavailable (No API Key)".to_string());
+        }
+
+        if !self.check_rate_limit() {
+            return Ok("AI Analysis unavailable (Rate limit exceeded)".to_string());
         }
 
         let request = GeminiRequest {
@@ -138,6 +190,10 @@ impl GeminiClient {
     /// Calculate semantic similarity between two URLs (returns 0.0-1.0)
     pub async fn calculate_url_similarity(&self, url1: &str, url2: &str) -> Result<f32> {
         if self.api_key.is_empty() {
+            return Ok(0.0);
+        }
+
+        if !self.check_rate_limit() {
             return Ok(0.0);
         }
 
@@ -194,6 +250,10 @@ impl GeminiClient {
     /// Generate Ghost dialogue based on context
     pub async fn generate_dialogue(&self, context: &str, personality: &str) -> Result<String> {
         if self.api_key.is_empty() {
+            return Ok("...".to_string());
+        }
+
+        if !self.check_rate_limit() {
             return Ok("...".to_string());
         }
 
@@ -256,6 +316,10 @@ impl GeminiClient {
             url,
             page_title
         );
+
+        if !self.check_rate_limit() {
+            return Err(anyhow::anyhow!("Rate limit exceeded for puzzle generation"));
+        }
 
         let prompt = format!(
             r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
@@ -328,11 +392,10 @@ Make the puzzle interesting and educational. The target should be related but no
             .trim();
 
         // Parse JSON response
-        let puzzle: DynamicPuzzle = serde_json::from_str(clean_text)
-            .map_err(|e| {
-                tracing::error!("Failed to parse puzzle JSON: {} - Raw: {}", e, text);
-                anyhow::anyhow!("Failed to parse puzzle JSON: {} - Raw: {}", e, text)
-            })?;
+        let puzzle: DynamicPuzzle = serde_json::from_str(clean_text).map_err(|e| {
+            tracing::error!("Failed to parse puzzle JSON: {} - Raw: {}", e, text);
+            anyhow::anyhow!("Failed to parse puzzle JSON: {} - Raw: {}", e, text)
+        })?;
 
         tracing::info!("Successfully generated puzzle: {:?}", puzzle.clue);
 

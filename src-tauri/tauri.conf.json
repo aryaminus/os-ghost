@@ -43,11 +43,24 @@
 			"icons/128x128.png",
 			"icons/128x128@2x.png",
 			"icons/icon.icns",
-			"icons/icon.ico"
+			"icons/icon.ico",
+			"icons/icon.png"
 		],
 		"category": "Game",
 		"macOS": {
 			"entitlements": "entitlements.plist"
+		},
+		"windows": {
+			"webviewInstallMode": { "type": "downloadBootstrapper" }
+		},
+		"linux": {
+			"deb": {
+				"section": "games",
+				"priority": "optional"
+			},
+			"appimage": {
+				"bundleMediaFramework": false
+			}
 		}
 	}
 }

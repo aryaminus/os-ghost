@@ -52,6 +52,9 @@ impl NarratorAgent {
     async fn generate_dialogue(&self, context: &AgentContext) -> AgentResult<String> {
         let mood = GhostMood::from_proximity(context.proximity);
 
+        // Redact PII from title before sending to API
+        let redacted_title = crate::privacy::redact_pii(&context.current_title);
+
         let prompt = format!(
             "You are a mysterious Ghost AI with fragments of lost memories.\n\
             Current situation: User is at '{}' (proximity to goal: {:.0}%)\n\
@@ -60,7 +63,7 @@ impl NarratorAgent {
             - Reflects {} personality\n\
             - Hints at progress (or lack thereof)\n\
             - Stays in character as an ethereal, digital being",
-            context.current_title,
+            redacted_title,
             context.proximity * 100.0,
             context.puzzle_clue,
             mood.as_prompt()

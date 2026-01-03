@@ -152,17 +152,38 @@ pub fn redact_pii(text: &str) -> String {
 
     static EMAIL_REGEX: OnceLock<Regex> = OnceLock::new();
     static PHONE_REGEX: OnceLock<Regex> = OnceLock::new();
+    static CREDIT_CARD_REGEX: OnceLock<Regex> = OnceLock::new();
+    static SSN_REGEX: OnceLock<Regex> = OnceLock::new();
+    static IP_REGEX: OnceLock<Regex> = OnceLock::new();
 
     let email_re = EMAIL_REGEX
         .get_or_init(|| Regex::new(r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}").unwrap());
 
     let phone_re = PHONE_REGEX.get_or_init(|| {
-        // Basic phone pattern: (123) 456-7890, 123-456-7890, etc.
-        Regex::new(r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}").unwrap()
+        // Basic phone pattern: (123) 456-7890, 123-456-7890, +1-123-456-7890, etc.
+        Regex::new(r"(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}").unwrap()
+    });
+
+    let credit_card_re = CREDIT_CARD_REGEX.get_or_init(|| {
+        // Credit card patterns: 4 groups of 4 digits with optional spaces/dashes
+        Regex::new(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b").unwrap()
+    });
+
+    let ssn_re = SSN_REGEX.get_or_init(|| {
+        // SSN pattern: 123-45-6789
+        Regex::new(r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b").unwrap()
+    });
+
+    let ip_re = IP_REGEX.get_or_init(|| {
+        // IPv4 addresses (excluding common local addresses like 127.0.0.1, 192.168.x.x)
+        Regex::new(r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b").unwrap()
     });
 
     let redacted = email_re.replace_all(text, "[REDACTED_EMAIL]");
     let redacted = phone_re.replace_all(&redacted, "[REDACTED_PHONE]");
+    let redacted = credit_card_re.replace_all(&redacted, "[REDACTED_CARD]");
+    let redacted = ssn_re.replace_all(&redacted, "[REDACTED_SSN]");
+    let redacted = ip_re.replace_all(&redacted, "[REDACTED_IP]");
 
     redacted.to_string()
 }
@@ -173,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_redaction() {
-        let text = "Contact me at test@example.com or 555-0123-4567"; // Invalid phone for this regex but let's try standard
+        let _text = "Contact me at test@example.com or 555-0123-4567"; // Invalid phone for this regex but let's try standard
         let text2 = "Contact me at test@example.com or 555-123-4567";
         let redacted = redact_pii(text2);
         assert!(redacted.contains("[REDACTED_EMAIL]"));
