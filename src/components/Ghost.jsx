@@ -175,6 +175,8 @@ const Ghost = () => {
 		showHint,
 		captureAndAnalyze,
 		triggerDynamicPuzzle,
+		startBackgroundChecks,
+		enableAutonomousMode,
 	} = useGhostGame();
 
 	// Expose triggerDynamicPuzzle for the button handler
@@ -279,8 +281,56 @@ const Ghost = () => {
 
 			{/* Puzzle Counter */}
 			<div className="puzzle-counter">
-				Memory Fragment: {gameState.currentPuzzle + 1}/{puzzles.length || 3}
+				Memory Fragment: {gameState.currentPuzzle + 1}/
+				{puzzles.length || 3}
 			</div>
+
+			{/* Dev Tools Panel */}
+			{gameState.apiKeyConfigured && (
+				<div
+					className="dev-tools"
+					style={{
+						marginTop: "20px",
+						padding: "10px",
+						borderTop: "1px dashed var(--ghost-glow)",
+						background: "rgba(0,0,0,0.3)",
+						fontSize: "0.7em",
+						display: "flex",
+						gap: "5px",
+						flexDirection: "column",
+					}}
+				>
+					<div style={{ opacity: 0.7 }}>🛠️ DEVELOPER TOOLS</div>
+					<div style={{ display: "flex", gap: "5px" }}>
+						<button
+							onClick={startBackgroundChecks}
+							style={{
+								flex: 1,
+								background: "rgba(0, 255, 0, 0.1)",
+								border: "1px solid var(--warm)",
+								color: "var(--warm)",
+								padding: "4px",
+								cursor: "pointer",
+							}}
+						>
+							Scan Background
+						</button>
+						<button
+							onClick={enableAutonomousMode}
+							style={{
+								flex: 1,
+								background: "rgba(255, 0, 0, 0.1)",
+								border: "1px solid var(--hot)",
+								color: "var(--hot)",
+								padding: "4px",
+								cursor: "pointer",
+							}}
+						>
+							Auto Mode
+						</button>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 };

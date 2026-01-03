@@ -37,6 +37,34 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 /**
+ * Helper to fetch and send content for a specific tab
+ * @param {chrome.tabs.Tab} tab
+ */
+function fetchContentForTab(tab) {
+	if (!tab?.id || !tab?.url || !tab.url.startsWith("http")) return;
+
+	chrome.tabs.sendMessage(tab.id, { type: "get_content" }, (response) => {
+		// Check for runtime error (e.g. content script not ready)
+		if (chrome.runtime.lastError) {
+			console.log(
+				"[OS Ghost] Content script not ready:",
+				chrome.runtime.lastError.message
+			);
+			return;
+		}
+
+		if (response?.bodyText) {
+			sendToNative({
+				type: "page_content",
+				url: tab.url,
+				body_text: response.bodyText.slice(0, 5000),
+				timestamp: Date.now(),
+			});
+		}
+	});
+}
+
+/**
  * Connect to the native messaging host.
  * Establishes connection to the Tauri app via native_bridge.
  * @returns {void}
@@ -52,6 +80,13 @@ function connectToNative() {
 		console.log("[OS Ghost] Connected to native host");
 		isConnected = true;
 		reconnectAttempts = 0;
+
+		// Fetch content immediately upon connection
+		chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+			if (tabs[0]) {
+				fetchContentForTab(tabs[0]);
+			}
+		});
 
 		port.onMessage.addListener(handleNativeMessage);
 
@@ -80,6 +115,40 @@ function connectToNative() {
 	}
 }
 
+// ... (handleNativeMessage and sendToNative remain unchanged)
+
+// Listen for tab updates (page loads)
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+	if (changeInfo.status === "complete" && tab.url) {
+		// Send page load event to native app
+		sendToNative({
+			type: "page_load",
+			url: tab.url,
+			title: tab.title || "",
+			timestamp: Date.now(),
+		});
+
+		// Also fetch page content for deeper analysis
+		fetchContentForTab(tab);
+	}
+});
+
+// Listen for tab activation (switching tabs)
+chrome.tabs.onActivated.addListener((activeInfo) => {
+	chrome.tabs.get(activeInfo.tabId, (tab) => {
+		if (tab?.url) {
+			sendToNative({
+				type: "tab_changed",
+				url: tab.url,
+				title: tab.title || "",
+				timestamp: Date.now(),
+			});
+
+			// Fetch content on tab switch too
+			fetchContentForTab(tab);
+		}
+	});
+});
 /**
  * Handle messages from native app.
  * Routes commands to appropriate content script handlers.
