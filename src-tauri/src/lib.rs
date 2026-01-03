@@ -81,6 +81,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Load puzzles (wrapped in RwLock for dynamic puzzle registration)
             let puzzles = std::sync::RwLock::new(default_puzzles());

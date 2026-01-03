@@ -1,0 +1,52 @@
+name: Auto Version Bump
+
+on:
+    push:
+        branches:
+            - main
+        paths-ignore:
+            - "scripts/**"
+            - ".github/**"
+
+permissions:
+    contents: write
+
+jobs:
+    bump-version:
+        if: "!contains(github.event.head_commit.message, 'chore(release)')"
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "lts/*"
+
+            - name: Configure Git
+              run: |
+                  git config --global user.name "github-actions[bot]"
+                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+            - name: Bump Version
+              run: |
+                  node scripts/bump-version.mjs patch
+
+            - name: Read new version
+              id: version
+              run: |
+                  VERSION=$(node -p "require('./package.json').version")
+                  echo "NEW_VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+            - name: Commit and Push
+              run: |
+                  git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+                  git commit -m "chore(release): bump version to ${{ steps.version.outputs.NEW_VERSION }}"
+                  git push origin main
+
+            - name: Create and Push Tag
+              run: |
+                  git tag "app-v${{ steps.version.outputs.NEW_VERSION }}"
+                  git push origin "app-v${{ steps.version.outputs.NEW_VERSION }}"

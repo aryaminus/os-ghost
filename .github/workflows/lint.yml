@@ -1,0 +1,50 @@
+name: Linting and Testing
+on: [pull_request]
+permissions:
+    contents: read
+
+jobs:
+    lint-test:
+        name: Lint and Test
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: rustfmt, clippy
+
+            - name: Setup Cargo Cache
+              uses: swatinem/rust-cache@v2
+              with:
+                  workspaces: "./src-tauri -> target"
+
+            - name: Install Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "lts/*"
+                  cache: "npm"
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Install app dependencies (Linux)
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libgtk-3-dev webkit2gtk-4.0 libappindicator3-dev librsvg2-dev patchelf
+
+            - name: Check Rust Formatting
+              working-directory: ./src-tauri
+              run: cargo fmt -- --check
+
+            - name: Rust Clippy
+              working-directory: ./src-tauri
+              run: cargo clippy -- -D warnings
+
+            - name: Run Rust Tests
+              working-directory: ./src-tauri
+              run: cargo test
+
+            - name: Try Build
+              run: npm run build

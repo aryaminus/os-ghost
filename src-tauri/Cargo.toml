@@ -49,6 +49,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Screen capture - screenshots crate is more stable
 screenshots = "0.8"
+tauri-plugin-updater = "2.9.0"
 
 # macOS specific bindings - using objc2 for low-level control
 [target.'cfg(target_os = "macos")'.dependencies]

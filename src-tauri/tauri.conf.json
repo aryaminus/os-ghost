@@ -3,6 +3,14 @@
 	"productName": "The OS Ghost",
 	"version": "0.1.0",
 	"identifier": "com.osghost.game",
+	"plugins": {
+		"updater": {
+			"endpoints": [
+				"https://github.com/aryaminus/os-ghost/releases/latest/download/latest.json"
+			],
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUwMzE4RkNDQTk5M0NCMkMKUldRc3k1T3B6STh4NElnNjFiNDEyQTNkdk5kZFFhWVUzQzFhYTlRaUpsNUs0UU84Z2tNZWFEbTYK"
+		}
+	},
 	"build": {
 		"beforeDevCommand": "npm run dev",
 		"devUrl": "http://localhost:1420",
@@ -36,6 +44,7 @@
 		"macOSPrivateApi": true
 	},
 	"bundle": {
+		"createUpdaterArtifacts": true,
 		"active": true,
 		"targets": "all",
 		"icon": [
@@ -48,10 +57,13 @@
 		],
 		"category": "Game",
 		"macOS": {
-			"entitlements": "entitlements.plist"
+			"entitlements": "entitlements.plist",
+			"signingIdentity": "-"
 		},
 		"windows": {
-			"webviewInstallMode": { "type": "downloadBootstrapper" }
+			"webviewInstallMode": {
+				"type": "downloadBootstrapper"
+			}
 		},
 		"linux": {
 			"deb": {
