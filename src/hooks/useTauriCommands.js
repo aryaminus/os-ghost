@@ -123,6 +123,13 @@ export function useGhostGame() {
 	const hintTimerRef = useRef(null);
 	/** @type {React.MutableRefObject<PageContentPayload|null>} */
 	const latestContentRef = useRef(null);
+	/** @type {React.MutableRefObject<GameState>} */
+	const gameStateRef = useRef(gameState);
+
+	// Keep ref in sync with state
+	useEffect(() => {
+		gameStateRef.current = gameState;
+	}, [gameState]);
 
 	/**
 	 * Handle page content events from Chrome extension.
@@ -138,20 +145,18 @@ export function useGhostGame() {
 	/**
 	 * Wrapper to generate puzzle from current context
 	 */
-	const triggerDynamicPuzzle = async () => {
+	const triggerDynamicPuzzle = useCallback(async () => {
 		if (latestContentRef.current) {
-			const { url, body_text, title } = latestContentRef.current;
-			// Use title if available, otherwise fallback
-			// Note: PageContentPayload usually has url/body, NavigationPayload has title
-			// We might need to merge them or just use what we have.
-			// Ideally we use the title from gameState.currentUrl if it matches?
+			const { url, body_text } = latestContentRef.current;
+			// PageContentPayload only has url/body_text, use document title or fallback
+			const title = document.title || "Current Page";
 
-			return await generateDynamicPuzzle(url, "Current Page", body_text);
+			return await generateDynamicPuzzle(url, title, body_text || "");
 		} else {
 			console.warn("[Ghost] No content available for generation");
 			return null;
 		}
-	};
+	}, [gameState.apiKeyConfigured]); // eslint-disable-line react-hooks/exhaustive-deps
 	// Load persistent state and check API key on mount
 	useEffect(() => {
 		initializeGame();
@@ -175,7 +180,20 @@ export function useGhostGame() {
 		}, 10000);
 	}, [gameState.puzzleId]);
 
+	// Store refs for callbacks to avoid re-subscribing on every render
+	const handleNavigationRef = useRef(handleNavigation);
+	const advanceToNextPuzzleRef = useRef(advanceToNextPuzzle);
+
+	useEffect(() => {
+		handleNavigationRef.current = handleNavigation;
+	}, [handleNavigation]);
+
+	useEffect(() => {
+		advanceToNextPuzzleRef.current = advanceToNextPuzzle;
+	}, [advanceToNextPuzzle]);
+
 	// Listen for browser navigation events from Chrome extension
+	// Only set up once on mount to avoid re-subscribing
 	useEffect(() => {
 		// Store unlisten functions
 		let unlistenNav = null;
@@ -184,7 +202,7 @@ export function useGhostGame() {
 
 		const setupListeners = async () => {
 			unlistenNav = await listen("browser_navigation", (event) => {
-				handleNavigation(
+				handleNavigationRef.current(
 					/** @type {NavigationPayload} */ (event.payload)
 				);
 			});
@@ -206,7 +224,7 @@ export function useGhostGame() {
 				}));
 
 				if (solved) {
-					setTimeout(() => advanceToNextPuzzle(), 5000);
+					setTimeout(() => advanceToNextPuzzleRef.current(), 5000);
 				}
 			});
 		};
@@ -218,7 +236,7 @@ export function useGhostGame() {
 			if (unlistenContent) unlistenContent();
 			if (unlistenAutonomous) unlistenAutonomous();
 		};
-	}, [handleNavigation, handlePageContent, advanceToNextPuzzle]);
+	}, [handlePageContent]); // Only handlePageContent is stable (empty deps useCallback)
 
 	/**
 	 * Initialize game by loading persistent state and puzzles from backend.
@@ -264,12 +282,15 @@ export function useGhostGame() {
 	/**
 	 * Handle browser navigation events from Chrome extension.
 	 * Delegates to backend Agent Orchestrator for analysis and game state updates.
+	 * Uses ref to avoid stale closures in event listeners.
 	 * @param {NavigationPayload} payload - Navigation event data
 	 * @returns {Promise<void>}
 	 */
 	const handleNavigation = useCallback(
 		async (payload) => {
 			const { url, title } = payload;
+			const currentState = gameStateRef.current;
+
 			setGameState((prev) => ({
 				...prev,
 				currentUrl: url,
@@ -277,7 +298,10 @@ export function useGhostGame() {
 			}));
 
 			// Skip if API key not configured
-			if (!gameState.apiKeyConfigured) return;
+			if (!currentState.apiKeyConfigured) {
+				setGameState((prev) => ({ ...prev, state: "idle" }));
+				return;
+			}
 
 			try {
 				// Call multi-agent orchestrator
@@ -286,11 +310,11 @@ export function useGhostGame() {
 						context: {
 							url,
 							title,
-							content: "", // Content might come from separate event or fetch
-							puzzle_id: gameState.puzzleId,
-							puzzle_clue: gameState.clue,
+							content: latestContentRef.current?.body_text || "",
+							puzzle_id: currentState.puzzleId,
+							puzzle_clue: currentState.clue,
 							target_pattern: "", // Backend handles this from puzzle ID
-							hints: gameState.hints,
+							hints: currentState.hints,
 							hints_revealed: 0, // Should be tracked in session state
 						},
 					})
@@ -310,60 +334,14 @@ export function useGhostGame() {
 							advanceToNextPuzzle();
 						}, 5000);
 					}
-
-					// Handle dynamic hints
-					if (
-						result.show_hint !== null &&
-						result.show_hint !== undefined
-					) {
-						// Backend suggests showing a hint
-						// Logic to unlock hint here if needed
-					}
 				}
 			} catch (err) {
 				console.error("[Ghost] Agent cycle failed:", err);
 				setGameState((prev) => ({ ...prev, state: "idle" }));
 			}
 		},
-		[
-			gameState.apiKeyConfigured,
-			gameState.puzzleId,
-			gameState.clue,
-			gameState.hints,
-		]
+		[advanceToNextPuzzle]
 	);
-
-	/**
-	 * Update game state based on proximity value.
-	 * Sets dialogue and ghost state based on hot/cold feedback.
-	 * @param {number} proximity - Proximity value (0.0 - 1.0)
-	 */
-	const updateProximityState = (proximity) => {
-		let dialogue = "";
-		/** @type {GhostState} */
-		let state = "searching";
-
-		if (proximity < 0.2) {
-			dialogue = "Cold... the signal is faint here.";
-		} else if (proximity < 0.4) {
-			dialogue = "Hmm... there's something in the static...";
-		} else if (proximity < 0.6) {
-			dialogue = "Warmer... I can feel the echoes growing.";
-		} else if (proximity < 0.8) {
-			dialogue = "Yes! The connection strengthens!";
-			state = "thinking";
-		} else {
-			dialogue = "So close! The memory is almost within reach...";
-			state = "thinking";
-		}
-
-		setGameState((prev) => ({
-			...prev,
-			proximity,
-			dialogue,
-			state,
-		}));
-	};
 
 	/**
 	 * Advance to the next puzzle after solving current one.

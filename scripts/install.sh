@@ -37,14 +37,23 @@ echo ""
 echo "🔨 Building Tauri application..."
 npm run tauri build
 
-# Determine the binary path
+# Determine the native_bridge binary path (separate from main app)
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    BINARY_PATH="$PROJECT_DIR/src-tauri/target/release/bundle/macos/The OS Ghost.app/Contents/MacOS/os-ghost"
+    BINARY_PATH="$PROJECT_DIR/src-tauri/target/release/native_bridge"
+    APP_PATH="$PROJECT_DIR/src-tauri/target/release/bundle/macos/The OS Ghost.app"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    BINARY_PATH="$PROJECT_DIR/src-tauri/target/release/os-ghost"
+    BINARY_PATH="$PROJECT_DIR/src-tauri/target/release/native_bridge"
+    APP_PATH="$PROJECT_DIR/src-tauri/target/release/os-ghost"
 else
     echo "⚠️  Windows detected. Run install.bat instead."
     exit 1
+fi
+
+# Ensure native_bridge binary exists
+if [[ ! -f "$BINARY_PATH" ]]; then
+    echo "⚠️  native_bridge binary not found. Building separately..."
+    cd "$PROJECT_DIR/src-tauri"
+    cargo build --release --bin native_bridge
 fi
 
 echo ""
@@ -124,6 +133,10 @@ echo "  export GEMINI_API_KEY='your-key'"
 echo "  npm run tauri dev"
 echo ""
 echo "To run the production build:"
-echo "  $BINARY_PATH"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    echo "  open \"$APP_PATH\""
+else
+    echo "  $APP_PATH"
+fi
 echo ""
 echo "👻 The Ghost awaits..."

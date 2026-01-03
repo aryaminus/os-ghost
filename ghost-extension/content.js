@@ -345,18 +345,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	switch (message.type) {
 		case "effect":
 			applyEffect(message.effect, message.duration || 1000);
+			sendResponse({ success: true });
 			break;
 
 		case "highlight":
 			highlightText(message.text);
+			sendResponse({ success: true });
 			break;
 
 		case "get_content":
 			const content = getPageContent();
 			sendResponse(content);
 			break;
+
+		default:
+			sendResponse({ error: "Unknown message type" });
 	}
-	return false;
+	return false; // Synchronous response
 });
 
 console.log("[OS Ghost] Content script loaded on:", window.location.href);

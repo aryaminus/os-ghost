@@ -170,6 +170,7 @@ const ProximityBar = ({ proximity }) => {
 const Ghost = () => {
 	const {
 		gameState,
+		puzzles,
 		setClickable,
 		showHint,
 		captureAndAnalyze,
@@ -278,7 +279,7 @@ const Ghost = () => {
 
 			{/* Puzzle Counter */}
 			<div className="puzzle-counter">
-				Memory Fragment: {gameState.currentPuzzle + 1}/3
+				Memory Fragment: {gameState.currentPuzzle + 1}/{puzzles.length || 3}
 			</div>
 		</div>
 	);

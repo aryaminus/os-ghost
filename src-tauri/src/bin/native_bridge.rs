@@ -112,6 +112,7 @@ fn read_native_message() -> io::Result<Option<BrowserMessage>> {
         Err(e) => return Err(e),
     }
 
+    // Chrome uses native endian, but we convert to little endian for TCP
     let message_length = u32::from_ne_bytes(length_bytes) as usize;
 
     if message_length == 0 || message_length > 1024 * 1024 {
