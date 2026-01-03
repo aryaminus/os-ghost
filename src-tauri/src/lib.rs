@@ -31,6 +31,9 @@ fn default_puzzles() -> Vec<Puzzle> {
             hint: "The Washington Post was one of the first to publish it digitally...".to_string(),
             target_url_pattern: r"(washingtonpost\.com|nytimes\.com).*manifesto".to_string(),
             target_description: "Unabomber manifesto newspaper publication 1995".to_string(),
+            is_sponsored: false,
+            sponsor_id: None,
+            sponsor_url: None,
         },
         Puzzle {
             id: "puzzle_002".to_string(),
@@ -38,6 +41,9 @@ fn default_puzzles() -> Vec<Puzzle> {
             hint: "Bletchley Park holds many secrets...".to_string(),
             target_url_pattern: r"(enigma|bletchley|turing)".to_string(),
             target_description: "Enigma machine decryption Bletchley Park Alan Turing".to_string(),
+            is_sponsored: false,
+            sponsor_id: None,
+            sponsor_url: None,
         },
         Puzzle {
             id: "puzzle_003".to_string(),
@@ -45,6 +51,9 @@ fn default_puzzles() -> Vec<Puzzle> {
             hint: "Internet Archive remembers everything...".to_string(),
             target_url_pattern: r"(web\.archive\.org|archive\.org).*twitter".to_string(),
             target_description: "Twitter Internet Archive Wayback Machine history".to_string(),
+            is_sponsored: false,
+            sponsor_id: None,
+            sponsor_url: None,
         },
     ]
 }
@@ -139,6 +148,7 @@ pub fn run() {
             ipc::process_agent_cycle,
             ipc::start_background_checks,
             ipc::enable_autonomous_mode,
+            ipc::trigger_browser_effect,
             game_state::get_game_state,
             game_state::reset_game,
             game_state::check_hint_available,

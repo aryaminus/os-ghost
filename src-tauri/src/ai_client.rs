@@ -124,6 +124,42 @@ impl GeminiClient {
         }
     }
 
+    /// Wait for rate limit availability with simple backoff
+    async fn wait_for_rate_limit(&self) {
+        let mut attempts = 0;
+        loop {
+            if self.check_rate_limit() {
+                return;
+            }
+
+            attempts += 1;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let window_start = self.rate_limit_window_start.load(Ordering::Relaxed);
+
+            // Calculate time until window reset
+            let elapsed = now.saturating_sub(window_start);
+            let wait_secs = if elapsed < RATE_LIMIT_WINDOW_SECS {
+                RATE_LIMIT_WINDOW_SECS - elapsed
+            } else {
+                1
+            };
+
+            // Cap max wait to avoid hanging too long (e.g. if time jumps)
+            let wait_secs = wait_secs.min(5).max(1);
+
+            tracing::warn!(
+                "Rate limit hit (attempt {}), waiting {}s...",
+                attempts,
+                wait_secs
+            );
+
+            tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
+        }
+    }
+
     fn get_api_url(&self) -> String {
         format!(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
@@ -137,9 +173,7 @@ impl GeminiClient {
             return Ok("AI Analysis unavailable (No API Key)".to_string());
         }
 
-        if !self.check_rate_limit() {
-            return Ok("AI Analysis unavailable (Rate limit exceeded)".to_string());
-        }
+        self.wait_for_rate_limit().await;
 
         let request = GeminiRequest {
             contents: vec![Content {
@@ -193,9 +227,7 @@ impl GeminiClient {
             return Ok(0.0);
         }
 
-        if !self.check_rate_limit() {
-            return Ok(0.0);
-        }
+        self.wait_for_rate_limit().await;
 
         let prompt = format!(
             "Compare these two URLs semantically. Consider the topic, domain, and content they represent.
@@ -253,9 +285,7 @@ impl GeminiClient {
             return Ok("...".to_string());
         }
 
-        if !self.check_rate_limit() {
-            return Ok("...".to_string());
-        }
+        self.wait_for_rate_limit().await;
 
         let prompt = format!(
             "You are a mysterious AI ghost character with this personality: {}
@@ -317,9 +347,7 @@ impl GeminiClient {
             page_title
         );
 
-        if !self.check_rate_limit() {
-            return Err(anyhow::anyhow!("Rate limit exceeded for puzzle generation"));
-        }
+        self.wait_for_rate_limit().await;
 
         let prompt = format!(
             r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
@@ -401,6 +429,84 @@ Make the puzzle interesting and educational. The target should be related but no
 
         Ok(puzzle)
     }
+
+    /// Verify if a screenshot contains the solution to a puzzle
+    pub async fn verify_screenshot_clue(
+        &self,
+        base64_image: &str,
+        clue_description: &str,
+    ) -> Result<VerificationResult> {
+        if self.api_key.is_empty() {
+            return Err(anyhow::anyhow!("No API Key configured"));
+        }
+
+        self.wait_for_rate_limit().await;
+
+        let prompt = format!(
+            "Analyze this screenshot. Does it contain content matching this description: '{}'?
+            
+            Respond with a JSON object:
+            {{
+                \"found\": boolean,
+                \"confidence\": number (0.0-1.0),
+                \"explanation\": \"Short explanation of what was found or missing\"
+            }}
+            
+            Be generous but accurate. If the user found the right page or image, mark it as found.",
+            clue_description
+        );
+
+        let request = GeminiRequest {
+            contents: vec![Content {
+                parts: vec![
+                    Part::Text { text: prompt },
+                    Part::Image {
+                        inline_data: InlineData {
+                            mime_type: "image/png".to_string(),
+                            data: base64_image.to_string(),
+                        },
+                    },
+                ],
+            }],
+            generation_config: Some(GenerationConfig {
+                temperature: 0.2, // Lower temperature for more objective analysis
+                max_output_tokens: 200,
+            }),
+        };
+
+        let response = self
+            .client
+            .post(&self.get_api_url())
+            .json(&request)
+            .send()
+            .await?
+            .json::<GeminiResponse>()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Gemini API error: {}", error.message));
+        }
+
+        let candidates = response
+            .candidates
+            .ok_or_else(|| anyhow::anyhow!("No candidates"))?;
+
+        let text = candidates
+            .first()
+            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
+            .flatten()
+            .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
+
+        let clean_text = text
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        let result: VerificationResult = serde_json::from_str(clean_text)?;
+        Ok(result)
+    }
 }
 
 /// A dynamically generated puzzle based on screen context
@@ -410,4 +516,12 @@ pub struct DynamicPuzzle {
     pub target_description: String,
     pub target_url_pattern: String,
     pub hints: Vec<String>,
+}
+
+/// Result of screenshot verification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerificationResult {
+    pub found: bool,
+    pub confidence: f32,
+    pub explanation: String,
 }

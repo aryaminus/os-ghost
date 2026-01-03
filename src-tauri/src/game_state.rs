@@ -11,7 +11,47 @@ const STATE_FILE: &str = "ghost_state.json";
 const HINT_DELAY_SECS: u64 = 60; // First hint after 60 seconds
 const MAX_HINTS: usize = 3;
 
-/// Persistent game state
+/// Message to trigger effect in extension
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffectMessage {
+    pub action: String,
+    pub effect: Option<String>,
+    pub duration: Option<u64>,
+    pub text: Option<String>,
+}
+
+/// Ephemeral queue for effects waiting to be sent to extension
+pub struct EffectQueue {
+    pub queue: std::sync::Mutex<Vec<EffectMessage>>,
+}
+
+impl Default for EffectQueue {
+    fn default() -> Self {
+        Self {
+            queue: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl EffectQueue {
+    pub fn push(&self, msg: EffectMessage) {
+        if let Ok(mut q) = self.queue.lock() {
+            q.push(msg);
+        }
+    }
+
+    pub fn pop_all(&self) -> Vec<EffectMessage> {
+        if let Ok(mut q) = self.queue.lock() {
+            let items = q.clone();
+            q.clear();
+            items
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+// ... existing commands ...
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
     pub current_puzzle_index: usize,

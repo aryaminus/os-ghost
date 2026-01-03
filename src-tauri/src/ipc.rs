@@ -3,12 +3,36 @@
 
 use crate::ai_client::GeminiClient;
 use crate::capture;
+use crate::game_state::{EffectMessage, EffectQueue};
 use crate::history::{self, HistoryEntry};
 use anyhow::Result;
+use rand::Rng;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{Emitter, State};
+
+/// Trigger a visual effect in the browser (queued for extension)
+#[tauri::command]
+pub fn trigger_browser_effect(
+    effect: String,
+    duration: Option<u64>,
+    text: Option<String>,
+    effect_queue: State<'_, Arc<EffectQueue>>,
+) -> Result<(), String> {
+    let msg = EffectMessage {
+        action: if text.is_some() {
+            "highlight_text".to_string()
+        } else {
+            "inject_effect".to_string()
+        },
+        effect: Some(effect),
+        duration,
+        text,
+    };
+    effect_queue.push(msg);
+    Ok(())
+}
 
 /// Game state exposed to frontend
 #[derive(Debug, Serialize, Clone)]
@@ -27,6 +51,10 @@ pub struct Puzzle {
     pub hint: String,
     pub target_url_pattern: String,
     pub target_description: String,
+    // Sponsored fields
+    pub sponsor_id: Option<String>,
+    pub sponsor_url: Option<String>,
+    pub is_sponsored: bool,
 }
 
 /// Puzzle configuration
@@ -108,6 +136,38 @@ pub async fn calculate_proximity(
         .map_err(|e| format!("Proximity calculation failed: {}", e))
 }
 
+/// Verify if a screenshot matches the puzzle clue
+#[tauri::command]
+pub async fn verify_screenshot_proof(
+    puzzle_id: String,
+    gemini: State<'_, Arc<GeminiClient>>,
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
+) -> Result<crate::ai_client::VerificationResult, String> {
+    // 1. Capture screen within the backend
+    let image_base64 = capture::capture_screen()
+        .await
+        .map_err(|e| format!("Screen capture failed: {}", e))?;
+
+    let target_description = {
+        let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
+        let puzzle = puzzles
+            .iter()
+            .find(|p| p.id == puzzle_id)
+            .ok_or_else(|| format!("Puzzle {} not found", puzzle_id))?;
+
+        // Use both clue and target description for better context
+        format!(
+            "Clue: {}. Target: {}",
+            puzzle.clue, puzzle.target_description
+        )
+    };
+
+    gemini
+        .verify_screenshot_clue(&image_base64, &target_description)
+        .await
+        .map_err(|e| format!("Verification failed: {}", e))
+}
+
 /// Generate Ghost dialogue based on current context
 #[tauri::command]
 pub async fn generate_ghost_dialogue(
@@ -162,6 +222,8 @@ pub struct GeneratedPuzzle {
     pub hints: Vec<String>,
     pub target_url_pattern: String,
     pub target_description: String,
+    pub is_sponsored: bool,
+    pub sponsor_id: Option<String>,
 }
 
 /// Generate a dynamic puzzle based on current page context AND register it
@@ -173,6 +235,47 @@ pub async fn generate_dynamic_puzzle(
     gemini: State<'_, Arc<GeminiClient>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<GeneratedPuzzle, String> {
+    // 20% chance of sponsored puzzle
+    let use_sponsored = rand::thread_rng().gen_range(0.0..1.0) < 0.2;
+
+    // Mock Sponsored Puzzle
+    if use_sponsored {
+        let id = format!(
+            "sponsored_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+        let puzzle = Puzzle {
+            id: id.clone(),
+            clue: "Seek the cloud where giants build their dreams. Find the console of the Titans."
+                .to_string(),
+            hint: "Search for 'Google Cloud Console'".to_string(),
+            target_url_pattern: "console\\.cloud\\.google\\.com".to_string(),
+            target_description: "Google Cloud Console".to_string(),
+            sponsor_id: Some("google_cloud".to_string()),
+            sponsor_url: Some("https://cloud.google.com".to_string()),
+            is_sponsored: true,
+        };
+
+        {
+            let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
+            puzzles.push(puzzle.clone());
+        }
+
+        return Ok(GeneratedPuzzle {
+            id,
+            clue: puzzle.clue,
+            hint: puzzle.hint,
+            hints: vec!["Search for 'Google Cloud Console'".to_string()],
+            target_url_pattern: puzzle.target_url_pattern,
+            target_description: puzzle.target_description,
+            is_sponsored: true,
+            sponsor_id: puzzle.sponsor_id,
+        });
+    }
+
     let redacted_url = crate::privacy::redact_pii(&url);
     let redacted_content = crate::privacy::redact_pii(&content);
 
@@ -197,6 +300,9 @@ pub async fn generate_dynamic_puzzle(
         hint: dynamic.hints.first().cloned().unwrap_or_default(),
         target_url_pattern: dynamic.target_url_pattern.clone(),
         target_description: dynamic.target_description.clone(),
+        sponsor_id: None,
+        sponsor_url: None,
+        is_sponsored: false,
     };
 
     // Register in backend storage
@@ -226,6 +332,8 @@ pub async fn generate_dynamic_puzzle(
         hints: dynamic.hints,
         target_url_pattern: dynamic.target_url_pattern,
         target_description: dynamic.target_description,
+        is_sponsored: false,
+        sponsor_id: None,
     })
 }
 

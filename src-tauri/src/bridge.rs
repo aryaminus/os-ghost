@@ -1,10 +1,12 @@
 //! Native Messaging bridge for Chrome extension communication
 //! Handles real-time browser events from the extension via TCP
 
+use crate::game_state::EffectQueue;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use tauri::{AppHandle, Emitter};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
 
 const BRIDGE_PORT: u16 = 9876;
 
@@ -113,6 +115,28 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                 let _ = stream.write_all(&len);
                 let _ = stream.write_all(&json);
                 let _ = stream.flush();
+            }
+
+            // Check for pending effects to send (piggyback on active connection)
+            let effect_queue = app.state::<Arc<EffectQueue>>();
+            let hidden_queue = effect_queue.clone(); // Clone Arc to use
+
+            // Pop all pending effects
+            let pending = hidden_queue.pop_all();
+
+            for effect in pending {
+                tracing::info!("Sending queued effect to extension: {:?}", effect);
+                match serde_json::to_vec(&effect) {
+                    Ok(json) => {
+                        let len = (json.len() as u32).to_le_bytes();
+                        // We ignore write errors here as we might have lost connection,
+                        // but that's fine for ephemeral effects
+                        let _ = stream.write_all(&len);
+                        let _ = stream.write_all(&json);
+                        let _ = stream.flush();
+                    }
+                    Err(e) => tracing::error!("Failed to serialize effect: {}", e),
+                }
             }
         }
     }

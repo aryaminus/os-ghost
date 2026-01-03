@@ -185,6 +185,7 @@ const Ghost = () => {
 		triggerDynamicPuzzle,
 		startBackgroundChecks,
 		enableAutonomousMode,
+		verifyScreenshotProof,
 	} = useGhostGame();
 
 	const sprite = GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle;
@@ -298,7 +299,24 @@ const Ghost = () => {
 				<>
 					{/* Current Clue */}
 					<div className="clue-box">
-						<div className="clue-header">📜 CURRENT MYSTERY</div>
+						<div className="clue-header">
+							📜 CURRENT MYSTERY
+							{gameState.is_sponsored && (
+								<span
+									style={{
+										marginLeft: "8px",
+										fontSize: "0.8em",
+										background: "var(--accent)",
+										color: "var(--bg-color)",
+										padding: "2px 6px",
+										borderRadius: "4px",
+										fontWeight: "bold",
+									}}
+								>
+									SPONSORED
+								</span>
+							)}
+						</div>
 						<p className="clue-text">
 							{gameState.clue ||
 								(gameState.puzzleId
@@ -320,7 +338,7 @@ const Ghost = () => {
 					)}
 
 					{/* Dynamic Puzzle Trigger */}
-					{gameState.state === "idle" && (
+					{gameState.state === "idle" && !gameState.puzzleId && (
 						<button
 							className="action-btn"
 							onMouseDown={(e) => e.stopPropagation()}
@@ -330,6 +348,24 @@ const Ghost = () => {
 							}}
 						>
 							🌀 Investigate This Signal
+						</button>
+					)}
+
+					{/* Prove Finding Button */}
+					{gameState.puzzleId && gameState.state !== "celebrate" && (
+						<button
+							className="action-btn verify-btn"
+							onMouseDown={(e) => e.stopPropagation()}
+							onClick={(e) => {
+								e.stopPropagation();
+								verifyScreenshotProof(); // Call verification
+							}}
+							style={{
+								marginTop: "8px",
+								backgroundColor: "var(--accent)",
+							}}
+						>
+							📸 Prove Finding
 						</button>
 					)}
 

@@ -149,6 +149,15 @@ export function useGhostGame() {
 	/** @type {React.MutableRefObject<GameState>} */
 	const gameStateRef = useRef(gameState);
 
+	// Manage Ghost Trail effect based on state
+	useEffect(() => {
+		if (gameState.state === "searching" || gameState.state === "thinking") {
+			triggerBrowserEffect("start_trail");
+		} else {
+			triggerBrowserEffect("stop_trail");
+		}
+	}, [gameState.state]);
+
 	// Keep ref in sync with state
 	useEffect(() => {
 		gameStateRef.current = gameState;
@@ -513,6 +522,66 @@ export function useGhostGame() {
 	};
 
 	/**
+	 * Verify if the current screen matches the puzzle clue.
+	 * @returns {Promise<Object|null>} Verification result
+	 */
+	const verifyScreenshotProof = async () => {
+		const currentState = gameStateRef.current;
+		if (!currentState.apiKeyConfigured || !currentState.puzzleId) {
+			return null;
+		}
+
+		setIsLoading(true);
+		setGameState((prev) => ({
+			...prev,
+			state: "thinking",
+			dialogue: "Analyzing your proof...",
+		}));
+
+		try {
+			const result = await invoke("verify_screenshot_proof", {
+				puzzleId: currentState.puzzleId,
+			});
+
+			log(" Verification result:", result);
+
+			if (result.found) {
+				triggerBrowserEffect("flash", 1000); // Visual feedback
+				setGameState((prev) => ({
+					...prev,
+					state: "celebrate",
+					dialogue:
+						result.explanation ||
+						"Proof accepted! You found the fragment.",
+					proximity: 1.0,
+				}));
+				// Advance after delay
+				setTimeout(() => advanceToNextPuzzle(), 4000);
+			} else {
+				setGameState((prev) => ({
+					...prev,
+					state: "idle",
+					dialogue:
+						result.explanation ||
+						"That doesn't look like the solution...",
+				}));
+			}
+
+			return result;
+		} catch (err) {
+			console.error("[Ghost] Verification failed:", err);
+			setGameState((prev) => ({
+				...prev,
+				state: "idle",
+				dialogue: "I couldn't verify that visual...",
+			}));
+			return null;
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	/**
 	 * Generate Ghost dialogue using AI based on context.
 	 * @param {string} context - Context string for dialogue generation
 	 * @returns {Promise<string|null>} Generated dialogue or null if failed
@@ -810,6 +879,8 @@ export function useGhostGame() {
 		error,
 		extensionConnected,
 		captureAndAnalyze,
+		verifyScreenshotProof,
+		triggerBrowserEffect,
 		generateDialogue,
 		setClickable,
 		showHint,

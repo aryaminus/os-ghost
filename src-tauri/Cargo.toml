@@ -29,6 +29,7 @@ tokio = { version = "1.35", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 base64 = "0.22"
 regex = "1"
+rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
 tracing = "0.1"

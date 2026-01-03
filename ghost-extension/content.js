@@ -342,6 +342,139 @@ function highlightText(searchText) {
 }
 
 /**
+ * Ghost Trail effect - creates fading particles behind cursor.
+ */
+class GhostTrail {
+	constructor() {
+		this.active = false;
+		this.particles = [];
+		this.ctx = null;
+		this.canvas = null;
+		this.animationId = null;
+
+		this.handleMouseMove = this.handleMouseMove.bind(this);
+		this.animate = this.animate.bind(this);
+	}
+
+	start() {
+		if (this.active) return;
+		this.active = true;
+
+		this.canvas = document.createElement("canvas");
+		this.canvas.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 999998;
+        `;
+		document.body.appendChild(this.canvas);
+
+		this.ctx = this.canvas.getContext("2d");
+		this.resize();
+
+		window.addEventListener("resize", () => this.resize());
+		window.addEventListener("mousemove", this.handleMouseMove);
+
+		this.animate();
+	}
+
+	stop() {
+		if (!this.active) return;
+		this.active = false;
+
+		window.removeEventListener("mousemove", this.handleMouseMove);
+		cancelAnimationFrame(this.animationId);
+
+		if (this.canvas) {
+			this.canvas.remove();
+			this.canvas = null;
+		}
+		this.particles = [];
+	}
+
+	resize() {
+		if (this.canvas) {
+			this.canvas.width = window.innerWidth;
+			this.canvas.height = window.innerHeight;
+		}
+	}
+
+	handleMouseMove(e) {
+		this.particles.push({
+			x: e.clientX,
+			y: e.clientY,
+			size: Math.random() * 5 + 2,
+			life: 1.0,
+			velocity: {
+				x: (Math.random() - 0.5) * 2,
+				y: (Math.random() - 0.5) * 2,
+			},
+		});
+	}
+
+	animate() {
+		if (!this.active) return;
+
+		this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+		for (let i = 0; i < this.particles.length; i++) {
+			const p = this.particles[i];
+			p.life -= 0.02;
+			p.x += p.velocity.x;
+			p.y += p.velocity.y;
+
+			if (p.life <= 0) {
+				this.particles.splice(i, 1);
+				i--;
+				continue;
+			}
+
+			this.ctx.beginPath();
+			this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+			this.ctx.fillStyle = `rgba(0, 255, 136, ${p.life * 0.5})`;
+			this.ctx.fill();
+		}
+
+		this.animationId = requestAnimationFrame(this.animate);
+	}
+}
+
+const ghostTrail = new GhostTrail();
+
+/**
+ * Apply Portal Flash effect - transition effect for solving.
+ * @param {number} duration - Effect duration in ms
+ */
+function applyPortalFlash(duration) {
+	const overlay = document.createElement("div");
+	overlay.style.cssText = `
+        position: fixed;
+        top: 0; 
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(circle, transparent 0%, rgba(0, 255, 136, 0.2) 50%, rgba(0, 255, 136, 0.8) 100%);
+        opacity: 0;
+        transition: opacity 0.5s ease-out;
+        z-index: 999999;
+        pointer-events: none;
+    `;
+	document.body.appendChild(overlay);
+
+	// Trigger animation
+	requestAnimationFrame(() => {
+		overlay.style.opacity = "1";
+		setTimeout(() => {
+			overlay.style.opacity = "0";
+			setTimeout(() => overlay.remove(), 500);
+		}, duration);
+	});
+}
+
+/**
  * Get page content for analysis.
  * Extracts visible text content, title, and URL.
  * @returns {PageContent} Page content object
@@ -370,6 +503,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 		case "highlight":
 			highlightText(message.text);
+			sendResponse({ success: true });
+			break;
+
+		case "start_trail":
+			ghostTrail.start();
+			sendResponse({ success: true });
+			break;
+
+		case "stop_trail":
+			ghostTrail.stop();
+			sendResponse({ success: true });
+			break;
+
+		case "flash":
+			applyPortalFlash(message.duration || 1000);
 			sendResponse({ success: true });
 			break;
 
