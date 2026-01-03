@@ -87,6 +87,10 @@ cd src-tauri && cargo test
 npm run tauri build
 ```
 
+## Release & Deployment
+
+For details on the **CI/CD Pipeline**, **Auto-Versioning**, and **Code Signing** (macOS/Windows), please read the [Release Pipeline Docs](docs/RELEASE_PIPELINE.md).
+
 ## License
 
 MIT

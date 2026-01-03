@@ -97,47 +97,62 @@ def main():
     
     result = run(CMD)
     
-    content = None
-    if os.path.exists(OUTPUT_P12):
-        with open(OUTPUT_P12, "rb") as f:
-            content = f.read()
-    elif "-----BEGIN PKCS12-----" in result.stdout:
-        print("⚠️  captured P12 from stdout")
-        content = result.stdout.encode('utf-8') # It's PEM?
-        # If it's PEM, we might need to convert to DER for the p12 extension or keep as is.
-        # usually Action expects base64 of the binary p12.
-        # If the output is PEM, we can just save it.
-        with open(OUTPUT_P12, "wb") as f:
-            f.write(content)
+    # ... (previous export logic)
+    result = run(CMD)
     
-    # Reset keychain list
-    run(["security", "list-keychains", "-d", "user", "-s", "login.keychain"])
-    run(["security", "delete-keychain", TEMP_KEYCHAIN])
-
-    if content:
-        print(f"✅ P12 file created at {OUTPUT_P12}")
-        print(f"   Size: {len(content)} bytes")
-        
-        # Convert to Base64
-        b64_str = base64.b64encode(content).decode('utf-8')
-        with open(OUTPUT_B64, "w") as f:
-            f.write(b64_str)
-            
-        print("\n" + "="*60)
-        print("🎉 EXPORT SUCCESSFUL")
-        print("="*60)
-        print("1. Secret Name: APPLE_CERTIFICATE")
-        print("   Value: (content of scripts/certificate_base64.txt)")
-        print("\n2. Secret Name: APPLE_CERTIFICATE_PASSWORD")
-        print(f"   Value: {EXPORT_PASS}")
-        print("\n3. Secret Name: APPLE_SIGNING_IDENTITY")
-        print("   Value: Apple Distribution: Core Software Integrated Inc. (S36N9UYNK7)")
-        print("="*60)
-        
+    if os.path.exists(OUTPUT_P12) and os.path.getsize(OUTPUT_P12) > 0:
+        print("✅ P12 file created.")
     else:
-        print("❌ Failed to capture P12 content.")
-        print(f"   Stdout: {result.stdout[:200]}...")
-        print(f"   Stderr: {result.stderr[:200]}...")
+        print("❌ Export failed: Output file is empty or missing.")
+        print(f"   Stdout: {result.stdout}")
+        print(f"   Stderr: {result.stderr}")
+        sys.exit(1)
+
+    # VERIFY THE P12
+    print("🕵️  Verifying P12 integrity...")
+    VERIFY_KEYCHAIN = "verify.keychain"
+    if os.path.exists(VERIFY_KEYCHAIN):
+        run(["security", "delete-keychain", VERIFY_KEYCHAIN])
+    
+    run(["security", "create-keychain", "-p", "verify", VERIFY_KEYCHAIN])
+    run(["security", "set-keychain-settings", VERIFY_KEYCHAIN])
+    
+    # Try importing the just-exported P12
+    verify_cmd = [
+        "security", "import", OUTPUT_P12,
+        "-k", VERIFY_KEYCHAIN,
+        "-P", EXPORT_PASS,
+        "-T", "/usr/bin/codesign"
+    ]
+    verify_result = run(verify_cmd)
+    
+    # Clean up verify keychain
+    run(["security", "delete-keychain", VERIFY_KEYCHAIN])
+
+    if verify_result.returncode != 0:
+        print("❌ CRITICAL: The exported P12 file is corrupt or invalid!")
+        print(f"   Error: {verify_result.stderr}")
+        sys.exit(1)
+    
+    print("✅ P12 file verified successfully (it works!).")
+
+    # Read and encode
+    with open(OUTPUT_P12, "rb") as f:
+        content = f.read()
+
+    print(f"   Size: {len(content)} bytes")
+    
+    # Convert to Base64
+    b64_str = base64.b64encode(content).decode('utf-8')
+    with open(OUTPUT_B64, "w") as f:
+        f.write(b64_str)
+        
+    print("\n" + "="*60)
+    print("🎉 EXPORT & VERIFICATION SUCCESSFUL")
+    print("="*60)
+    print("ACTION REQUIRED: Update your GitHub Secret 'APPLE_CERTIFICATE' now.")
+    print("Copy the content of: scripts/certificate_base64.txt")
+    print("="*60)
 
 if __name__ == "__main__":
     main()
