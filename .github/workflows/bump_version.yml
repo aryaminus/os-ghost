@@ -18,7 +18,7 @@ jobs:
         steps:
             - uses: actions/checkout@v4
               with:
-                  token: ${{ secrets.GITHUB_TOKEN }}
+                  token: ${{ secrets.GH_OWNER_TOKEN }}
 
             - name: Setup Node.js
               uses: actions/setup-node@v4
