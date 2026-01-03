@@ -148,6 +148,8 @@ export function useGhostGame() {
 	const latestContentRef = useRef(globalLatestContent);
 	/** @type {React.MutableRefObject<GameState>} */
 	const gameStateRef = useRef(gameState);
+	// Track last generated URL to prevent double-generation
+	const lastGeneratedUrlRef = useRef(null);
 
 	/**
 	 * Trigger a visual effect in the browser.
@@ -225,17 +227,28 @@ export function useGhostGame() {
 		// Simple retry mechanism (waits up to 2 seconds)
 		let attempts = 0;
 		while (!latestContentRef.current && attempts < 10) {
-			log(`[Ghost] Content missing, waiting... (${attempts + 1}/10)`);
-			await new Promise((r) => setTimeout(r, 200));
 			attempts++;
 		}
 
 		if (latestContentRef.current) {
 			const { url, body_text } = latestContentRef.current;
+			if (lastGeneratedUrlRef.current === url) {
+				log(`[Ghost] Puzzle already generated for this URL: ${url}`);
+				return null;
+			}
+
 			// PageContentPayload only has url/body_text, use document title or fallback
 			const title = document.title || "Current Page";
 
-			return await generateDynamicPuzzle(url, title, body_text || "");
+			const puzzle = await generateDynamicPuzzle(
+				url,
+				title,
+				body_text || ""
+			);
+			if (puzzle) {
+				lastGeneratedUrlRef.current = url;
+			}
+			return puzzle;
 		} else {
 			warn(
 				"[Ghost] No content available for generation. Ref is null/undefined."

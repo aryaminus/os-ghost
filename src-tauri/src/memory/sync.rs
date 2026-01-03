@@ -30,14 +30,14 @@ pub trait SyncProvider: Send + Sync {
 
 /// Stub implementation for Vertex AI
 pub struct VertexAISync {
-    project_id: String,
+    pub _project_id: String,
     connected: bool,
 }
 
 impl VertexAISync {
     pub fn new(project_id: String) -> Self {
         Self {
-            project_id,
+            _project_id: project_id,
             connected: false,
         }
     }

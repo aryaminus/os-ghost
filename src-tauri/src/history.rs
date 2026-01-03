@@ -19,10 +19,12 @@ fn get_chrome_history_path() -> Result<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var("HOME")?;
-        Ok(PathBuf::from(format!(
+        let path = PathBuf::from(format!(
             "{}/Library/Application Support/Google/Chrome/Default/History",
             home
-        )))
+        ));
+        tracing::info!("Looking for Chrome history at: {:?}", path);
+        Ok(path)
     }
 
     #[cfg(target_os = "windows")]

@@ -354,6 +354,7 @@ impl GeminiClient {
         url: &str,
         page_title: &str,
         page_content: &str,
+        history_context: &str,
     ) -> Result<DynamicPuzzle> {
         tracing::info!(
             "Generating dynamic puzzle for URL: {} (title: {})",
@@ -366,10 +367,15 @@ impl GeminiClient {
         let prompt = format!(
             r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
             Use Google Search to find a connection to a real-world event, person, or historical fact related to this page's topic.
+            
+            Also consider the user's recent browsing history (provided below) to see if you can make a thematic connection to their recent interests, but prioritize the CURRENT page for the clue.
 
 URL: {}
 Title: {}
 Content snippet: {}
+
+Recent Browsing History:
+{}
 
 Generate a JSON object with these fields:
 - "clue": A mysterious, cryptic clue that relates to this page's topic but leads to a DIFFERENT related page (max 100 chars)
@@ -383,7 +389,8 @@ Example response format (respond ONLY with valid JSON, no markdown):
 Make the puzzle interesting and educational. The target should be related but not the same page."#,
             url,
             page_title,
-            &page_content.chars().take(500).collect::<String>()
+            &page_content.chars().take(500).collect::<String>(),
+            history_context
         );
 
         let request = GeminiRequest {
@@ -470,7 +477,7 @@ Make the puzzle interesting and educational. The target should be related but no
                 \"explanation\": \"Short explanation of what was found or missing\"
             }}
             
-            Be generous but accurate. If the user found the right page or image, mark it as found.",
+            Be strict and accurate. Only return true if the visual proof CLEARLY matches the specific target description.",
             clue_description
         );
 

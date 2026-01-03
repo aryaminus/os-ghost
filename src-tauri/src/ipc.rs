@@ -297,8 +297,32 @@ pub async fn generate_dynamic_puzzle(
     let redacted_url = crate::privacy::redact_pii(&url);
     let redacted_content = crate::privacy::redact_pii(&content);
 
+    // Fetch recent history for context
+    let history_context = match crate::history::get_recent_history(10).await {
+        Ok(history) => history
+            .into_iter()
+            .map(|h| {
+                format!(
+                    "- {} ({})",
+                    crate::privacy::redact_pii(&h.title),
+                    crate::privacy::redact_pii(&h.url)
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n"),
+        Err(e) => {
+            tracing::warn!("Failed to fetch history context: {}", e);
+            "No recent history available.".to_string()
+        }
+    };
+
+    tracing::info!(
+        "Using history context for puzzle generation:\n{}",
+        history_context
+    );
+
     let dynamic = gemini
-        .generate_dynamic_puzzle(&redacted_url, &title, &redacted_content)
+        .generate_dynamic_puzzle(&redacted_url, &title, &redacted_content, &history_context)
         .await
         .map_err(|e| format!("Failed to generate puzzle: {}", e))?;
 
