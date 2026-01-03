@@ -75,8 +75,16 @@ jobs:
               if: matrix.platform == 'macos-latest'
               id: cert
               run: |
-                  CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Apple Distribution")
-                  CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
+                  echo "=== All certificates in keychain ==="
+                  security find-identity -v -p codesigning build.keychain || true
+                  echo "=== Looking for Apple Distribution certificate ==="
+                  CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep -E "(Apple Distribution|Developer ID Application)" || true)
+                  if [ -z "$CERT_INFO" ]; then
+                      echo "ERROR: No Apple Distribution or Developer ID certificate found in keychain!"
+                      echo "This usually means APPLE_CERTIFICATE or APPLE_CERTIFICATE_PASSWORD is incorrect."
+                      exit 1
+                  fi
+                  CERT_ID=$(echo "$CERT_INFO" | head -n 1 | awk -F'"' '{print $2}')
                   echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> $GITHUB_OUTPUT
                   echo "Certificate imported: $CERT_ID"
 
