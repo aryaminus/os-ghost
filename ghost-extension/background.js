@@ -21,6 +21,25 @@
  * @property {number} [duration] - Effect duration in ms
  */
 
+/** Debug mode flag - set to true to enable verbose console logging */
+const DEBUG_MODE = false;
+
+/**
+ * Conditional debug logger
+ * @param {...any} args - Arguments to log
+ */
+function log(...args) {
+	if (DEBUG_MODE) console.log("[OS Ghost]", ...args);
+}
+
+/**
+ * Conditional warning logger
+ * @param {...any} args - Arguments to log
+ */
+function warn(...args) {
+	if (DEBUG_MODE) console.warn("[OS Ghost]", ...args);
+}
+
 /** Native messaging host name */
 const NATIVE_HOST = "com.osghost.game";
 
@@ -89,7 +108,7 @@ function connectToNative() {
 
 	try {
 		port = chrome.runtime.connectNative(NATIVE_HOST);
-		console.log("[OS Ghost] Connected to native host");
+		log("Connected to native host");
 		updateConnectionStatus(true);
 		reconnectAttempts = 0;
 
@@ -111,13 +130,13 @@ function connectToNative() {
 					error.message
 				);
 			} else {
-				console.log("[OS Ghost] Native connection closed");
+				log("Native connection closed");
 			}
 
 			// Attempt to reconnect after delay
 			if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
 				reconnectAttempts++;
-				console.log("[OS Ghost] Attempting to reconnect...");
+				log("Attempting to reconnect...");
 				setTimeout(connectToNative, 5000);
 			}
 		});
@@ -134,7 +153,7 @@ function connectToNative() {
  * @returns {void}
  */
 function handleNativeMessage(message) {
-	console.log("[OS Ghost] Received from native:", message);
+	log("Received from native:", message);
 
 	switch (message.action) {
 		case "inject_effect":
@@ -186,7 +205,7 @@ function handleNativeMessage(message) {
 
 		case "acknowledged":
 			// Native app acknowledged our message
-			console.log("[OS Ghost] Message acknowledged");
+			log("Message acknowledged");
 			break;
 	}
 }
@@ -200,13 +219,13 @@ function sendToNative(message) {
 	if (port && isConnected) {
 		try {
 			port.postMessage(message);
-			console.log("[OS Ghost] Sent to native:", message);
+			log("Sent to native:", message);
 		} catch (error) {
 			console.error("[OS Ghost] Failed to send:", error);
 			updateConnectionStatus(false);
 		}
 	} else {
-		console.warn("[OS Ghost] Not connected to native host");
+		warn("Not connected to native host");
 		connectToNative();
 	}
 }
@@ -260,4 +279,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Initialize connection on startup
 updateConnectionStatus(false); // Start as disconnected
 connectToNative();
-console.log("[OS Ghost] Background service worker initialized");
+log("Background service worker initialized");

@@ -3,6 +3,7 @@
  * Runs on every page to enable visual effects and content extraction for OS Ghost.
  * @module content
  */
+"use strict";
 
 /**
  * @typedef {Object} PageContent
@@ -14,6 +15,25 @@
 /**
  * @typedef {"glitch" | "scanlines" | "static" | "pulse" | "flicker"} EffectType
  */
+
+/** Debug mode flag - set to true to enable verbose console logging */
+const DEBUG_MODE = false;
+
+/**
+ * Conditional debug logger
+ * @param {...any} args - Arguments to log
+ */
+function log(...args) {
+	if (DEBUG_MODE) console.log("[OS Ghost]", ...args);
+}
+
+/**
+ * Conditional warning logger
+ * @param {...any} args - Arguments to log
+ */
+function warn(...args) {
+	if (DEBUG_MODE) console.warn("[OS Ghost]", ...args);
+}
 
 /** @type {Set<string>} Track active effects to prevent duplicates */
 const activeEffects = new Set();
@@ -45,7 +65,7 @@ function applyEffect(effect, duration) {
 			applyFlicker(duration);
 			break;
 		default:
-			console.warn("[OS Ghost] Unknown effect:", effect);
+			warn("Unknown effect:", effect);
 	}
 
 	setTimeout(() => {
@@ -364,4 +384,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	return false; // Synchronous response
 });
 
-console.log("[OS Ghost] Content script loaded on:", window.location.href);
+log("Content script loaded on:", window.location.href);
