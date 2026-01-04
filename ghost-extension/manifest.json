@@ -1,43 +1,49 @@
 {
-	"manifest_version": 3,
-	"name": "OS Ghost Bridge",
-	"short_name": "OS Ghost",
-	"version": "1.0.1",
-	"description": "Connect Chrome to The OS Ghost - an AI-powered meta-game where puzzles emerge from your browsing.",
-	"author": "aryaminus",
-	"homepage_url": "https://github.com/aryaminus/os-ghost",
-	"permissions": [
-		"activeTab",
-		"tabs",
-		"nativeMessaging",
-		"scripting",
-		"storage",
-		"history",
-		"topSites"
-	],
-	"host_permissions": ["<all_urls>"],
-	"action": {
-		"default_popup": "popup.html",
-		"default_icon": {
-			"16": "icons/icon16.png",
-			"48": "icons/icon48.png",
-			"128": "icons/icon128.png"
-		},
-		"default_title": "OS Ghost"
-	},
-	"background": {
-		"service_worker": "background.js"
-	},
-	"content_scripts": [
-		{
-			"matches": ["<all_urls>"],
-			"js": ["content.js"],
-			"run_at": "document_idle"
-		}
-	],
-	"icons": {
-		"16": "icons/icon16.png",
-		"48": "icons/icon48.png",
-		"128": "icons/icon128.png"
-	}
+  "manifest_version": 3,
+  "name": "OS Ghost Bridge",
+  "short_name": "OS Ghost",
+  "version": "1.0.2",
+  "description": "Connect Chrome to The OS Ghost - an AI-powered meta-game where puzzles emerge from your browsing.",
+  "author": "aryaminus",
+  "homepage_url": "https://github.com/aryaminus/os-ghost",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "nativeMessaging",
+    "scripting",
+    "storage",
+    "history",
+    "topSites"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "OS Ghost"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }
