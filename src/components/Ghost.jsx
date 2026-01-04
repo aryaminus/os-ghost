@@ -36,6 +36,7 @@ const GHOST_SPRITES = {
     || ||
    ==' '==
   `,
+
 	thinking: `
     .-.
    (?.?)
@@ -52,6 +53,7 @@ const GHOST_SPRITES = {
     || ||
    ==' '==
   `,
+
 	searching: `
     .-.
    (>.<)
@@ -68,6 +70,7 @@ const GHOST_SPRITES = {
     || ||
    ==' '==
   `,
+
 	celebrate: `
     \\o/
    (^.^)
