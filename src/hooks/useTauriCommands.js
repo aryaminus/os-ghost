@@ -93,8 +93,6 @@ function warn(...args) {
  * @property {boolean} isLoading - Whether an async operation is in progress
  * @property {string|null} error - Error message if any
  * @property {function(): Promise<string|null>} captureAndAnalyze - Capture screen and analyze with AI
- * @property {function(string): Promise<string|null>} generateDialogue - Generate Ghost dialogue
- * @property {function(boolean): Promise<void>} setClickable - Set window click-through state
  * @property {function(): Promise<void>} showHint - Show next available hint
  * @property {function(): void} advanceToNextPuzzle - Move to next puzzle
  * @property {function(): Promise<void>} resetGame - Reset game progress
@@ -645,39 +643,6 @@ export function useGhostGame() {
 	};
 
 	/**
-	 * Generate Ghost dialogue using AI based on context.
-	 * @param {string} context - Context string for dialogue generation
-	 * @returns {Promise<string|null>} Generated dialogue or null if failed
-	 */
-	const generateDialogue = useCallback(async (context) => {
-		if (!gameStateRef.current.apiKeyConfigured) return null;
-
-		try {
-			const dialogue = /** @type {string} */ (
-				await invoke("generate_ghost_dialogue", { context })
-			);
-			setGameState((prev) => ({ ...prev, dialogue }));
-			return dialogue;
-		} catch (err) {
-			console.error("[Ghost] Dialogue generation failed:", err);
-			return null;
-		}
-	}, []);
-
-	/**
-	 * Set window click-through state.
-	 * @param {boolean} clickable - Whether window should receive clicks
-	 * @returns {Promise<void>}
-	 */
-	const setClickable = useCallback(async (clickable) => {
-		try {
-			await invoke("set_window_clickable", { clickable });
-		} catch (err) {
-			console.error("[Ghost] Failed to set clickable:", err);
-		}
-	}, []);
-
-	/**
 	 * Show the next available hint if timer has elapsed.
 	 * Progressive hints unlock at 60s intervals.
 	 * @returns {Promise<void>}
@@ -943,8 +908,6 @@ export function useGhostGame() {
 		captureAndAnalyze,
 		verifyScreenshotProof,
 		triggerBrowserEffect,
-		generateDialogue,
-		setClickable,
 		showHint,
 		advanceToNextPuzzle,
 		resetGame,

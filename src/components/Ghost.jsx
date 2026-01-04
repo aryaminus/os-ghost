@@ -204,6 +204,7 @@ const Ghost = () => {
 		startBackgroundChecks,
 		enableAutonomousMode,
 		verifyScreenshotProof,
+		resetGame,
 	} = useGhostGame();
 
 	const sprite = GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle;
@@ -446,6 +447,23 @@ const Ghost = () => {
 						onClick={() => setShowingKeyInput(true)}
 					>
 						⚙️ Change API Key
+					</button>
+
+					{/* Reset Game Button */}
+					<button
+						className="reset-game-btn"
+						onMouseDown={(e) => e.stopPropagation()}
+						onClick={() => {
+							if (
+								window.confirm(
+									"Reset all progress? This cannot be undone."
+								)
+							) {
+								resetGame();
+							}
+						}}
+					>
+						🔄 Reset Game
 					</button>
 				</>
 			)}

@@ -694,6 +694,34 @@ body {
 	opacity: 1;
 }
 
+/* Reset game button */
+.reset-game-btn {
+	width: 100%;
+	margin-top: 4px;
+	padding: 4px 8px;
+	font-size: 9px;
+	font-family: "Courier New", monospace;
+	background: transparent;
+	border: 1px solid var(--text-dim);
+	border-radius: 4px;
+	color: var(--text-dim);
+	cursor: pointer;
+	opacity: 0.5;
+	transition: all 0.2s ease;
+}
+
+.reset-game-btn:hover {
+	opacity: 1;
+	border-color: #ff6b6b;
+	color: #ff6b6b;
+}
+
+.reset-game-btn:focus-visible {
+	outline: 2px solid #ff6b6b;
+	outline-offset: 2px;
+	opacity: 1;
+}
+
 /* Cancel button for API key input */
 .cancel-key-btn {
 	width: 100%;
