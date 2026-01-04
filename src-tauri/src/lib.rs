@@ -77,6 +77,26 @@ pub fn run() {
         tracing::debug!("No .env file found or error loading: {}", e);
     }
 
+    // Load API key from config file if not in environment
+    // This allows production builds to use user-provided keys
+    if std::env::var("GEMINI_API_KEY").is_err() {
+        if let Some(config_dir) = dirs::config_dir() {
+            let config_path = config_dir.join("os-ghost").join("config.json");
+            if config_path.exists() {
+                if let Ok(contents) = std::fs::read_to_string(&config_path) {
+                    if let Ok(config) = serde_json::from_str::<serde_json::Value>(&contents) {
+                        if let Some(key) = config.get("gemini_api_key").and_then(|k| k.as_str()) {
+                            if !key.is_empty() {
+                                std::env::set_var("GEMINI_API_KEY", key);
+                                tracing::info!("Loaded API key from config file");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -93,7 +113,7 @@ pub fn run() {
 
             // Initialize Gemini client
             let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| {
-                tracing::warn!("GEMINI_API_KEY not set, AI features will be disabled");
+                tracing::warn!("GEMINI_API_KEY not set - user must provide via UI");
                 String::new()
             });
 
@@ -150,6 +170,8 @@ pub fn run() {
             ipc::get_puzzle,
             ipc::get_all_puzzles,
             ipc::check_api_key,
+            ipc::set_api_key,
+            ipc::validate_api_key,
             ipc::generate_dynamic_puzzle,
             ipc::process_agent_cycle,
             ipc::start_background_checks,

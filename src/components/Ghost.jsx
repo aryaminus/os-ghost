@@ -14,6 +14,7 @@ import React, {
 import { invoke } from "@tauri-apps/api/core";
 import { Command } from "@tauri-apps/plugin-shell";
 import { useGhostGame } from "../hooks/useTauriCommands";
+import ApiKeyInput from "./ApiKeyInput";
 
 /**
  * ASCII Art sprites for Ghost in different states.
@@ -119,12 +120,16 @@ const TypewriterText = React.memo(({ text, speed = 30 }) => {
 	}, [text, speed]);
 
 	return (
-		<span className="typewriter-text">
+		<span className="typewriter-text" aria-live="polite">
 			{displayed}
-			<span className="cursor">▌</span>
+			<span className="cursor" aria-hidden="true">
+				▌
+			</span>
 		</span>
 	);
 });
+
+TypewriterText.displayName = "TypewriterText";
 
 /**
  * Proximity indicator bar showing hot/cold feedback.
@@ -153,18 +158,31 @@ const ProximityBar = React.memo(({ proximity }) => {
 	);
 
 	return (
-		<div className="proximity-container">
+		<div
+			className="proximity-container"
+			role="meter"
+			aria-label="Signal strength"
+			aria-valuenow={Math.round(proximity * 100)}
+			aria-valuemin={0}
+			aria-valuemax={100}
+		>
 			<div className="proximity-label">
-				<span className="cold-indicator">❄️</span>
+				<span className="cold-indicator" aria-hidden="true">
+					❄️
+				</span>
 				<span className="proximity-text">SIGNAL STRENGTH</span>
-				<span className="hot-indicator">🔥</span>
+				<span className="hot-indicator" aria-hidden="true">
+					🔥
+				</span>
 			</div>
-			<div className="proximity-bar">
+			<div className="proximity-bar" aria-hidden="true">
 				<div className="proximity-fill" style={fillStyle} />
 			</div>
 		</div>
 	);
 });
+
+ProximityBar.displayName = "ProximityBar";
 
 /**
  * Main Ghost component.
@@ -232,32 +250,80 @@ const Ghost = () => {
 		[glowIntensity, gameState.state]
 	);
 
+	const [showingKeyInput, setShowingKeyInput] = useState(false);
+
+	/**
+	 * Handle successful API key set - refresh game state.
+	 */
+	const handleKeySet = useCallback(async () => {
+		setShowingKeyInput(false);
+		// Re-check API key status by calling backend
+		try {
+			const configured = await invoke("check_api_key");
+			if (configured) {
+				// Trigger a page reload to reinitialize with the new key
+				window.location.reload();
+			}
+		} catch (err) {
+			console.error("Failed to check API key:", err);
+		}
+	}, []);
+
 	return (
-		<div className="ghost-container" onMouseDown={handleDrag}>
+		<div
+			className="ghost-container"
+			onMouseDown={handleDrag}
+			role="application"
+			aria-label="Ghost game interface"
+		>
 			{/* Ghost Sprite */}
 			<div
 				className={`ghost-sprite state-${gameState.state}`}
 				onClick={handleClick}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						handleClick();
+					}
+				}}
 				style={spriteStyle}
+				role="button"
+				tabIndex={0}
+				aria-label={
+					gameState.state === "idle"
+						? "Click to analyze screen"
+						: "Click for hint"
+				}
 			>
-				<pre className="ascii-art">{sprite}</pre>
+				<pre className="ascii-art" aria-hidden="true">
+					{sprite}
+				</pre>
 			</div>
 
 			{/* Proximity Indicator - Always visible */}
 			<ProximityBar proximity={gameState.proximity} />
 
-			{/* Status Issues Section - Show when there are problems */}
-			{(!gameState.apiKeyConfigured || !extensionConnected) && (
+			{/* API Key Input - Show when not configured OR when user wants to change */}
+			{(!gameState.apiKeyConfigured || showingKeyInput) && (
 				<div className="status-section">
-					{/* API Key Warning */}
-					{!gameState.apiKeyConfigured && (
-						<div className="warning-box">
-							⚠️ GEMINI_API_KEY not set. AI features disabled.
-						</div>
+					<ApiKeyInput onKeySet={handleKeySet} />
+					{showingKeyInput && (
+						<button
+							className="cancel-key-btn"
+							onMouseDown={(e) => e.stopPropagation()}
+							onClick={() => setShowingKeyInput(false)}
+						>
+							Cancel
+						</button>
 					)}
+				</div>
+			)}
 
-					{/* Extension Connection Status */}
-					{!extensionConnected && (
+			{/* Extension Connection Status - Show only when API key IS configured */}
+			{gameState.apiKeyConfigured &&
+				!showingKeyInput &&
+				!extensionConnected && (
+					<div className="status-section">
 						<div className="connection-box">
 							<div className="connection-header">
 								🔗 Browser Not Connected
@@ -290,9 +356,8 @@ const Ghost = () => {
 								📦 Install Extension
 							</button>
 						</div>
-					)}
-				</div>
-			)}
+					</div>
+				)}
 
 			{/* Game UI Section - Only show when everything is ready */}
 			{gameState.apiKeyConfigured && extensionConnected && (
@@ -373,6 +438,15 @@ const Ghost = () => {
 					<div className="puzzle-counter">
 						Memory Fragment: {gameState.currentPuzzle + 1}/∞
 					</div>
+
+					{/* Change API Key Button */}
+					<button
+						className="change-key-btn"
+						onMouseDown={(e) => e.stopPropagation()}
+						onClick={() => setShowingKeyInput(true)}
+					>
+						⚙️ Change API Key
+					</button>
 				</>
 			)}
 

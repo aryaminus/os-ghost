@@ -231,6 +231,133 @@ pub fn check_api_key() -> Result<bool, String> {
     Ok(std::env::var("GEMINI_API_KEY").is_ok())
 }
 
+/// Get the config file path for storing API key
+fn get_config_path() -> Result<std::path::PathBuf, String> {
+    let config_dir = dirs::config_dir()
+        .ok_or_else(|| "Could not find config directory".to_string())?
+        .join("os-ghost");
+
+    // Create config directory if it doesn't exist
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+
+    Ok(config_dir.join("config.json"))
+}
+
+/// Config structure for persisting settings
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct AppConfig {
+    gemini_api_key: Option<String>,
+}
+
+/// Load config from file
+fn load_config() -> AppConfig {
+    let config_path = match get_config_path() {
+        Ok(path) => path,
+        Err(_) => return AppConfig::default(),
+    };
+
+    if !config_path.exists() {
+        return AppConfig::default();
+    }
+
+    match std::fs::read_to_string(&config_path) {
+        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
+        Err(_) => AppConfig::default(),
+    }
+}
+
+/// Save config to file
+fn save_config(config: &AppConfig) -> Result<(), String> {
+    let config_path = get_config_path()?;
+    let contents = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    std::fs::write(&config_path, contents)
+        .map_err(|e| format!("Failed to write config file: {}", e))?;
+    Ok(())
+}
+
+/// Set API key at runtime and persist to config file
+#[tauri::command]
+pub async fn set_api_key(api_key: String) -> Result<(), String> {
+    // Validate the key is not empty
+    let trimmed_key = api_key.trim();
+    if trimmed_key.is_empty() {
+        return Err("API key cannot be empty".to_string());
+    }
+
+    // Set environment variable for current session
+    std::env::set_var("GEMINI_API_KEY", trimmed_key);
+
+    // Persist to config file
+    let mut config = load_config();
+    config.gemini_api_key = Some(trimmed_key.to_string());
+    save_config(&config)?;
+
+    tracing::info!("API key set and persisted to config");
+    Ok(())
+}
+
+/// Validate an API key by testing with Gemini API
+#[tauri::command]
+pub async fn validate_api_key(api_key: String) -> Result<bool, String> {
+    let trimmed_key = api_key.trim();
+    if trimmed_key.is_empty() {
+        return Err("API key cannot be empty".to_string());
+    }
+
+    // Basic format check - Gemini API keys are typically 39 characters
+    if trimmed_key.len() < 20 {
+        return Err("API key appears too short".to_string());
+    }
+
+    // Create a temporary client with the provided key
+    let test_client = crate::ai_client::GeminiClient::new(trimmed_key.to_string());
+
+    // Try to make a simple API call to validate the key
+    match test_client
+        .generate_dialogue("test", "You are a test assistant. Say 'OK'.")
+        .await
+    {
+        Ok(_) => {
+            tracing::info!("API key validation successful");
+            Ok(true)
+        }
+        Err(e) => {
+            let error_msg = e.to_string().to_lowercase();
+            tracing::warn!("API key validation failed: {}", error_msg);
+
+            // Parse specific error types for user-friendly messages
+            if error_msg.contains("401") || error_msg.contains("api_key_invalid") {
+                Err("Invalid API key. Please check and try again.".to_string())
+            } else if error_msg.contains("403") || error_msg.contains("permission") {
+                Err("API key lacks required permissions.".to_string())
+            } else if error_msg.contains("429")
+                || error_msg.contains("rate")
+                || error_msg.contains("quota")
+            {
+                Err("Rate limit or quota exceeded. Try again later.".to_string())
+            } else if error_msg.contains("500")
+                || error_msg.contains("503")
+                || error_msg.contains("unavailable")
+            {
+                Err("Gemini API temporarily unavailable. Try again.".to_string())
+            } else if error_msg.contains("timeout")
+                || error_msg.contains("connect")
+                || error_msg.contains("network")
+            {
+                Err("Network error. Check your internet connection.".to_string())
+            } else if error_msg.contains("billing") || error_msg.contains("payment") {
+                Err("Billing issue with API key. Check your Google Cloud account.".to_string())
+            } else {
+                // Generic error with first 80 chars of message
+                let short_msg: String = error_msg.chars().take(80).collect();
+                Err(format!("Validation failed: {}", short_msg))
+            }
+        }
+    }
+}
+
 /// Generated puzzle with ID for frontend
 #[derive(Debug, Serialize, Clone)]
 pub struct GeneratedPuzzle {

@@ -383,6 +383,11 @@ body {
 	background: rgba(255, 107, 107, 0.3);
 }
 
+.install-btn:focus-visible {
+	outline: 2px solid #ff6b6b;
+	outline-offset: 2px;
+}
+
 /* Action button (Investigate) */
 .action-btn {
 	width: 100%;
@@ -393,6 +398,7 @@ body {
 	padding: 8px 12px;
 	cursor: pointer;
 	font-size: 11px;
+	font-family: "Courier New", monospace;
 	border-radius: 6px;
 	transition: all 0.2s ease;
 }
@@ -400,6 +406,18 @@ body {
 .action-btn:hover {
 	background: rgba(0, 255, 136, 0.2);
 	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.action-btn:focus-visible {
+	outline: 2px solid var(--ghost-green);
+	outline-offset: 2px;
+}
+
+/* Ghost sprite focus state */
+.ghost-sprite:focus-visible {
+	outline: 2px dashed var(--ghost-green);
+	outline-offset: 4px;
+	border-radius: 8px;
 }
 
 /* Puzzle counter */
@@ -505,4 +523,241 @@ body {
 	);
 	pointer-events: none;
 	z-index: 1000;
+}
+
+/* API Key Input Styles */
+.api-key-container {
+	width: 100%;
+	background: rgba(0, 0, 0, 0.6);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 10px;
+}
+
+.api-key-header {
+	font-size: 11px;
+	color: var(--ghost-green);
+	margin-bottom: 6px;
+	letter-spacing: 1px;
+}
+
+.api-key-description {
+	font-size: 9px;
+	color: var(--text-dim);
+	margin-bottom: 8px;
+	line-height: 1.3;
+}
+
+.api-key-form {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.api-key-input-wrapper {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+.api-key-toggle {
+	position: absolute;
+	right: 4px;
+	background: none;
+	border: none;
+	padding: 2px 4px;
+	cursor: pointer;
+	font-size: 10px;
+	opacity: 0.5;
+	transition: opacity 0.2s ease;
+}
+
+.api-key-toggle:hover {
+	opacity: 1;
+}
+
+.loading-spinner {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	margin-right: 6px;
+	border: 2px solid transparent;
+	border-top-color: var(--ghost-green);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.api-key-input {
+	width: 100%;
+	padding: 6px 28px 6px 8px; /* Extra right padding for toggle button */
+	font-size: 10px;
+	font-family: "Courier New", monospace;
+	background: rgba(0, 0, 0, 0.5);
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	color: var(--text-primary);
+	outline: none;
+	transition:
+		border-color 0.2s ease,
+		box-shadow 0.2s ease;
+}
+
+.api-key-input:focus {
+	border-color: var(--ghost-green);
+	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+
+.api-key-input.has-error {
+	border-color: #ff6b6b;
+	box-shadow: 0 0 6px rgba(255, 107, 107, 0.3);
+}
+
+.api-key-input::placeholder {
+	color: var(--text-dim);
+}
+
+.api-key-submit {
+	width: 100%;
+	padding: 6px 10px;
+	font-size: 10px;
+	font-family: "Courier New", monospace;
+	background: rgba(0, 255, 136, 0.15);
+	border: 1px solid var(--ghost-green);
+	border-radius: 4px;
+	color: var(--ghost-green);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.api-key-submit:hover:not(:disabled) {
+	background: rgba(0, 255, 136, 0.25);
+	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.api-key-submit:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.api-key-error {
+	font-size: 9px;
+	color: #ff6b6b;
+	margin-top: 6px;
+	padding: 4px 6px;
+	background: rgba(255, 107, 107, 0.1);
+	border-radius: 3px;
+}
+
+.api-key-link {
+	display: block;
+	font-size: 8px;
+	color: var(--text-dim);
+	text-decoration: none;
+	margin-top: 8px;
+	transition: color 0.2s ease;
+}
+
+.api-key-link:hover {
+	color: var(--ghost-green);
+}
+
+/* Change API Key Button */
+.change-key-btn {
+	margin-top: 8px;
+	padding: 4px 8px;
+	font-size: 8px;
+	font-family: "Courier New", monospace;
+	background: transparent;
+	border: 1px solid var(--text-dim);
+	border-radius: 3px;
+	color: var(--text-dim);
+	cursor: pointer;
+	opacity: 0.6;
+	transition: all 0.2s ease;
+}
+
+.change-key-btn:hover {
+	opacity: 1;
+	border-color: var(--text-secondary);
+	color: var(--text-secondary);
+}
+
+.change-key-btn:focus-visible {
+	outline: 2px solid var(--text-secondary);
+	outline-offset: 2px;
+	opacity: 1;
+}
+
+/* Cancel button for API key input */
+.cancel-key-btn {
+	width: 100%;
+	margin-top: 6px;
+	padding: 4px 8px;
+	font-size: 9px;
+	font-family: "Courier New", monospace;
+	background: transparent;
+	border: 1px solid var(--text-dim);
+	border-radius: 4px;
+	color: var(--text-dim);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.cancel-key-btn:hover {
+	border-color: #ff6b6b;
+	color: #ff6b6b;
+}
+
+.cancel-key-btn:focus-visible {
+	outline: 2px solid #ff6b6b;
+	outline-offset: 2px;
+}
+
+/* API key submit focus state */
+.api-key-submit:focus-visible {
+	outline: 2px solid var(--ghost-green);
+	outline-offset: 2px;
+}
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+
+	.state-idle .ascii-art,
+	.state-thinking .ascii-art,
+	.state-searching .ascii-art,
+	.state-celebrate .ascii-art {
+		animation: none;
+	}
+
+	.loading-spinner {
+		animation: none;
+		border: 2px solid var(--ghost-green);
+	}
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+	:root {
+		--border-color: rgba(0, 255, 136, 0.8);
+		--text-dim: #66aa77;
+	}
+
+	.api-key-input,
+	.action-btn,
+	.install-btn {
+		border-width: 2px;
+	}
 }
