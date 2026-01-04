@@ -1,0 +1,101 @@
+name: Chrome Extension Release
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - "ghost-extension/**"
+            - "!ghost-extension/*.md"
+
+permissions:
+    contents: write
+
+jobs:
+    release-extension:
+        # Skip if this is a version bump commit
+        if: "!contains(github.event.head_commit.message, 'chore(extension):')"
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  token: ${{ secrets.GH_OWNER_TOKEN }}
+
+            - name: Configure Git
+              run: |
+                  git config --global user.name "github-actions[bot]"
+                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+            - name: Get current version
+              id: current
+              run: |
+                  VERSION=$(jq -r '.version' ghost-extension/manifest.json)
+                  echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+                  echo "Current version: $VERSION"
+
+            - name: Bump patch version
+              id: version
+              run: |
+                  cd ghost-extension
+                  CURRENT=$(jq -r '.version' manifest.json)
+
+                  # Parse version parts
+                  MAJOR=$(echo $CURRENT | cut -d. -f1)
+                  MINOR=$(echo $CURRENT | cut -d. -f2)
+                  PATCH=$(echo $CURRENT | cut -d. -f3)
+
+                  # Bump patch
+                  NEW_PATCH=$((PATCH + 1))
+                  NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+
+                  # Update manifest.json
+                  jq --arg v "$NEW_VERSION" '.version = $v' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+
+                  echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+                  echo "Bumped version: $CURRENT -> $NEW_VERSION"
+
+            - name: Commit version bump
+              run: |
+                  git add ghost-extension/manifest.json
+                  git commit -m "chore(extension): bump version to ${{ steps.version.outputs.NEW_VERSION }}"
+                  git push origin main
+
+            - name: Create extension zip
+              run: |
+                  cd ghost-extension
+                  zip -r ../os-ghost-extension-v${{ steps.version.outputs.NEW_VERSION }}.zip . \
+                      -x "*.md" \
+                      -x ".git/*" \
+                      -x ".DS_Store"
+                  cd ..
+                  ls -la *.zip
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: os-ghost-extension-v${{ steps.version.outputs.NEW_VERSION }}
+                  path: os-ghost-extension-v${{ steps.version.outputs.NEW_VERSION }}.zip
+
+            - name: Publish to Chrome Web Store
+              uses: trmcnvn/chrome-addon@v2
+              with:
+                  extension: ${{ secrets.EXTENSION_ID }}
+                  zip: os-ghost-extension-v${{ steps.version.outputs.NEW_VERSION }}.zip
+                  client-id: ${{ secrets.CWS_CLIENT_ID }}
+                  client-secret: ${{ secrets.CWS_CLIENT_SECRET }}
+                  refresh-token: ${{ secrets.CWS_REFRESH_TOKEN }}
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ext-v${{ steps.version.outputs.NEW_VERSION }}
+                  files: os-ghost-extension-v${{ steps.version.outputs.NEW_VERSION }}.zip
+                  name: "OS Ghost Extension v${{ steps.version.outputs.NEW_VERSION }}"
+                  body: |
+                      ## Chrome Extension v${{ steps.version.outputs.NEW_VERSION }}
+
+                      This extension connects Chrome to The OS Ghost desktop app.
+
+                      **Install from Chrome Web Store** (recommended) or download the zip below.
+                  draft: false
+                  prerelease: false

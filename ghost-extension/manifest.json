@@ -3,7 +3,7 @@
 	"name": "OS Ghost Bridge",
 	"short_name": "OS Ghost",
 	"version": "1.0.0",
-	"description": "Connect your browser to The OS Ghost - an AI-powered meta-game where puzzles emerge from your browsing. The Ghost watches your navigation, provides hot/cold feedback, and transforms webpages with visual effects as you solve mysteries.",
+	"description": "Connect Chrome to The OS Ghost - an AI-powered meta-game where puzzles emerge from your browsing.",
 	"author": "aryaminus",
 	"homepage_url": "https://github.com/aryaminus/os-ghost",
 	"permissions": [

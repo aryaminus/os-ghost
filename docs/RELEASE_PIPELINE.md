@@ -24,6 +24,18 @@ The release process is triggered automatically by git events.
     2. **Signs** the macOS build using the Apple Distribution Certificate (see below).
     3. Uploads artifacts to a new **GitHub Release**.
 
+### 3. Chrome Extension (`extension-release.yml`)
+
+* **Trigger**: Push to `main` that modifies `ghost-extension/**`.
+* **Action**:
+    1. Bumps the patch version in `manifest.json`.
+    2. Commits the version bump.
+    3. Packages the extension into a zip file.
+    4. **Publishes to Chrome Web Store** (requires CWS API credentials).
+    5. Creates a **GitHub Release** with tag `ext-vX.Y.Z`.
+
+> **Note**: The workflow skips if the commit message contains `chore(extension):` to prevent infinite loops.
+
 ---
 
 ## 🔐 Code Signing Setup
@@ -87,8 +99,14 @@ For the pipeline to work, these secrets must be present in the repository:
 | `KEYCHAIN_PASSWORD` | ❌ No* | Password for CI keychain (any secure string). |
 | `APPLE_API_ISSUER` | ❌ No | For Notarization. |
 | `APPLE_API_KEY` | ❌ No | For Notarization. |
+| `EXTENSION_ID` | ❌ No | Chrome Web Store extension ID (for auto-publish). |
+| `CWS_CLIENT_ID` | ❌ No | Chrome Web Store API client ID. |
+| `CWS_CLIENT_SECRET` | ❌ No | Chrome Web Store API client secret. |
+| `CWS_REFRESH_TOKEN` | ❌ No | Chrome Web Store API refresh token. |
 
 > **Note**: macOS code signing is currently **disabled** (using ad-hoc signing). To enable it, uncomment the Apple-related env vars in `release.yml` and ensure the secrets are configured.
+
+> **Note**: Chrome Web Store publishing is optional. See [Chrome Web Store API guide](https://developer.chrome.com/docs/webstore/using_webstore_api/) for credentials.
 
 ---
 
