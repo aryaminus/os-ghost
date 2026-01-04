@@ -90,7 +90,6 @@ function warn(...args) {
  * Return type for useGhostGame hook
  * @typedef {Object} UseGhostGameReturn
  * @property {GameState} gameState - Current game state
- * @property {Puzzle[]} puzzles - All available puzzles
  * @property {boolean} isLoading - Whether an async operation is in progress
  * @property {string|null} error - Error message if any
  * @property {function(): Promise<string|null>} captureAndAnalyze - Capture screen and analyze with AI
@@ -136,8 +135,6 @@ let globalLatestContent = null;
 
 export function useGhostGame() {
 	const [gameState, setGameState] = useState(initialGameState);
-	/** @type {[Puzzle[], function(Puzzle[]): void]} */
-	const [puzzles, setPuzzles] = useState([]);
 	const [isLoading, setIsLoading] = useState(false);
 	/** @type {[string|null, function(string|null): void]} */
 	const [error, setError] = useState(null);
@@ -150,6 +147,12 @@ export function useGhostGame() {
 	const gameStateRef = useRef(gameState);
 	// Track last generated URL to prevent double-generation
 	const lastGeneratedUrlRef = useRef(null);
+	// Track last processed URL to debounce agent cycles
+	const lastProcessedUrlRef = useRef(null);
+	// Lock to prevent concurrent agent cycles
+	const agentCycleInProgressRef = useRef(false);
+	// Debounce timer for navigation events
+	const navigationDebounceRef = useRef(null);
 
 	/**
 	 * Trigger a visual effect in the browser.
@@ -461,6 +464,25 @@ export function useGhostGame() {
 			const { url, title } = payload;
 			const currentState = gameStateRef.current;
 
+			// Debounce: skip if same URL was just processed
+			if (lastProcessedUrlRef.current === url) {
+				log(" Skipping duplicate navigation for:", url);
+				return;
+			}
+
+			// Skip if another agent cycle is in progress
+			if (agentCycleInProgressRef.current) {
+				log(" Agent cycle in progress, debouncing navigation");
+				// Clear any pending debounce and schedule new one
+				if (navigationDebounceRef.current) {
+					clearTimeout(navigationDebounceRef.current);
+				}
+				navigationDebounceRef.current = setTimeout(() => {
+					handleNavigationRef.current?.(payload);
+				}, 500);
+				return;
+			}
+
 			setGameState((prev) => ({
 				...prev,
 				currentUrl: url,
@@ -480,6 +502,10 @@ export function useGhostGame() {
 				log(" No active puzzle, waiting for content...");
 				return;
 			}
+
+			// Set lock and track URL
+			agentCycleInProgressRef.current = true;
+			lastProcessedUrlRef.current = url;
 
 			try {
 				// Call multi-agent orchestrator
@@ -516,6 +542,11 @@ export function useGhostGame() {
 			} catch (err) {
 				console.error("[Ghost] Agent cycle failed:", err);
 				setGameState((prev) => ({ ...prev, state: "idle" }));
+			} finally {
+				// Release lock after short delay to allow batching
+				setTimeout(() => {
+					agentCycleInProgressRef.current = false;
+				}, 300);
 			}
 		},
 		[advanceToNextPuzzle]
@@ -906,7 +937,6 @@ export function useGhostGame() {
 
 	return {
 		gameState,
-		puzzles,
 		isLoading,
 		error,
 		extensionConnected,

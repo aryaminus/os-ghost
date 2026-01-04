@@ -110,45 +110,64 @@ impl GeminiClient {
             .unwrap_or_default()
             .as_secs();
 
-        let window_start = self.rate_limit_window_start.load(Ordering::Relaxed);
+        let window_start = self.rate_limit_window_start.load(Ordering::SeqCst);
 
-        // If window has expired, reset
-        if now - window_start >= RATE_LIMIT_WINDOW_SECS {
-            self.rate_limit_window_start.store(now, Ordering::Relaxed);
-            self.request_count.store(1, Ordering::Relaxed);
-            return true;
+        // If window has expired, try to reset atomically
+        if now.saturating_sub(window_start) >= RATE_LIMIT_WINDOW_SECS {
+            // Try to be the one that resets the window
+            if self
+                .rate_limit_window_start
+                .compare_exchange(window_start, now, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                self.request_count.store(1, Ordering::SeqCst);
+                return true;
+            }
+            // Another thread reset it, re-check
+            return self.check_rate_limit();
         }
 
-        // Check if under limit
-        let count = self.request_count.fetch_add(1, Ordering::Relaxed);
-        if count < MAX_REQUESTS_PER_MINUTE {
+        // Check current count BEFORE incrementing
+        let current = self.request_count.load(Ordering::SeqCst);
+        if current >= MAX_REQUESTS_PER_MINUTE {
+            return false;
+        }
+
+        // Try to increment atomically
+        if self
+            .request_count
+            .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
             true
         } else {
-            // Revert the increment since we're rejecting
-            self.request_count.fetch_sub(1, Ordering::Relaxed);
-            tracing::warn!(
-                "Rate limit exceeded: {} requests in {} seconds",
-                count,
-                now - window_start
-            );
-            false
+            // Race condition, re-check
+            self.check_rate_limit()
         }
     }
 
     /// Wait for rate limit availability with simple backoff
-    async fn wait_for_rate_limit(&self) {
+    /// Returns false if max attempts exceeded
+    async fn wait_for_rate_limit(&self) -> bool {
+        const MAX_WAIT_ATTEMPTS: u32 = 12; // Max ~1 minute of waiting
         let mut attempts = 0;
+
         loop {
             if self.check_rate_limit() {
-                return;
+                return true;
             }
 
             attempts += 1;
+            if attempts > MAX_WAIT_ATTEMPTS {
+                tracing::error!("Rate limit: max wait attempts exceeded, dropping request");
+                return false;
+            }
+
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            let window_start = self.rate_limit_window_start.load(Ordering::Relaxed);
+            let window_start = self.rate_limit_window_start.load(Ordering::SeqCst);
 
             // Calculate time until window reset
             let elapsed = now.saturating_sub(window_start);
@@ -158,14 +177,18 @@ impl GeminiClient {
                 1
             };
 
-            // Cap max wait to avoid hanging too long (e.g. if time jumps)
+            // Cap max wait
             let wait_secs = wait_secs.min(5).max(1);
 
-            tracing::warn!(
-                "Rate limit hit (attempt {}), waiting {}s...",
-                attempts,
-                wait_secs
-            );
+            // Only log every few attempts to reduce spam
+            if attempts == 1 || attempts % 4 == 0 {
+                tracing::warn!(
+                    "Rate limit hit (attempt {}/{}), waiting {}s...",
+                    attempts,
+                    MAX_WAIT_ATTEMPTS,
+                    wait_secs
+                );
+            }
 
             tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
         }
@@ -184,7 +207,9 @@ impl GeminiClient {
             return Ok("AI Analysis unavailable (No API Key)".to_string());
         }
 
-        self.wait_for_rate_limit().await;
+        if !self.wait_for_rate_limit().await {
+            return Err(anyhow::anyhow!("Rate limit exceeded, request dropped"));
+        }
 
         let request = GeminiRequest {
             contents: vec![Content {
@@ -239,7 +264,9 @@ impl GeminiClient {
             return Ok(0.0);
         }
 
-        self.wait_for_rate_limit().await;
+        if !self.wait_for_rate_limit().await {
+            return Ok(0.0); // Return no similarity if rate limited
+        }
 
         let prompt = format!(
             "Compare these two URLs semantically. Consider the topic, domain, and content they represent.
@@ -298,7 +325,9 @@ impl GeminiClient {
             return Ok("...".to_string());
         }
 
-        self.wait_for_rate_limit().await;
+        if !self.wait_for_rate_limit().await {
+            return Ok("...".to_string()); // Return placeholder if rate limited
+        }
 
         let prompt = format!(
             "You are a mysterious AI ghost character with this personality: {}
@@ -362,7 +391,11 @@ impl GeminiClient {
             page_title
         );
 
-        self.wait_for_rate_limit().await;
+        if !self.wait_for_rate_limit().await {
+            return Err(anyhow::anyhow!(
+                "Rate limit exceeded, puzzle generation dropped"
+            ));
+        }
 
         let prompt = format!(
             r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
@@ -465,7 +498,9 @@ Make the puzzle interesting and educational. The target should be related but no
             return Err(anyhow::anyhow!("No API Key configured"));
         }
 
-        self.wait_for_rate_limit().await;
+        if !self.wait_for_rate_limit().await {
+            return Err(anyhow::anyhow!("Rate limit exceeded, verification dropped"));
+        }
 
         let prompt = format!(
             "Analyze this screenshot. Does it contain content matching this description: '{}'?

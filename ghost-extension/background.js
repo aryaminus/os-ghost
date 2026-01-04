@@ -69,29 +69,30 @@ function updateConnectionStatus(connected) {
  * @param {chrome.tabs.Tab} tab
  */
 function fetchContentForTab(tab) {
-	// Skip non-http URLs (chrome://, about:, etc.)
-	if (!tab?.id || !tab?.url || !tab.url.startsWith("http")) return;
+	// Skip non-http URLs (chrome://, about:, edge://, file://, etc.)
+	if (!tab?.id || !tab?.url) return;
+	if (!tab.url.startsWith("http://") && !tab.url.startsWith("https://"))
+		return;
 
-	try {
-		chrome.tabs.sendMessage(tab.id, { type: "get_content" }, (response) => {
-			// Check for runtime error (e.g. content script not ready or restricted)
-			if (chrome.runtime.lastError) {
-				// Suppress expected errors on restricted pages
-				return;
-			}
+	// Use try-catch to suppress errors when content script isn't available
+	chrome.tabs.sendMessage(tab.id, { type: "get_content" }, (response) => {
+		// Check for runtime error (content script not ready or restricted page)
+		// This clears the error to prevent it from appearing in console
+		const lastError = chrome.runtime.lastError;
+		if (lastError) {
+			// Expected on restricted pages - silently ignore
+			return;
+		}
 
-			if (response?.bodyText) {
-				sendToNative({
-					type: "page_content",
-					url: tab.url,
-					body_text: response.bodyText.slice(0, 5000),
-					timestamp: Date.now(),
-				});
-			}
-		});
-	} catch (e) {
-		// Silently fail for restricted tabs
-	}
+		if (response?.bodyText) {
+			sendToNative({
+				type: "page_content",
+				url: tab.url,
+				body_text: response.bodyText.slice(0, 5000),
+				timestamp: Date.now(),
+			});
+		}
+	});
 }
 
 /**
@@ -159,12 +160,19 @@ function handleNativeMessage(message) {
 		case "inject_effect":
 			// Send effect to active tab's content script
 			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-				if (tabs[0]?.id) {
-					chrome.tabs.sendMessage(tabs[0].id, {
-						type: "effect",
-						effect: message.effect,
-						duration: message.duration || 1000,
-					});
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{
+							type: "effect",
+							effect: message.effect,
+							duration: message.duration || 1000,
+						},
+						() => {
+							// Clear any error to prevent console noise
+							void chrome.runtime.lastError;
+						}
+					);
 				}
 			});
 			break;
@@ -172,11 +180,17 @@ function handleNativeMessage(message) {
 		case "highlight_text":
 			// Highlight specific text on page
 			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-				if (tabs[0]?.id) {
-					chrome.tabs.sendMessage(tabs[0].id, {
-						type: "highlight",
-						text: message.text,
-					});
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{
+							type: "highlight",
+							text: message.text,
+						},
+						() => {
+							void chrome.runtime.lastError;
+						}
+					);
 				}
 			});
 			break;
@@ -184,11 +198,14 @@ function handleNativeMessage(message) {
 		case "get_page_content":
 			// Request page content from content script
 			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-				if (tabs[0]?.id) {
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
 					chrome.tabs.sendMessage(
 						tabs[0].id,
 						{ type: "get_content" },
 						(response) => {
+							const lastError = chrome.runtime.lastError;
+							if (lastError) return;
+
 							if (port && response) {
 								port.postMessage({
 									type: "page_content",
