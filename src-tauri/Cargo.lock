@@ -3278,7 +3278,7 @@ dependencies = [
 
 [[package]]
 name = "os-ghost"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anyhow",
  "async-trait",
