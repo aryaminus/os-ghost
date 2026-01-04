@@ -6,35 +6,36 @@ This repository uses a fully automated CI/CD pipeline to version, build, sign, a
 
 The release process is triggered automatically by git events.
 
-### 1. Auto-Versioning (`bump_version.yml`)
+### 1. Auto-Versioning (`bump-version.yml`)
 
 * **Trigger**: Push to `main` branch.
 * **Action**:
-    1. Calculates the next patch version (e.g., `0.1.0` -> `0.1.1`).
-    2. Updates `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
-    3. Commits the change: `chore(release): bump version to ...`
-    4. **Pushes a Tag**: `app-v0.1.x`
-* **Note**: This uses a Personal Access Token (`GH_OWNER_TOKEN`) to bypass GitHub's restriction on recursively triggering workflows.
+    1. **Detects which files changed** (app vs extension).
+    2. **If app files changed**:
+        * Bumps version in `package.json`, `src-tauri/tauri.conf.json`, `Cargo.toml`
+        * Commits: `chore(release): bump version to X.Y.Z`
+        * Pushes tag: `app-vX.Y.Z`
+    3. **If extension files changed**:
+        * Bumps version in `ghost-extension/manifest.json`
+        * Commits: `chore(extension): bump version to X.Y.Z`
+        * Pushes tag: `ext-vX.Y.Z`
+* **Note**: Uses `GH_OWNER_TOKEN` to bypass GitHub's workflow recursion restrictions.
 
-### 2. Build & Release (`release.yml`)
+### 2. Desktop App Release (`app-release.yml`)
 
 * **Trigger**: Push of a tag starting with `app-v*`.
 * **Action**:
     1. Builds the application for **macOS (Intel & Silicon)**, **Windows**, and **Linux**.
-    2. **Signs** the macOS build using the Apple Distribution Certificate (see below).
-    3. Uploads artifacts to a new **GitHub Release**.
+    2. Signs updater artifacts with Tauri keys.
+    3. Creates **GitHub Release** with platform binaries.
 
-### 3. Chrome Extension (`extension-release.yml`)
+### 3. Chrome Extension Release (`extension-release.yml`)
 
-* **Trigger**: Push to `main` that modifies `ghost-extension/**`.
+* **Trigger**: Push of a tag starting with `ext-v*`.
 * **Action**:
-    1. Bumps the patch version in `manifest.json`.
-    2. Commits the version bump.
-    3. Packages the extension into a zip file.
-    4. **Publishes to Chrome Web Store** (requires CWS API credentials).
-    5. Creates a **GitHub Release** with tag `ext-vX.Y.Z`.
-
-> **Note**: The workflow skips if the commit message contains `chore(extension):` to prevent infinite loops.
+    1. Packages the extension into a zip file.
+    2. **Publishes to Chrome Web Store** (requires CWS API credentials).
+    3. Creates **GitHub Release** with extension zip.
 
 ---
 
