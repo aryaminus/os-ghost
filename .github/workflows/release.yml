@@ -1,6 +1,15 @@
 name: Release and Publish
 on:
     workflow_dispatch:
+        inputs:
+            skip_signing:
+                description: "Skip macOS code signing"
+                required: false
+                default: "true"
+                type: choice
+                options:
+                    - "true"
+                    - "false"
     push:
         tags:
             - "app-v*"
@@ -56,7 +65,7 @@ jobs:
               run: npm ci
 
             - name: Import Apple Developer Certificate
-              if: matrix.platform == 'macos-latest'
+              if: matrix.platform == 'macos-latest' && inputs.skip_signing != 'true'
               env:
                   APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
                   APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -73,16 +82,6 @@ jobs:
                   security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
                   security set-keychain-settings -t 3600 -u build.keychain
 
-                  echo "=== Downloading Apple WWDR intermediate certificates ==="
-                  curl -sL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o AppleWWDRCAG3.cer
-                  curl -sL https://www.apple.com/certificateauthority/AppleWWDRCAG4.cer -o AppleWWDRCAG4.cer
-                  curl -sL https://www.apple.com/certificateauthority/AppleRootCA-G3.cer -o AppleRootCA-G3.cer
-
-                  echo "=== Importing Apple intermediate certificates ==="
-                  security import AppleWWDRCAG3.cer -k build.keychain -T /usr/bin/codesign || true
-                  security import AppleWWDRCAG4.cer -k build.keychain -T /usr/bin/codesign || true
-                  security import AppleRootCA-G3.cer -k build.keychain -T /usr/bin/codesign || true
-
                   echo "=== Importing certificate ==="
                   security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security -A
                   IMPORT_RESULT=$?
@@ -98,7 +97,7 @@ jobs:
                   security find-identity -v -p codesigning build.keychain
 
             - name: Extract Signing Identity
-              if: matrix.platform == 'macos-latest'
+              if: matrix.platform == 'macos-latest' && inputs.skip_signing != 'true'
               id: cert
               run: |
                   echo "=== All certificates in keychain ==="
@@ -120,10 +119,10 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
                   TAURI_SIGNING_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-                  # macOS Code Signing
-                  APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-                  APPLE_SIGNING_IDENTITY: ${{ steps.cert.outputs.APPLE_SIGNING_IDENTITY || secrets.APPLE_SIGNING_IDENTITY }}
+                  # macOS Code Signing (skipped when skip_signing is true)
+                  APPLE_CERTIFICATE: ${{ inputs.skip_signing != 'true' && secrets.APPLE_CERTIFICATE || '' }}
+                  APPLE_CERTIFICATE_PASSWORD: ${{ inputs.skip_signing != 'true' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+                  APPLE_SIGNING_IDENTITY: ${{ inputs.skip_signing == 'true' && '-' || steps.cert.outputs.APPLE_SIGNING_IDENTITY || secrets.APPLE_SIGNING_IDENTITY }}
                   APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
                   APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
                   # Windows Code Signing
