@@ -18,6 +18,8 @@ struct BrowserMessage {
     title: Option<String>,
     body_text: Option<String>,
     timestamp: Option<i64>,
+    recent_history: Option<Vec<serde_json::Value>>,
+    top_sites: Option<Vec<serde_json::Value>>,
 }
 
 /// Response to Chrome extension

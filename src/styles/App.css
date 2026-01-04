@@ -789,3 +789,31 @@ body {
 		border-width: 2px;
 	}
 }
+
+/* Mode indicator in dialogue box */
+.mode-indicator {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 9px;
+	color: var(--warm);
+	background: rgba(255, 170, 0, 0.1);
+	padding: 2px 6px;
+	border-radius: 4px;
+	margin-bottom: 6px;
+	border: 1px solid rgba(255, 170, 0, 0.3);
+	width: fit-content;
+}
+
+/* Hint status */
+.hint-status {
+	margin-top: 4px;
+	display: flex;
+	justify-content: flex-end;
+}
+
+.hint-charging {
+	font-size: 9px;
+	color: var(--text-dim);
+	opacity: 0.8;
+}

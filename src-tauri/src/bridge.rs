@@ -19,6 +19,8 @@ pub struct BrowserMessage {
     pub title: Option<String>,
     pub body_text: Option<String>,
     pub timestamp: Option<i64>,
+    pub recent_history: Option<Vec<serde_json::Value>>,
+    pub top_sites: Option<Vec<serde_json::Value>>,
 }
 
 /// Response sent back to native_bridge
@@ -97,6 +99,24 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                     if let Err(e) = emit_result {
                         tracing::error!("Failed to emit page_content event: {}", e);
                     }
+                }
+                "browsing_context" => {
+                    let history = message.recent_history.unwrap_or_default();
+                    let top_sites = message.top_sites.unwrap_or_default();
+
+                    tracing::info!(
+                        "Received browsing context: {} history items, {} top sites",
+                        history.len(),
+                        top_sites.len()
+                    );
+
+                    let _ = app.emit(
+                        "browsing_context",
+                        serde_json::json!({
+                            "recent_history": history,
+                            "top_sites": top_sites
+                        }),
+                    );
                 }
                 _ => {
                     tracing::debug!("Unknown message type: {}", message.msg_type);

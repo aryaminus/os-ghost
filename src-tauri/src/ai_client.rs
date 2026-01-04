@@ -146,10 +146,10 @@ impl GeminiClient {
         }
     }
 
-    /// Wait for rate limit availability with simple backoff
+    /// Wait for rate limit availability with smart backoff
     /// Returns false if max attempts exceeded
     async fn wait_for_rate_limit(&self) -> bool {
-        const MAX_WAIT_ATTEMPTS: u32 = 12; // Max ~1 minute of waiting
+        const MAX_WAIT_ATTEMPTS: u32 = 6; // Max ~60s of waiting (covers full window)
         let mut attempts = 0;
 
         loop {
@@ -159,7 +159,10 @@ impl GeminiClient {
 
             attempts += 1;
             if attempts > MAX_WAIT_ATTEMPTS {
-                tracing::error!("Rate limit: max wait attempts exceeded, dropping request");
+                tracing::warn!(
+                    "Rate limit: max wait attempts exceeded ({}), dropping request",
+                    MAX_WAIT_ATTEMPTS
+                );
                 return false;
             }
 
@@ -177,16 +180,17 @@ impl GeminiClient {
                 1
             };
 
-            // Cap max wait
-            let wait_secs = wait_secs.min(5).max(1);
+            // Wait longer between checks to avoid busy-looping
+            // Cap at 10s to allow periodic re-checks of atomic state
+            let wait_secs = wait_secs.min(10).max(2);
 
-            // Only log every few attempts to reduce spam
-            if attempts == 1 || attempts % 4 == 0 {
+            // Only log on first attempt to avoid spam
+            if attempts == 1 {
                 tracing::warn!(
-                    "Rate limit hit (attempt {}/{}), waiting {}s...",
+                    "Rate limit hit, waiting ~{}s (attempt {}/{})",
+                    wait_secs,
                     attempts,
-                    MAX_WAIT_ATTEMPTS,
-                    wait_secs
+                    MAX_WAIT_ATTEMPTS
                 );
             }
 

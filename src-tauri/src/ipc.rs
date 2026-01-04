@@ -506,6 +506,106 @@ pub async fn generate_dynamic_puzzle(
     })
 }
 
+#[derive(Debug, Deserialize)]
+pub struct HistoryItem {
+    pub url: String,
+    pub title: String,
+    #[serde(rename = "visitCount", default)]
+    pub visit_count: Option<i32>,
+    #[serde(rename = "lastVisitTime", default)]
+    pub last_visit_time: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TopSite {
+    pub url: String,
+    pub title: String,
+}
+
+/// Generate a puzzle based on browsing history (for immediate puzzle without page visit)
+#[tauri::command]
+pub async fn generate_puzzle_from_history(
+    seed_url: String,
+    seed_title: String,
+    recent_history: Vec<HistoryItem>,
+    top_sites: Vec<TopSite>,
+    gemini: State<'_, Arc<GeminiClient>>,
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
+) -> Result<GeneratedPuzzle, String> {
+    let redacted_url = crate::privacy::redact_pii(&seed_url);
+
+    // Build history context from recent history
+    let history_context = recent_history
+        .iter()
+        .take(20)
+        .map(|h| {
+            format!(
+                "- {} ({})",
+                crate::privacy::redact_pii(&h.title),
+                crate::privacy::redact_pii(&h.url)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Build top sites context
+    let top_sites_context = top_sites
+        .iter()
+        .map(|s| format!("- {} ({})", s.title, s.url))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let combined_context = format!(
+        "Recent Browsing History:\n{}\n\nTop Sites:\n{}",
+        history_context, top_sites_context
+    );
+
+    tracing::info!("Generating puzzle from history with seed: {}", redacted_url);
+
+    let dynamic = gemini
+        .generate_dynamic_puzzle(&redacted_url, &seed_title, "", &combined_context)
+        .await
+        .map_err(|e| format!("Failed to generate puzzle: {}", e))?;
+
+    // Generate unique ID
+    let id = format!(
+        "history_{}_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        rand::thread_rng().gen_range(1000..9999)
+    );
+
+    let puzzle = Puzzle {
+        id: id.clone(),
+        clue: dynamic.clue.clone(),
+        hint: dynamic.hints.first().cloned().unwrap_or_default(),
+        target_url_pattern: dynamic.target_url_pattern.clone(),
+        target_description: dynamic.target_description.clone(),
+        sponsor_id: None,
+        sponsor_url: None,
+        is_sponsored: false,
+    };
+
+    // Register puzzle
+    {
+        let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
+        puzzles.push(puzzle);
+    }
+
+    Ok(GeneratedPuzzle {
+        id,
+        clue: dynamic.clue,
+        hint: dynamic.hints.first().cloned().unwrap_or_default(),
+        hints: dynamic.hints,
+        target_url_pattern: dynamic.target_url_pattern,
+        target_description: dynamic.target_description,
+        is_sponsored: false,
+        sponsor_id: None,
+    })
+}
+
 /// Helper struct for frontend context
 #[derive(Deserialize)]
 pub struct PageContext {
@@ -550,6 +650,17 @@ pub async fn process_agent_cycle(
         tracing::warn!("Failed to record URL: {}", e);
     }
 
+    // Build metadata
+    let mut metadata = std::collections::HashMap::new();
+
+    // Get target description for content verification
+    if let Some(puzzle) = {
+        let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
+        puzzles.iter().find(|p| p.id == context.puzzle_id).cloned()
+    } {
+        metadata.insert("target_description".to_string(), puzzle.target_description);
+    }
+
     // Build agent context
     let agent_context = crate::agents::traits::AgentContext {
         current_url: context.url,
@@ -562,7 +673,7 @@ pub async fn process_agent_cycle(
         hints_revealed: context.hints_revealed,
         proximity: 0.0,                       // start fresh
         ghost_mood: "mysterious".to_string(), // default
-        metadata: std::collections::HashMap::new(),
+        metadata,
     };
 
     // Run pipeline

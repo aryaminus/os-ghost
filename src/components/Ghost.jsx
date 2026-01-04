@@ -389,6 +389,13 @@ const Ghost = () => {
 									? "Loading puzzle..."
 									: "Waiting for signal...")}
 						</p>
+						{gameState.puzzleId && !gameState.hintAvailable && (
+							<div className="hint-status">
+								<span className="hint-charging">
+									⏳ Hint charging...
+								</span>
+							</div>
+						)}
 					</div>
 
 					{/* Dialogue Box */}
@@ -396,6 +403,16 @@ const Ghost = () => {
 						<div
 							className={`dialogue-box state-${gameState.state}`}
 						>
+							{gameState.state === "searching" && (
+								<div className="mode-indicator">
+									🔍 Background Scan
+								</div>
+							)}
+							{gameState.state === "thinking" && (
+								<div className="mode-indicator">
+									🔮 Consulting Oracle...
+								</div>
+							)}
 							<TypewriterText
 								text={gameState.dialogue}
 								speed={25}

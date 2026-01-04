@@ -22,7 +22,7 @@
  */
 
 /** Debug mode flag - set to true to enable verbose console logging */
-const DEBUG_MODE = false;
+const DEBUG_MODE = true;
 
 /**
  * Conditional debug logger
@@ -62,6 +62,99 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 function updateConnectionStatus(connected) {
 	isConnected = connected;
 	chrome.storage.local.set({ appConnected: connected });
+}
+
+/**
+ * Fetch recent browsing history from Chrome history API
+ * @param {number} [limit=50] - Maximum number of history items to fetch
+ * @returns {Promise<Array<{url: string, title: string, visitCount: number, lastVisitTime: number}>>}
+ */
+async function fetchRecentHistory(limit = 50) {
+	try {
+		const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+		const history = await chrome.history.search({
+			text: "",
+			startTime: oneWeekAgo,
+			maxResults: limit,
+		});
+		return history.map((item) => ({
+			url: item.url || "",
+			title: item.title || "",
+			visitCount: item.visitCount || 1,
+			lastVisitTime: item.lastVisitTime || Date.now(),
+		}));
+	} catch (error) {
+		console.error("[OS Ghost] Failed to fetch history:", error);
+		return [];
+	}
+}
+
+/**
+ * Fetch top sites (most visited) from Chrome topSites API
+ * @returns {Promise<Array<{url: string, title: string}>>}
+ */
+async function fetchTopSites() {
+	try {
+		const topSites = await chrome.topSites.get();
+		return topSites.slice(0, 10).map((site) => ({
+			url: site.url || "",
+			title: site.title || "",
+		}));
+	} catch (error) {
+		console.error("[OS Ghost] Failed to fetch top sites:", error);
+		return [];
+	}
+}
+
+/**
+ * Send browsing context (history + top sites) to native app
+ * This enables immediate puzzle generation without waiting for page visits
+ */
+async function sendBrowsingContext() {
+	let history = [];
+	let topSites = [];
+
+	// Fetch history with safety check
+	try {
+		// Verify API exists (permissions might be missing despite manifest)
+		if (chrome.history && chrome.history.search) {
+			history = await fetchRecentHistory(50);
+		} else {
+			console.warn(
+				"[OS Ghost] chrome.history API is unavailable. Check permissions."
+			);
+		}
+	} catch (error) {
+		console.error("[OS Ghost] History fetch critical failure:", error);
+	}
+
+	// Fetch top sites with safety check
+	try {
+		if (chrome.topSites && chrome.topSites.get) {
+			topSites = await fetchTopSites();
+		} else {
+			console.warn(
+				"[OS Ghost] chrome.topSites API is unavailable. Check permissions."
+			);
+		}
+	} catch (error) {
+		console.error("[OS Ghost] TopSites fetch critical failure:", error);
+	}
+
+	log(
+		"Sending browsing context:",
+		history.length,
+		"history,",
+		topSites.length,
+		"top sites"
+	);
+
+	sendToNative({
+		type: "browsing_context",
+		recent_history: history,
+		top_sites: topSites,
+		timestamp: Date.now(),
+	});
 }
 
 /**
@@ -119,6 +212,11 @@ function connectToNative() {
 				fetchContentForTab(tabs[0]);
 			}
 		});
+
+		// Send browsing context (history + top sites) for immediate puzzle generation
+		// This eliminates the "waiting for signal" state
+		// Added delay to prevent race condition with connection establishment
+		setTimeout(() => sendBrowsingContext(), 1000);
 
 		port.onMessage.addListener(handleNativeMessage);
 

@@ -137,8 +137,14 @@ export function useGhostGame() {
 	/** @type {[string|null, function(string|null): void]} */
 	const [error, setError] = useState(null);
 	const [extensionConnected, setExtensionConnected] = useState(false);
+	const [browsingContext, setBrowsingContext] = useState({
+		recentHistory: [],
+		topSites: [],
+	});
 	/** @type {React.MutableRefObject<NodeJS.Timeout|null>} */
 	const hintTimerRef = useRef(null);
+	/** @type {React.MutableRefObject<{recentHistory: any[], topSites: any[]}>} */
+	const browsingContextRef = useRef({ recentHistory: [], topSites: [] });
 	/** @type {React.MutableRefObject<PageContentPayload|null>} */
 	const latestContentRef = useRef(globalLatestContent);
 	/** @type {React.MutableRefObject<GameState>} */
@@ -185,6 +191,11 @@ export function useGhostGame() {
 		gameStateRef.current = gameState;
 	}, [gameState]);
 
+	// Keep browsing context ref in sync
+	useEffect(() => {
+		browsingContextRef.current = browsingContext;
+	}, [browsingContext]);
+
 	/**
 	 * Handle page content events from Chrome extension.
 	 * Can be used for deeper content analysis.
@@ -215,6 +226,59 @@ export function useGhostGame() {
 				triggerPuzzleGenerationRef.current();
 		}
 	}, []);
+
+	/**
+	 * Generate a puzzle from browsing history/top sites
+	 */
+	const generatePuzzleFromHistory = async () => {
+		const context = browsingContextRef.current;
+		if (!context.recentHistory.length && !context.topSites.length) {
+			log("[Ghost] No browsing context available");
+			return null;
+		}
+
+		// Use most visited or recent site as seed
+		const seed = context.topSites[0] || context.recentHistory[0];
+		if (!seed) return null;
+
+		log("[Ghost] Generating puzzle from history seed:", seed.url);
+
+		setGameState((prev) => ({
+			...prev,
+			state: "thinking",
+			dialogue: "Analyzing your digital footprint for patterns...",
+		}));
+
+		try {
+			const puzzle = await invoke("generate_puzzle_from_history", {
+				seedUrl: seed.url,
+				seedTitle: seed.title || "Unknown",
+				recentHistory: context.recentHistory.slice(0, 20),
+				topSites: context.topSites,
+			});
+
+			if (puzzle) {
+				setGameState((prev) => ({
+					...prev,
+					puzzleId: puzzle.id,
+					clue: puzzle.clue,
+					hint: puzzle.hint || puzzle.hints?.[0] || "",
+					hints: puzzle.hints || [],
+					state: "idle",
+					dialogue: "A mystery emerges from your past journeys...",
+				}));
+				return puzzle;
+			}
+		} catch (err) {
+			console.error("[Ghost] Failed to generate from history:", err);
+			setGameState((prev) => ({
+				...prev,
+				state: "idle",
+				dialogue: "Start browsing to reveal new mysteries...",
+			}));
+		}
+		return null;
+	};
 
 	/**
 	 * Wrapper to generate puzzle from current context
@@ -250,6 +314,15 @@ export function useGhostGame() {
 				lastGeneratedUrlRef.current = url;
 			}
 			return puzzle;
+		} else if (
+			browsingContextRef.current.recentHistory.length > 0 ||
+			browsingContextRef.current.topSites.length > 0
+		) {
+			// Fallback to history
+			log(
+				"[Ghost] No page content, attempting generation from history..."
+			);
+			return generatePuzzleFromHistory();
 		} else {
 			warn(
 				"[Ghost] No content available for generation. Ref is null/undefined."
@@ -294,16 +367,22 @@ export function useGhostGame() {
 	// Only set up once on mount to avoid re-subscribing
 	useEffect(() => {
 		// Store unlisten functions
-		let unlistenNav = null;
-		let unlistenContent = null;
-		let unlistenAutonomous = null;
-		let unlistenConnected = null;
-		let unlistenDisconnected = null;
+		const unlistenFns = [];
+		let isUnmounting = false;
 
 		log(" Setting up Tauri event listeners...");
 
 		const setupListeners = async () => {
-			unlistenNav = await listen("browser_navigation", (event) => {
+			const register = async (event, callback) => {
+				const unlisten = await listen(event, callback);
+				if (isUnmounting) {
+					unlisten();
+				} else {
+					unlistenFns.push(unlisten);
+				}
+			};
+
+			await register("browser_navigation", (event) => {
 				log(
 					"[Ghost] Received browser_navigation event:",
 					event.payload
@@ -313,14 +392,42 @@ export function useGhostGame() {
 				);
 			});
 
-			unlistenContent = await listen("page_content", (event) => {
+			await register("page_content", (event) => {
 				log("[Ghost] Received page_content event:", event.payload);
 				handlePageContent(
 					/** @type {PageContentPayload} */ (event.payload)
 				);
 			});
 
-			log(" Event listeners registered successfully");
+			await register("browsing_context", (event) => {
+				const { recent_history, top_sites } = event.payload;
+				log(
+					"[Ghost] Received browsing context:",
+					recent_history?.length,
+					"history,",
+					top_sites?.length,
+					"top sites"
+				);
+
+				const context = {
+					recentHistory: recent_history || [],
+					topSites: top_sites || [],
+				};
+				setBrowsingContext(context);
+				browsingContextRef.current = context;
+
+				// If no puzzle and no page content, generate from history!
+				const currentState = gameStateRef.current;
+				if (
+					!currentState.puzzleId &&
+					currentState.apiKeyConfigured &&
+					!latestContentRef.current
+				) {
+					log("[Ghost] Auto-triggering history puzzle generation...");
+					triggerPuzzleGenerationRef.current &&
+						triggerPuzzleGenerationRef.current();
+				}
+			});
 
 			// Test if events work by emitting a test event from backend
 			try {
@@ -333,55 +440,44 @@ export function useGhostGame() {
 				console.error("[Ghost] Backend connection test failed:", err);
 			}
 
-			// Listen for autonomous mode progress events
-			// Listen for extension connection events
-			unlistenConnected = await listen("extension_connected", () => {
+			await register("extension_connected", () => {
 				log(" Extension connected");
 				setExtensionConnected(true);
 			});
 
-			unlistenDisconnected = await listen(
-				"extension_disconnected",
-				() => {
-					log(" Extension disconnected");
-					setExtensionConnected(false);
-				}
-			);
+			await register("extension_disconnected", () => {
+				log(" Extension disconnected");
+				setExtensionConnected(false);
+			});
 
-			unlistenAutonomous = await listen(
-				"autonomous_progress",
-				(event) => {
-					const { proximity, message, solved, finished } =
-						event.payload;
-					setGameState((prev) => ({
-						...prev,
-						proximity,
-						dialogue: message,
-						state: solved
-							? "celebrate"
-							: finished
-								? "idle"
-								: "searching",
-					}));
+			await register("autonomous_progress", (event) => {
+				const { proximity, message, solved, finished } = event.payload;
+				setGameState((prev) => ({
+					...prev,
+					proximity,
+					dialogue: message,
+					state: solved
+						? "celebrate"
+						: finished
+							? "idle"
+							: "searching",
+				}));
 
-					if (solved) {
-						setTimeout(
-							() => advanceToNextPuzzleRef.current(),
-							5000
-						);
-					}
+				if (solved) {
+					setTimeout(() => advanceToNextPuzzleRef.current(), 5000);
 				}
-			);
+			});
+
+			if (!isUnmounting) {
+				log(" Event listeners registered successfully");
+			}
 		};
 
 		setupListeners();
 
 		return () => {
-			if (unlistenNav) unlistenNav();
-			if (unlistenContent) unlistenContent();
-			if (unlistenAutonomous) unlistenAutonomous();
-			if (unlistenConnected) unlistenConnected();
-			if (unlistenDisconnected) unlistenDisconnected();
+			isUnmounting = true;
+			unlistenFns.forEach((fn) => fn());
 		};
 	}, [handlePageContent]); // Only handlePageContent is stable (empty deps useCallback)
 
@@ -442,7 +538,8 @@ export function useGhostGame() {
 
 		// Use the ref to trigger generation immediately if we have content
 		// This makes it feel seamless if the user is still on a page
-		if (latestContentRef.current && triggerPuzzleGenerationRef.current) {
+		// Always try to trigger next puzzle (will fallback to history if no content)
+		if (triggerPuzzleGenerationRef.current) {
 			setTimeout(() => {
 				log("[Ghost] Auto-triggering next puzzle generation...");
 				triggerPuzzleGenerationRef.current();

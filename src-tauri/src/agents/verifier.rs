@@ -89,7 +89,7 @@ impl Agent for VerifierAgent {
             });
         }
 
-        // Validate URL pattern
+        // 1. Validate URL pattern
         let url_matches = self.validate_url(&context.current_url, &context.target_pattern)?;
 
         let mut data = HashMap::new();
@@ -103,50 +103,84 @@ impl Agent for VerifierAgent {
         );
 
         if url_matches {
-            Ok(AgentOutput {
+            return Ok(AgentOutput {
                 agent_name: self.name().to_string(),
                 result: "PUZZLE SOLVED! Pattern matched!".to_string(),
                 confidence: 1.0,
                 data,
                 next_action: Some(NextAction::PuzzleSolved),
-            })
-        } else {
-            // Calculate partial match confidence
-            let url_lower = context.current_url.to_lowercase();
-            let pattern_parts: Vec<&str> = context
-                .target_pattern
-                .split('|')
-                .flat_map(|p| p.split(&['(', ')', '[', ']'][..]))
-                .filter(|p| p.len() > 2)
-                .collect();
-
-            let partial_matches = pattern_parts
-                .iter()
-                .filter(|p| url_lower.contains(&p.to_lowercase()))
-                .count();
-
-            let confidence = if pattern_parts.is_empty() {
-                0.0
-            } else {
-                partial_matches as f32 / pattern_parts.len() as f32
-            };
-
-            data.insert(
-                "partial_confidence".to_string(),
-                serde_json::Value::Number(serde_json::Number::from_f64(confidence as f64).unwrap()),
-            );
-
-            Ok(AgentOutput {
-                agent_name: self.name().to_string(),
-                result: format!(
-                    "Pattern not matched. Partial confidence: {:.0}%",
-                    confidence * 100.0
-                ),
-                confidence,
-                data,
-                next_action: Some(NextAction::Continue),
-            })
+            });
         }
+
+        // 2. Validate Page Content (Passive Verification)
+        if let Some(target_desc) = context.metadata.get("target_description") {
+            if !context.page_content.is_empty() {
+                // Extract keywords from target description (simple heuristic)
+                let keywords: Vec<&str> = target_desc
+                    .split_whitespace()
+                    .filter(|w| w.len() > 3) // Filter short words
+                    .collect();
+
+                if !keywords.is_empty() {
+                    let content_matches = self.validate_content(&context.page_content, &keywords);
+
+                    data.insert(
+                        "content_matches".to_string(),
+                        serde_json::Value::Bool(content_matches),
+                    );
+
+                    if content_matches {
+                        // High confidence for content match, but slightly less than explicit URL match
+                        return Ok(AgentOutput {
+                            agent_name: self.name().to_string(),
+                            result: format!(
+                                "PUZZLE SOLVED! Content matched target: {}",
+                                target_desc
+                            ),
+                            confidence: 0.9,
+                            data,
+                            next_action: Some(NextAction::PuzzleSolved),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Calculate partial pattern match for debugging/feedback
+        let url_lower = context.current_url.to_lowercase();
+        let pattern_parts: Vec<&str> = context
+            .target_pattern
+            .split('|')
+            .flat_map(|p| p.split(&['(', ')', '[', ']'][..]))
+            .filter(|p| p.len() > 2)
+            .collect();
+
+        let partial_matches = pattern_parts
+            .iter()
+            .filter(|p| url_lower.contains(&p.to_lowercase()))
+            .count();
+
+        let confidence = if pattern_parts.is_empty() {
+            0.0
+        } else {
+            partial_matches as f32 / pattern_parts.len() as f32
+        };
+
+        data.insert(
+            "partial_confidence".to_string(),
+            serde_json::Value::Number(serde_json::Number::from_f64(confidence as f64).unwrap()),
+        );
+
+        Ok(AgentOutput {
+            agent_name: self.name().to_string(),
+            result: format!(
+                "Pattern not matched. Partial confidence: {:.0}%",
+                confidence * 100.0
+            ),
+            confidence,
+            data,
+            next_action: Some(NextAction::Continue),
+        })
     }
 
     fn can_handle(&self, context: &AgentContext) -> bool {

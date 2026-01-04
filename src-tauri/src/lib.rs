@@ -173,6 +173,7 @@ pub fn run() {
             ipc::set_api_key,
             ipc::validate_api_key,
             ipc::generate_dynamic_puzzle,
+            ipc::generate_puzzle_from_history,
             ipc::process_agent_cycle,
             ipc::start_background_checks,
             ipc::enable_autonomous_mode,
