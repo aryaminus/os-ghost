@@ -46,96 +46,86 @@ jobs:
                       echo "app=false" >> $GITHUB_OUTPUT
                   fi
 
-    bump-app-version:
+    bump-versions:
         needs: detect-changes
-        if: needs.detect-changes.outputs.app_changed == 'true'
+        if: needs.detect-changes.outputs.app_changed == 'true' || needs.detect-changes.outputs.extension_changed == 'true'
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
               with:
                   token: ${{ secrets.GH_OWNER_TOKEN }}
 
-            - name: Setup Node.js
+            - name: Configure Git
+              run: |
+                  git config --global user.name "github-actions[bot]"
+                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+            # --- APP VERSION BUMP ---
+            - name: Setup Node.js (App)
+              if: needs.detect-changes.outputs.app_changed == 'true'
               uses: actions/setup-node@v4
               with:
                   node-version: "lts/*"
 
-            - name: Install Linux Dependencies
+            - name: Install Linux Dependencies (App)
+              if: needs.detect-changes.outputs.app_changed == 'true'
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
 
-            - name: Setup Rust
+            - name: Setup Rust (App)
+              if: needs.detect-changes.outputs.app_changed == 'true'
               uses: dtolnay/rust-toolchain@stable
 
-            - name: Configure Git
-              run: |
-                  git config --global user.name "github-actions[bot]"
-                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-            - name: Bump Version
+            - name: Bump App Version
+              if: needs.detect-changes.outputs.app_changed == 'true'
               run: |
                   node scripts/bump-version.mjs patch
 
-            - name: Read new version
-              id: version
+            - name: Read new app version
+              if: needs.detect-changes.outputs.app_changed == 'true'
+              id: app_version
               run: |
                   VERSION=$(node -p "require('./package.json').version")
                   echo "NEW_VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-            - name: Commit and Push
+            - name: App Commit
+              if: needs.detect-changes.outputs.app_changed == 'true'
               run: |
                   git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-                  git commit -m "chore(release): bump version to ${{ steps.version.outputs.NEW_VERSION }}"
-                  git push origin main
+                  git commit -m "chore(release): bump version to ${{ steps.app_version.outputs.NEW_VERSION }}"
+                  git tag "app-v${{ steps.app_version.outputs.NEW_VERSION }}"
 
-            - name: Create and Push Tag
-              run: |
-                  git tag "app-v${{ steps.version.outputs.NEW_VERSION }}"
-                  git push origin "app-v${{ steps.version.outputs.NEW_VERSION }}"
-
-    bump-extension-version:
-        needs: detect-changes
-        if: needs.detect-changes.outputs.extension_changed == 'true'
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                  token: ${{ secrets.GH_OWNER_TOKEN }}
-
-            - name: Configure Git
-              run: |
-                  git config --global user.name "github-actions[bot]"
-                  git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-            - name: Bump patch version
-              id: version
+            # --- EXTENSION VERSION BUMP ---
+            - name: Bump Extension Version
+              if: needs.detect-changes.outputs.extension_changed == 'true'
+              id: ext_version
               run: |
                   cd ghost-extension
                   CURRENT=$(jq -r '.version' manifest.json)
 
-                  # Parse version parts
+                  # Parse & Bump
                   MAJOR=$(echo $CURRENT | cut -d. -f1)
                   MINOR=$(echo $CURRENT | cut -d. -f2)
                   PATCH=$(echo $CURRENT | cut -d. -f3)
-
-                  # Bump patch
                   NEW_PATCH=$((PATCH + 1))
                   NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
 
-                  # Update manifest.json
+                  # Update manifest
                   jq --arg v "$NEW_VERSION" '.version = $v' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
 
                   echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
                   echo "Bumped version: $CURRENT -> $NEW_VERSION"
 
-            - name: Commit and Push
+            - name: Extension Commit
+              if: needs.detect-changes.outputs.extension_changed == 'true'
               run: |
                   git add ghost-extension/manifest.json
-                  git commit -m "chore(extension): bump version to ${{ steps.version.outputs.NEW_VERSION }}"
-                  git push origin main
+                  git commit -m "chore(extension): bump version to ${{ steps.ext_version.outputs.NEW_VERSION }}"
+                  git tag "ext-v${{ steps.ext_version.outputs.NEW_VERSION }}"
 
-            - name: Create and Push Tag
+            # --- PUSH ALL ---
+            - name: Push Changes and Tags
               run: |
-                  git tag "ext-v${{ steps.version.outputs.NEW_VERSION }}"
-                  git push origin "ext-v${{ steps.version.outputs.NEW_VERSION }}"
+                  git push origin main
+                  git push --tags
