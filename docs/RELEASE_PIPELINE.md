@@ -76,11 +76,37 @@ We have a Python script to safely export your local Apple Certificate to the for
 
 For the pipeline to work, these secrets must be present in the repository:
 
-| Secret Name | Description |
-|---|---|
-| `GH_OWNER_TOKEN` | **Critical.** Personal Access Token (PAT) with `repo` and `workflow` scopes. Allows `bump_version` to trigger `release`. |
-| `APPLE_CERTIFICATE` | Base64 encoded `.p12` file (Output of export script). |
-| `APPLE_CERTIFICATE_PASSWORD` | Password to decrypt the p12. |
-| `APPLE_SIGNING_IDENTITY` | The name of the cert (e.g., `Apple Distribution: ...`). |
-| `APPLE_API_ISSUER` | (Optional) For Notarization. |
-| `APPLE_API_KEY` | (Optional) For Notarization. |
+| Secret Name | Required | Description |
+|---|---|---|
+| `GH_OWNER_TOKEN` | ✅ Yes | Personal Access Token (PAT) with `repo` and `workflow` scopes. Used by `bump_version` to push commits and tags. |
+| `TAURI_PRIVATE_KEY` | ✅ Yes | Base64-encoded private key for signing updater artifacts. Generated with `tauri signer generate`. |
+| `TAURI_KEY_PASSWORD` | ✅ Yes | Password for the Tauri signing key. |
+| `APPLE_CERTIFICATE` | ❌ No* | Base64 encoded `.p12` file (Output of export script). |
+| `APPLE_CERTIFICATE_PASSWORD` | ❌ No* | Password to decrypt the p12. |
+| `APPLE_SIGNING_IDENTITY` | ❌ No* | The name of the cert (e.g., `Apple Distribution: ...`). |
+| `KEYCHAIN_PASSWORD` | ❌ No* | Password for CI keychain (any secure string). |
+| `APPLE_API_ISSUER` | ❌ No | For Notarization. |
+| `APPLE_API_KEY` | ❌ No | For Notarization. |
+
+> **Note**: macOS code signing is currently **disabled** (using ad-hoc signing). To enable it, uncomment the Apple-related env vars in `release.yml` and ensure the secrets are configured.
+
+---
+
+## ⚙️ Repository Permissions
+
+The `release.yml` workflow uses `GITHUB_TOKEN` to create releases. You **must** configure:
+
+1. Go to **Settings → Actions → General**
+2. Scroll to **"Workflow permissions"**
+3. Select **"Read and write permissions"**
+4. Click **Save**
+
+Without this, the release workflow will fail with `Resource not accessible by integration`.
+
+---
+
+## 📝 Current Status
+
+* **macOS Signing**: Ad-hoc (`signingIdentity: "-"` in `tauri.conf.json`)
+* **Tauri Updater**: Enabled with signed artifacts
+* **Notarization**: Disabled (requires Apple API credentials)
