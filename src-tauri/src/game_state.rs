@@ -107,7 +107,7 @@ impl GameState {
             }
         }
 
-        tracing::info!("Creating new game state");
+        tracing::debug!("Creating new game state");
         Self::default()
     }
 

@@ -99,7 +99,7 @@ function warn(...args) {
  */
 
 /** @type {GameState} */
-const initialGameState = {
+export const initialGameState = {
 	currentPuzzle: 0,
 	puzzleId: "", // Start empty, wait for dynamic generation
 	clue: "",
@@ -787,12 +787,19 @@ export function useGhostGame() {
 	const resetGame = useCallback(async () => {
 		try {
 			await invoke("reset_game");
-			await initializeGame();
+			// await initializeGame(); // Don't re-initialize, it triggers auto-generation if content exists
+
+			// Manually reset local state
 			setGameState((prev) => ({
-				...prev,
-				dialogue: "Memory wiped. Starting fresh...",
+				...initialGameState,
+				apiKeyConfigured: prev.apiKeyConfigured, // Keep API key
+				dialogue: "Memory wiped. Ready for a new beginning...",
 				state: "idle",
 			}));
+
+			// Reset refs to allow new generation
+			lastGeneratedUrlRef.current = null;
+			lastProcessedUrlRef.current = null;
 		} catch (err) {
 			console.error("[Ghost] Failed to reset game:", err);
 		}

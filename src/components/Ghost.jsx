@@ -255,6 +255,7 @@ const Ghost = () => {
 	);
 
 	const [showingKeyInput, setShowingKeyInput] = useState(false);
+	const [showingResetConfirm, setShowingResetConfirm] = useState(false);
 
 	/**
 	 * Handle successful API key set - refresh game state.
@@ -363,147 +364,214 @@ const Ghost = () => {
 					</div>
 				)}
 
-			{/* Game UI Section - Only show when everything is ready */}
-			{gameState.apiKeyConfigured && extensionConnected && (
-				<>
-					{/* Current Clue */}
-					<div className="clue-box">
-						<div className="clue-header">
-							📜 CURRENT MYSTERY
-							{gameState.is_sponsored && (
-								<span
-									style={{
-										marginLeft: "8px",
-										fontSize: "0.8em",
-										background: "var(--accent)",
-										color: "var(--bg-color)",
-										padding: "2px 6px",
-										borderRadius: "4px",
-										fontWeight: "bold",
-									}}
-								>
-									SPONSORED
-								</span>
-							)}
-						</div>
-						<p className="clue-text">
-							{gameState.clue ||
-								(gameState.puzzleId
-									? "Loading puzzle..."
-									: "Waiting for signal...")}
-						</p>
-						{gameState.puzzleId && !gameState.hintAvailable && (
-							<div className="hint-status">
-								<span className="hint-charging">
-									⏳ Hint charging...
-								</span>
+			{/* Game UI Section - Only show when everything is ready AND not configuring key */}
+			{gameState.apiKeyConfigured &&
+				extensionConnected &&
+				!showingKeyInput && (
+					<>
+						{/* Show Game UI ONLY when NOT resetting */}
+						{!showingResetConfirm ? (
+							<>
+								{/* Current Clue */}
+								<div className="clue-box">
+									<div className="clue-header">
+										📜 CURRENT MYSTERY
+										{gameState.is_sponsored && (
+											<span
+												style={{
+													marginLeft: "8px",
+													fontSize: "0.8em",
+													background: "var(--accent)",
+													color: "var(--bg-color)",
+													padding: "2px 6px",
+													borderRadius: "4px",
+													fontWeight: "bold",
+												}}
+											>
+												SPONSORED
+											</span>
+										)}
+									</div>
+									<p className="clue-text">
+										{gameState.clue ||
+											(gameState.puzzleId
+												? "Loading puzzle..."
+												: "Waiting for signal...")}
+									</p>
+									{gameState.puzzleId &&
+										!gameState.hintAvailable && (
+											<div className="hint-status">
+												<span className="hint-charging">
+													⏳ Hint charging...
+												</span>
+											</div>
+										)}
+								</div>
+
+								{/* Dialogue Box */}
+								{gameState.dialogue && (
+									<div
+										className={`dialogue-box state-${gameState.state}`}
+									>
+										{gameState.state === "searching" && (
+											<div className="mode-indicator">
+												🔍 Background Scan
+											</div>
+										)}
+										{gameState.state === "thinking" && (
+											<div className="mode-indicator">
+												🔮 Consulting Oracle...
+											</div>
+										)}
+										<TypewriterText
+											text={gameState.dialogue}
+											speed={25}
+										/>
+									</div>
+								)}
+
+								{/* Dynamic Puzzle Trigger */}
+								{gameState.state === "idle" &&
+									!gameState.puzzleId && (
+										<div className="action-wrapper">
+											<button
+												className="action-btn"
+												onMouseDown={(e) =>
+													e.stopPropagation()
+												}
+												onClick={(e) => {
+													e.stopPropagation();
+													triggerDynamicPuzzle();
+												}}
+											>
+												🌀 Investigate This Signal
+											</button>
+											<div className="helper-text">
+												Generates a new mystery from
+												this page
+											</div>
+										</div>
+									)}
+
+								{/* Prove Finding Button */}
+								{gameState.puzzleId &&
+									gameState.state !== "celebrate" && (
+										<div className="action-wrapper">
+											<button
+												className="action-btn verify-btn"
+												onMouseDown={(e) =>
+													e.stopPropagation()
+												}
+												onClick={(e) => {
+													e.stopPropagation();
+													verifyScreenshotProof(); // Call verification
+												}}
+												style={{
+													marginTop: "8px",
+													backgroundColor:
+														"var(--accent)",
+												}}
+											>
+												📸 Prove Finding
+											</button>
+											<div className="helper-text">
+												Verify you found the solution
+											</div>
+										</div>
+									)}
+
+								{/* Puzzle Counter */}
+								<div className="puzzle-counter">
+									Memory Fragment:{" "}
+									{gameState.currentPuzzle + 1}
+									/∞
+								</div>
+							</>
+						) : (
+							/* Reset Game Confirmation - Replaces Main UI */
+							<div className="reset-confirm-box">
+								<p>Reset all progress?</p>
+								<div className="reset-actions">
+									<button
+										className="confirm-reset-btn"
+										onMouseDown={(e) => e.stopPropagation()}
+										onClick={() => {
+											resetGame();
+											setShowingResetConfirm(false);
+										}}
+									>
+										Yes, Wipe Memory
+									</button>
+									<button
+										className="cancel-reset-btn"
+										onMouseDown={(e) => e.stopPropagation()}
+										onClick={() =>
+											setShowingResetConfirm(false)
+										}
+									>
+										Cancel
+									</button>
+								</div>
 							</div>
 						)}
-					</div>
+					</>
+				)}
 
-					{/* Dialogue Box */}
-					{gameState.dialogue && (
-						<div
-							className={`dialogue-box state-${gameState.state}`}
-						>
-							{gameState.state === "searching" && (
-								<div className="mode-indicator">
-									🔍 Background Scan
-								</div>
-							)}
-							{gameState.state === "thinking" && (
-								<div className="mode-indicator">
-									🔮 Consulting Oracle...
-								</div>
-							)}
-							<TypewriterText
-								text={gameState.dialogue}
-								speed={25}
-							/>
-						</div>
-					)}
-
-					{/* Dynamic Puzzle Trigger */}
-					{gameState.state === "idle" && !gameState.puzzleId && (
+			{/* SYSTEM CONTROLS FOOTER - Always visible when key is configured */}
+			{gameState.apiKeyConfigured && (
+				<div className="system-controls">
+					<div className="system-header">SYSTEM CONTROLS</div>
+					<div className="system-controls-grid">
+						{/* Top Row: Core Actions */}
 						<button
-							className="action-btn"
+							className={`system-btn change-key ${
+								showingKeyInput ? "active" : ""
+							}`}
 							onMouseDown={(e) => e.stopPropagation()}
-							onClick={(e) => {
-								e.stopPropagation();
-								triggerDynamicPuzzle();
+							onClick={() => {
+								if (showingKeyInput) {
+									setShowingKeyInput(false);
+								} else {
+									setShowingKeyInput(true);
+									setShowingResetConfirm(false);
+								}
 							}}
 						>
-							🌀 Investigate This Signal
+							{showingKeyInput ? "Close Key" : "Change Key"}
 						</button>
-					)}
 
-					{/* Prove Finding Button */}
-					{gameState.puzzleId && gameState.state !== "celebrate" && (
 						<button
-							className="action-btn verify-btn"
+							className={`system-btn danger ${
+								showingResetConfirm ? "active" : ""
+							}`}
 							onMouseDown={(e) => e.stopPropagation()}
-							onClick={(e) => {
-								e.stopPropagation();
-								verifyScreenshotProof(); // Call verification
-							}}
-							style={{
-								marginTop: "8px",
-								backgroundColor: "var(--accent)",
+							onClick={() => {
+								if (showingResetConfirm) {
+									setShowingResetConfirm(false);
+								} else {
+									setShowingResetConfirm(true);
+									setShowingKeyInput(false);
+								}
 							}}
 						>
-							📸 Prove Finding
+							{showingResetConfirm ? "Cancel" : "Reset Game"}
 						</button>
-					)}
 
-					{/* Puzzle Counter */}
-					<div className="puzzle-counter">
-						Memory Fragment: {gameState.currentPuzzle + 1}/∞
-					</div>
-
-					{/* Change API Key Button */}
-					<button
-						className="change-key-btn"
-						onMouseDown={(e) => e.stopPropagation()}
-						onClick={() => setShowingKeyInput(true)}
-					>
-						⚙️ Change API Key
-					</button>
-
-					{/* Reset Game Button */}
-					<button
-						className="reset-game-btn"
-						onMouseDown={(e) => e.stopPropagation()}
-						onClick={() => {
-							if (
-								window.confirm(
-									"Reset all progress? This cannot be undone."
-								)
-							) {
-								resetGame();
-							}
-						}}
-					>
-						🔄 Reset Game
-					</button>
-				</>
-			)}
-
-			{/* Dev Tools Panel - Only visible in development mode */}
-			{import.meta.env.DEV && gameState.apiKeyConfigured && (
-				<div className="dev-tools">
-					<div className="dev-tools-header">🛠️ DEV TOOLS</div>
-					<div className="dev-tools-buttons">
+						{/* Bottom Row: Dev/Tools */}
 						<button
+							className="system-btn dev-scan"
 							onMouseDown={(e) => e.stopPropagation()}
 							onClick={startBackgroundChecks}
-							className="dev-btn scan"
+							title="Scan Background Content"
 						>
 							Scan BG
 						</button>
+
 						<button
+							className="system-btn dev-auto"
 							onMouseDown={(e) => e.stopPropagation()}
 							onClick={enableAutonomousMode}
-							className="dev-btn auto"
+							title="Enable Auto-Agent Mode"
 						>
 							Auto Mode
 						</button>

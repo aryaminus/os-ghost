@@ -494,6 +494,10 @@ pub async fn generate_dynamic_puzzle(
         );
     }
 
+    // Start timer for the new puzzle
+    let mut state = crate::game_state::GameState::load();
+    state.start_puzzle_timer();
+
     Ok(GeneratedPuzzle {
         id,
         clue: dynamic.clue,
@@ -593,6 +597,10 @@ pub async fn generate_puzzle_from_history(
         let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
         puzzles.push(puzzle);
     }
+
+    // Start timer for the new puzzle
+    let mut state = crate::game_state::GameState::load();
+    state.start_puzzle_timer();
 
     Ok(GeneratedPuzzle {
         id,

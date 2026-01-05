@@ -622,6 +622,97 @@ body {
 	color: var(--text-dim);
 }
 
+/* Action buttons - primary interactions */
+.action-btn {
+	width: 100%;
+	padding: 8px;
+	border: 1px solid var(--text-dim);
+	background: rgba(0, 0, 0, 0.4);
+	color: var(--text-dim);
+	font-family: inherit;
+	font-size: 11px;
+	cursor: pointer;
+	border-radius: 4px;
+	transition: all 0.2s ease;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-top: 4px;
+	position: relative;
+	overflow: hidden;
+}
+
+.action-btn:hover {
+	background: rgba(136, 68, 255, 0.2);
+	border-color: #aa88ff;
+	color: #fff;
+	box-shadow: 0 0 10px rgba(136, 68, 255, 0.3);
+}
+
+.action-btn.verify-btn {
+	color: var(--text-dim);
+	border-color: var(--text-dim);
+	background: rgba(0, 0, 0, 0.4);
+}
+
+.action-btn.verify-btn:hover {
+	background: rgba(0, 255, 136, 0.2);
+	border-color: var(--ghost-green);
+	color: #fff;
+	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+.install-btn {
+	margin-top: 8px;
+	padding: 6px 12px;
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid var(--text-dim);
+	color: var(--text-dim);
+	border-radius: 4px;
+	cursor: pointer;
+	font-family: inherit;
+	font-size: 10px;
+	transition: all 0.2s ease;
+}
+
+.install-btn:hover {
+	background: rgba(0, 255, 136, 0.2);
+	border-color: var(--ghost-green);
+	color: #fff;
+	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+}
+
+/* Cancel button for API key input */
+.cancel-key-btn {
+	width: 100%;
+	margin-top: 8px;
+	background: transparent;
+	border: 1px solid var(--text-dim);
+	color: var(--text-dim);
+	padding: 4px;
+	font-family: inherit;
+	font-size: 10px;
+	cursor: pointer;
+	opacity: 0.6;
+	transition: all 0.2s ease;
+}
+
+.cancel-key-btn:hover {
+	opacity: 1;
+	color: #fff;
+	border-color: var(--text-secondary);
+}
+
+/* Helper text for buttons */
+.helper-text {
+	font-size: 9px;
+	color: var(--text-dim);
+	margin-top: 2px;
+	margin-bottom: 8px;
+	font-style: italic;
+	opacity: 0.8;
+	text-align: center;
+}
+
 .api-key-submit {
 	width: 100%;
 	padding: 6px 10px;
@@ -677,8 +768,9 @@ body {
 	border: 1px solid var(--text-dim);
 	border-radius: 3px;
 	color: var(--text-dim);
+	color: var(--text-dim);
 	cursor: pointer;
-	opacity: 0.6;
+	opacity: 0.9;
 	transition: all 0.2s ease;
 }
 
@@ -686,6 +778,7 @@ body {
 	opacity: 1;
 	border-color: var(--text-secondary);
 	color: var(--text-secondary);
+	background: rgba(255, 255, 255, 0.05);
 }
 
 .change-key-btn:focus-visible {
@@ -706,7 +799,7 @@ body {
 	border-radius: 4px;
 	color: var(--text-dim);
 	cursor: pointer;
-	opacity: 0.5;
+	opacity: 0.8;
 	transition: all 0.2s ease;
 }
 
@@ -714,6 +807,7 @@ body {
 	opacity: 1;
 	border-color: #ff6b6b;
 	color: #ff6b6b;
+	background: rgba(255, 107, 107, 0.05);
 }
 
 .reset-game-btn:focus-visible {
@@ -722,35 +816,206 @@ body {
 	opacity: 1;
 }
 
-/* Cancel button for API key input */
-.cancel-key-btn {
+/* Reset confirmation box */
+.reset-confirm-box {
 	width: 100%;
-	margin-top: 6px;
+	background: rgba(0, 0, 0, 0.85);
+	border: 1px solid var(--hot);
+	border-radius: 6px;
+	padding: 10px;
+	text-align: center;
+	margin-top: 4px;
+	animation: fadeIn 0.3s ease;
+}
+
+.reset-confirm-box p {
+	font-size: 11px;
+	color: var(--hot);
+	margin-bottom: 8px;
+	font-weight: bold;
+	letter-spacing: 0.5px;
+}
+
+.reset-actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 8px;
+	justify-content: center;
+}
+
+.confirm-reset-btn {
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid var(--text-dim);
+	color: var(--text-dim);
 	padding: 4px 8px;
+	border-radius: 4px;
+	cursor: pointer;
 	font-size: 9px;
 	font-family: "Courier New", monospace;
-	background: transparent;
-	border: 1px solid var(--text-dim);
-	border-radius: 4px;
-	color: var(--text-dim);
-	cursor: pointer;
 	transition: all 0.2s ease;
 }
 
-.cancel-key-btn:hover {
-	border-color: #ff6b6b;
-	color: #ff6b6b;
+.confirm-reset-btn:hover {
+	background: rgba(255, 68, 68, 0.2);
+	border-color: var(--hot);
+	color: #fff;
+	box-shadow: 0 0 8px rgba(255, 68, 68, 0.4);
 }
 
-.cancel-key-btn:focus-visible {
-	outline: 2px solid #ff6b6b;
-	outline-offset: 2px;
+.cancel-reset-btn {
+	background: transparent;
+	border: 1px solid var(--text-dim);
+	color: var(--text-dim);
+	padding: 4px 8px;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 9px;
+	font-family: "Courier New", monospace;
+	transition: all 0.2s ease;
+}
+
+.cancel-reset-btn:hover {
+	border-color: var(--text-secondary);
+	color: #fff;
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(-5px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 /* API key submit focus state */
 .api-key-submit:focus-visible {
 	outline: 2px solid var(--ghost-green);
 	outline-offset: 2px;
+}
+
+/* System Controls Footer */
+.system-controls {
+	width: 100%;
+	margin-top: auto; /* Push to bottom */
+	padding-top: 8px;
+	border-top: 1px dashed rgba(0, 255, 136, 0.3);
+}
+
+.system-header {
+	font-size: 8px;
+	color: var(--text-dim);
+	letter-spacing: 1px;
+	margin-bottom: 6px;
+	text-align: center;
+	opacity: 1;
+	font-weight: bold;
+}
+
+.system-controls-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 6px;
+}
+
+.system-btn {
+	padding: 6px 4px;
+	font-size: 9px;
+	font-family: inherit;
+	border-radius: 4px;
+	cursor: pointer;
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid var(--text-dim);
+	color: var(--text-dim);
+	opacity: 1;
+	transition: all 0.2s ease;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.system-btn:hover {
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+	background: rgba(0, 255, 136, 0.1);
+	box-shadow: 0 0 8px rgba(0, 255, 136, 0.2);
+}
+
+.system-btn:focus-visible {
+	outline: 2px solid var(--ghost-green);
+	outline-offset: 1px;
+}
+
+/* Specific button styles - Colors apply on HOVER or ACTIVE */
+.system-btn.active {
+	background: rgba(68, 136, 255, 0.15);
+	border-color: var(--cold);
+	color: var(--cold);
+	box-shadow: inset 0 0 10px rgba(68, 136, 255, 0.1);
+}
+
+.system-btn.change-key:hover {
+	border-color: var(--cold);
+	color: #fff;
+	background: rgba(68, 136, 255, 0.2);
+	box-shadow: 0 0 8px rgba(68, 136, 255, 0.3);
+}
+
+.system-btn.danger {
+	color: var(--text-dim);
+}
+
+.system-btn.danger:hover {
+	border-color: #ff4444;
+	color: #fff;
+	background: rgba(255, 68, 68, 0.15);
+	box-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
+}
+
+/* danger active state */
+.system-btn.danger.active {
+	border-color: #ff4444;
+	color: #ff4444;
+	background: rgba(255, 68, 68, 0.1);
+}
+
+.system-btn.dev-scan {
+	color: var(--text-dim);
+}
+
+.system-btn.dev-scan:hover {
+	border-color: var(--warm);
+	color: #fff;
+	background: rgba(255, 170, 0, 0.15);
+	box-shadow: 0 0 8px rgba(255, 170, 0, 0.3);
+}
+
+.system-btn.dev-auto {
+	color: var(--text-dim);
+}
+
+.system-btn.dev-auto:hover {
+	border-color: var(--ghost-green);
+	color: #fff;
+	background: rgba(0, 255, 136, 0.15);
+	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+	:root {
+		--border-color: rgba(0, 255, 136, 0.8);
+		--text-dim: #66aa77;
+	}
+
+	.api-key-input,
+	.action-btn,
+	.install-btn,
+	.system-btn {
+		border-width: 2px;
+	}
 }
 
 /* Reduced motion for accessibility */
@@ -773,20 +1038,6 @@ body {
 	.loading-spinner {
 		animation: none;
 		border: 2px solid var(--ghost-green);
-	}
-}
-
-/* High contrast mode support */
-@media (prefers-contrast: high) {
-	:root {
-		--border-color: rgba(0, 255, 136, 0.8);
-		--text-dim: #66aa77;
-	}
-
-	.api-key-input,
-	.action-btn,
-	.install-btn {
-		border-width: 2px;
 	}
 }
 
