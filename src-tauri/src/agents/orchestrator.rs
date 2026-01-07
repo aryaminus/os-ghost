@@ -6,12 +6,16 @@ use super::observer::ObserverAgent;
 use super::traits::{AgentContext, AgentOutput, AgentResult, NextAction};
 use super::verifier::VerifierAgent;
 use crate::ai_client::GeminiClient;
-use crate::memory::{LongTermMemory, MemoryStore, SessionMemory};
+use crate::memory::{LongTermMemory, SessionMemory};
 use crate::workflow::{
     loop_agent::create_hotcold_loop, parallel::create_parallel_checks,
     sequential::create_puzzle_pipeline, SequentialWorkflow, Workflow,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+/// Shared memory types for cross-module access
+pub type SharedLongTermMemory = Arc<Mutex<LongTermMemory>>;
+pub type SharedSessionMemory = Arc<Mutex<SessionMemory>>;
 
 /// The main orchestrator that coordinates all agents
 pub struct AgentOrchestrator {
@@ -20,8 +24,8 @@ pub struct AgentOrchestrator {
     // Keep references for ad-hoc workflows (parallel/loop)
     observer: Arc<ObserverAgent>,
     verifier: Arc<VerifierAgent>,
-    session: SessionMemory,
-    long_term: LongTermMemory,
+    session: SharedSessionMemory,
+    long_term: SharedLongTermMemory,
 }
 
 /// Result of a full orchestration cycle
@@ -42,29 +46,27 @@ pub struct OrchestrationResult {
 }
 
 impl AgentOrchestrator {
-    /// Create a new orchestrator with all agents
-    pub fn new(gemini: Arc<GeminiClient>) -> anyhow::Result<Self> {
-        let store = MemoryStore::new()?;
-
+    /// Create a new orchestrator with all agents and shared memory
+    pub fn new(
+        gemini: Arc<GeminiClient>,
+        long_term: SharedLongTermMemory,
+        session: SharedSessionMemory,
+    ) -> anyhow::Result<Self> {
         // Create agents
         let observer = Arc::new(ObserverAgent::new(Arc::clone(&gemini)));
         let verifier = Arc::new(VerifierAgent::new());
         let narrator = Arc::new(NarratorAgent::new(gemini));
 
         // Build workflow pipeline: Observer -> Verifier -> Narrator
-        let workflow = create_puzzle_pipeline(
-            observer.clone(),
-            verifier.clone(),
-            narrator.clone(),
-        );
+        let workflow = create_puzzle_pipeline(observer.clone(), verifier.clone(), narrator.clone());
 
         Ok(Self {
             workflow,
             narrator,
             observer,
             verifier,
-            session: SessionMemory::new(store.clone()),
-            long_term: LongTermMemory::new(store),
+            session,
+            long_term,
         })
     }
 
@@ -113,8 +115,10 @@ impl AgentOrchestrator {
         };
 
         // Update session memory
-        if let Err(e) = self.session.set_proximity(proximity) {
-            tracing::warn!("Failed to update session proximity: {}", e);
+        if let Ok(session) = self.session.lock() {
+            if let Err(e) = session.set_proximity(proximity) {
+                tracing::warn!("Failed to update session proximity: {}", e);
+            }
         }
 
         Ok(OrchestrationResult {
@@ -169,25 +173,31 @@ impl AgentOrchestrator {
             solution_url: context.current_url.clone(),
         };
 
-        if let Err(e) = self.long_term.record_solved(solved_puzzle) {
-            tracing::warn!("Failed to record solved puzzle: {}", e);
+        if let Ok(ltm) = self.long_term.lock() {
+            if let Err(e) = ltm.record_solved(solved_puzzle) {
+                tracing::warn!("Failed to record solved puzzle: {}", e);
+            }
         }
 
         Ok(dialogue)
     }
 
-    /// Get session memory reference
-    pub fn session(&self) -> &SessionMemory {
+    /// Get session memory reference (returns the Arc for shared access)
+    pub fn session(&self) -> &SharedSessionMemory {
         &self.session
     }
 
-    /// Get long-term memory reference
-    pub fn long_term(&self) -> &LongTermMemory {
+    /// Get long-term memory reference (returns the Arc for shared access)
+    pub fn long_term(&self) -> &SharedLongTermMemory {
         &self.long_term
     }
 
     /// Record a URL visit
     pub fn record_url(&self, url: &str) -> anyhow::Result<()> {
-        self.session.add_url(url)
+        let session = self
+            .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+        session.add_url(url)
     }
 }

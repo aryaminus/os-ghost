@@ -83,9 +83,12 @@ pub struct PuzzleConfig {
 
 /// Capture screenshot and analyze with AI
 #[tauri::command]
-pub async fn capture_and_analyze(gemini: State<'_, Arc<GeminiClient>>) -> Result<String, String> {
-    // Capture screen
-    let screenshot = capture::capture_screen()
+pub async fn capture_and_analyze(
+    app: tauri::AppHandle,
+    gemini: State<'_, Arc<GeminiClient>>,
+) -> Result<String, String> {
+    // Capture screen (handles hiding window internally)
+    let screenshot = capture::capture_screen(app)
         .await
         .map_err(|e| format!("Capture failed: {}", e))?;
 
@@ -157,12 +160,13 @@ pub async fn calculate_proximity(
 /// Verify if a screenshot matches the puzzle clue
 #[tauri::command]
 pub async fn verify_screenshot_proof(
+    app: tauri::AppHandle,
     puzzle_id: String,
     gemini: State<'_, Arc<GeminiClient>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<crate::ai_client::VerificationResult, String> {
     // 1. Capture screen within the backend
-    let image_base64 = capture::capture_screen()
+    let image_base64 = capture::capture_screen(app)
         .await
         .map_err(|e| format!("Screen capture failed: {}", e))?;
 

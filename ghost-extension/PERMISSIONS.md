@@ -14,37 +14,6 @@ This document explains why each permission is required for the OS Ghost Bridge C
 - Receive commands to inject visual effects
 - Establish connection status monitoring
 
-### `activeTab`
-
-**Justification**: Required to access the URL and title of the currently active tab when the user is playing the game.
-
-**How it's used**:
-
-- Read current page URL to check against puzzle solutions
-- Read page title for game context
-- Access is only used when extension is active
-
-### `tabs`
-
-**Justification**: Required to monitor tab navigation and switching events for gameplay.
-
-**How it's used**:
-
-- `chrome.tabs.onUpdated` - Detect when a page finishes loading
-- `chrome.tabs.onActivated` - Detect when user switches tabs
-- `chrome.tabs.query` - Get active tab information
-- These events drive the core gameplay loop
-
-### `scripting`
-
-**Justification**: Required to inject visual effects into web pages as game feedback.
-
-**How it's used**:
-
-- Content script runs on pages to enable effects
-- Visual effects include: glitch, scanlines, static noise, pulse glow, flicker
-- All effects are temporary and cosmetic (do not modify page content)
-
 ### `storage`
 
 **Justification**: Required to persist connection status between popup opens.

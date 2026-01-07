@@ -468,6 +468,32 @@ export function useGhostGame() {
 				}
 			});
 
+			await register("ghost_observation", (event) => {
+				log("[Ghost] Received observation:", event.payload);
+				// Tauri emits serde structs as objects, no need to JSON.parse
+				const observation = event.payload;
+				if (
+					observation &&
+					observation.activity &&
+					!observation.is_idle
+				) {
+					setGameState((prev) => ({
+						...prev,
+						dialogue: `I see you: ${observation.activity}`,
+						state: "observant", // New state for passive observation
+					}));
+
+					// Revert to idle after 10 seconds of observant state
+					setTimeout(() => {
+						setGameState((prev) =>
+							prev.state === "observant"
+								? { ...prev, state: "idle" }
+								: prev
+						);
+					}, 10000);
+				}
+			});
+
 			if (!isUnmounting) {
 				log(" Event listeners registered successfully");
 			}

@@ -8,6 +8,7 @@ pub mod capture;
 pub mod game_state;
 pub mod history;
 pub mod ipc;
+pub mod monitor; // [NEW] Monitor module
 pub mod privacy;
 pub mod window;
 
@@ -19,7 +20,8 @@ pub mod workflow;
 use ai_client::GeminiClient;
 use game_state::EffectQueue;
 use ipc::Puzzle;
-use std::sync::Arc;
+use memory::LongTermMemory; // Import LTM
+use std::sync::{Arc, Mutex}; // Import Mutex
 use tauri::Manager;
 use window::GhostWindow;
 
@@ -123,10 +125,24 @@ pub fn run() {
             // Register client for direct access by IPC commands
             app.manage(gemini_client.clone());
 
-            match crate::agents::AgentOrchestrator::new(gemini_client) {
+            // Create shared memory instances (used by both Orchestrator and Monitor)
+            let store = memory::MemoryStore::new().map_err(|e| {
+                tracing::error!("Failed to create memory store: {}", e);
+                e
+            })?;
+
+            let shared_ltm = Arc::new(Mutex::new(LongTermMemory::new(store.clone())));
+            let shared_session = Arc::new(Mutex::new(memory::SessionMemory::new(store)));
+
+            // Create Orchestrator with shared memory
+            match crate::agents::AgentOrchestrator::new(
+                gemini_client.clone(),
+                shared_ltm.clone(),
+                shared_session.clone(),
+            ) {
                 Ok(orchestrator) => {
                     app.manage(Arc::new(orchestrator));
-                    tracing::info!("Agent Orchestrator initialized");
+                    tracing::info!("Agent Orchestrator initialized with shared memory");
                 }
                 Err(e) => tracing::error!("Failed to initialize orchestrator: {}", e),
             }
@@ -149,6 +165,22 @@ pub fn run() {
                     tracing::info!("Window positioned in bottom-right corner");
                 }
             }
+
+            // Start Background Monitor with shared memory
+            let monitor_gemini = gemini_client.clone();
+            let monitor_handle = app.handle().clone();
+            let monitor_ltm = shared_ltm.clone();
+            let monitor_session = shared_session.clone();
+
+            tauri::async_runtime::spawn(async move {
+                monitor::start_monitor_loop(
+                    monitor_handle,
+                    monitor_gemini,
+                    monitor_ltm,
+                    monitor_session,
+                )
+                .await;
+            });
 
             // Start Native Messaging bridge for Chrome extension
             let app_handle = app.handle().clone();

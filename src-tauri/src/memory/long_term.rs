@@ -105,6 +105,43 @@ impl LongTermMemory {
         self.store.get_all(DISCOVERIES_TREE)
     }
 
+    // --- User Facts & Context ---
+
+    /// Record a fact about the user/environment
+    pub fn record_fact(&self, key: &str, value: &str) -> Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Use a simple key-value structure for now
+        // In a real app, this could be a vector store
+        self.store.set(
+            "user_facts",
+            key,
+            &serde_json::json!({
+                "value": value,
+                "updated_at": now
+            }),
+        )
+    }
+
+    /// Get all recorded user facts
+    pub fn get_user_facts(&self) -> Result<std::collections::HashMap<String, String>> {
+        // Retrieve all keys from the "user_facts" tree
+        let facts = self.store.list_keys("user_facts")?;
+        let mut result = std::collections::HashMap::new();
+
+        for key in facts {
+            if let Some(data) = self.store.get::<serde_json::Value>("user_facts", &key)? {
+                if let Some(val) = data.get("value").and_then(|v| v.as_str()) {
+                    result.insert(key, val.to_string());
+                }
+            }
+        }
+        Ok(result)
+    }
+
     // --- Statistics ---
 
     /// Get player statistics

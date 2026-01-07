@@ -334,12 +334,13 @@ impl GeminiClient {
         }
 
         let prompt = format!(
-            "You are a mysterious AI ghost character with this personality: {}
+            "You are a desktop companion. Your personality is: {}
             
             Based on this context about what the user is viewing: {}
             
-            Generate a short, cryptic, but helpful hint or observation (max 100 characters).
-            Stay in character. Be intriguing but not annoying.",
+            Generate a short, helpful, or intriguing comment (max 100 characters).
+            If in 'Mystery' mode, be cryptic. If in 'Companion' mode, be helpful but concise.
+            Stay in character.",
             personality, context
         );
 
