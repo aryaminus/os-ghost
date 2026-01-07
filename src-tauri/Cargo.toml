@@ -1,6 +1,6 @@
 [package]
 name = "os-ghost"
-version = "0.1.20"
+version = "0.1.21"
 description = "The OS Ghost - A screen-aware meta-game"
 authors = ["you"]
 edition = "2021"
