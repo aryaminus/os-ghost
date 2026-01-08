@@ -182,6 +182,30 @@ pub fn run() {
                 .await;
             });
 
+            // Start Hint Checker Loop (Background Task)
+            let hint_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+                let mut last_availability = false;
+
+                loop {
+                    interval.tick().await;
+                    let state = game_state::GameState::load();
+                    let available = state.should_reveal_hint();
+
+                    // Only emit if state changed to true, or periodically to ensure UI is in sync
+                    // For now, simple edge detection + periodic refresh every minute
+                    if available && !last_availability {
+                        use tauri::Emitter;
+                        if let Err(e) = hint_handle.emit("hint_available", true) {
+                            tracing::error!("Failed to emit hint event: {}", e);
+                        }
+                    }
+
+                    last_availability = available;
+                }
+            });
+
             // Start Native Messaging bridge for Chrome extension
             let app_handle = app.handle().clone();
             bridge::start_native_messaging_server(app_handle);

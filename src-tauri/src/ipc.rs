@@ -51,83 +51,90 @@ pub fn detect_chrome() -> SystemStatus {
     }
 }
 
-/// Find Chrome/Chromium installation path based on platform
+/// Find Chrome/Chromium installation path based on platform (Cached)
 fn find_chrome_path() -> Option<String> {
-    #[cfg(target_os = "macos")]
-    {
-        let paths = [
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-            "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
-            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-            "/Applications/Arc.app/Contents/MacOS/Arc",
-        ];
-        for path in paths {
-            if std::path::Path::new(path).exists() {
-                return Some(path.to_string());
-            }
-        }
-    }
+    static CHROME_PATH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 
-    #[cfg(target_os = "windows")]
-    {
-        let paths = [
-            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files\Chromium\Application\chrome.exe",
-            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
-            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        ];
-        for path in paths {
-            if std::path::Path::new(path).exists() {
-                return Some(path.to_string());
-            }
-        }
-        // Also check user-specific installs
-        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-            let user_chrome = format!(r"{}\Google\Chrome\Application\chrome.exe", local_app_data);
-            if std::path::Path::new(&user_chrome).exists() {
-                return Some(user_chrome);
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::process::Command;
-        // Try which command first
-        let commands = [
-            "google-chrome",
-            "chromium",
-            "chromium-browser",
-            "brave-browser",
-        ];
-        for cmd in commands {
-            if let Ok(output) = Command::new("which").arg(cmd).output() {
-                if output.status.success() {
-                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if !path.is_empty() {
-                        return Some(path);
+    CHROME_PATH
+        .get_or_init(|| {
+            #[cfg(target_os = "macos")]
+            {
+                let paths = [
+                    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+                    "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+                    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+                    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                    "/Applications/Arc.app/Contents/MacOS/Arc",
+                ];
+                for path in paths {
+                    if std::path::Path::new(path).exists() {
+                        return Some(path.to_string());
                     }
                 }
             }
-        }
-        // Fallback to common paths
-        let paths = [
-            "/usr/bin/google-chrome",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-            "/snap/bin/chromium",
-        ];
-        for path in paths {
-            if std::path::Path::new(path).exists() {
-                return Some(path.to_string());
-            }
-        }
-    }
 
-    None
+            #[cfg(target_os = "windows")]
+            {
+                let paths = [
+                    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                    r"C:\Program Files\Chromium\Application\chrome.exe",
+                    r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+                    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                ];
+                for path in paths {
+                    if std::path::Path::new(path).exists() {
+                        return Some(path.to_string());
+                    }
+                }
+                // Also check user-specific installs
+                if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+                    let user_chrome =
+                        format!(r"{}\Google\Chrome\Application\chrome.exe", local_app_data);
+                    if std::path::Path::new(&user_chrome).exists() {
+                        return Some(user_chrome);
+                    }
+                }
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                use std::process::Command;
+                // Try which command first
+                let commands = [
+                    "google-chrome",
+                    "chromium",
+                    "chromium-browser",
+                    "brave-browser",
+                ];
+                for cmd in commands {
+                    if let Ok(output) = Command::new("which").arg(cmd).output() {
+                        if output.status.success() {
+                            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                            if !path.is_empty() {
+                                return Some(path);
+                            }
+                        }
+                    }
+                }
+                // Fallback to common paths
+                let paths = [
+                    "/usr/bin/google-chrome",
+                    "/usr/bin/chromium",
+                    "/usr/bin/chromium-browser",
+                    "/snap/bin/chromium",
+                ];
+                for path in paths {
+                    if std::path::Path::new(path).exists() {
+                        return Some(path.to_string());
+                    }
+                }
+            }
+
+            None
+        })
+        .clone()
 }
 
 /// Launch Chrome browser with optional URL

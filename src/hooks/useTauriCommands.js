@@ -444,20 +444,8 @@ export function useGhostGame() {
 		};
 	}, []);
 
-	// Start hint timer when puzzle changes
-	useEffect(() => {
-		if (hintTimerRef.current) clearInterval(hintTimerRef.current);
-
-		// Check for hints every 10 seconds
-		hintTimerRef.current = setInterval(async () => {
-			try {
-				const available = await invoke("check_hint_available");
-				setGameState((prev) => ({ ...prev, hintAvailable: available }));
-			} catch (err) {
-				warn(" Hint check failed:", err);
-			}
-		}, 10000);
-	}, [gameState.puzzleId]);
+	// Listen for hint_available event instead of polling
+	// This is handled in the main event listener effect below
 
 	// Store refs for callbacks to avoid re-subscribing on every render
 	const handleNavigationRef = useRef(null);
@@ -579,6 +567,11 @@ export function useGhostGame() {
 				log("Companion behavior:", behavior);
 				setCompanionBehavior(behavior);
 				setTimeout(() => setCompanionBehavior(null), 30000);
+			});
+
+			await register("hint_available", (event) => {
+				log("[Ghost] Hint available event received");
+				setGameState((prev) => ({ ...prev, hintAvailable: true }));
 			});
 
 			await register("ghost_observation", (event) => {
