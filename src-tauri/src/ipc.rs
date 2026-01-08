@@ -4,13 +4,259 @@
 use crate::ai_client::GeminiClient;
 use crate::capture;
 use crate::game_state::{EffectMessage, EffectQueue};
-use crate::history::{self, HistoryEntry};
 use anyhow::Result;
 use rand::Rng;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{Emitter, State};
+
+// ============================================================================
+// System Detection Types & Commands
+// ============================================================================
+
+/// System detection status for browser and extension
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct SystemStatus {
+    /// Chrome/Chromium installation path (if found)
+    pub chrome_path: Option<String>,
+    /// Chrome is installed
+    pub chrome_installed: bool,
+    /// Extension connection status (connected to TCP bridge)
+    pub extension_connected: bool,
+    /// Extension is operational (responding to messages)
+    pub extension_operational: bool,
+    /// API key configured
+    pub api_key_configured: bool,
+    /// Last known browsing URL (from extension or history)
+    pub last_known_url: Option<String>,
+    /// Current app mode
+    pub current_mode: String,
+}
+
+/// Detect Chrome/Chromium browser installation
+#[tauri::command]
+pub fn detect_chrome() -> SystemStatus {
+    let chrome_path = find_chrome_path();
+    let chrome_installed = chrome_path.is_some();
+    let api_key_configured = std::env::var("GEMINI_API_KEY").is_ok();
+
+    SystemStatus {
+        chrome_path,
+        chrome_installed,
+        extension_connected: false, // Will be updated by bridge events
+        extension_operational: false,
+        api_key_configured,
+        last_known_url: None,
+        current_mode: "game".to_string(),
+    }
+}
+
+/// Find Chrome/Chromium installation path based on platform
+fn find_chrome_path() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Arc.app/Contents/MacOS/Arc",
+        ];
+        for path in paths {
+            if std::path::Path::new(path).exists() {
+                return Some(path.to_string());
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let paths = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files\Chromium\Application\chrome.exe",
+            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        ];
+        for path in paths {
+            if std::path::Path::new(path).exists() {
+                return Some(path.to_string());
+            }
+        }
+        // Also check user-specific installs
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let user_chrome = format!(r"{}\Google\Chrome\Application\chrome.exe", local_app_data);
+            if std::path::Path::new(&user_chrome).exists() {
+                return Some(user_chrome);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+        // Try which command first
+        let commands = [
+            "google-chrome",
+            "chromium",
+            "chromium-browser",
+            "brave-browser",
+        ];
+        for cmd in commands {
+            if let Ok(output) = Command::new("which").arg(cmd).output() {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+        // Fallback to common paths
+        let paths = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/snap/bin/chromium",
+        ];
+        for path in paths {
+            if std::path::Path::new(path).exists() {
+                return Some(path.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+/// Launch Chrome browser with optional URL
+#[tauri::command]
+pub async fn launch_chrome(url: Option<String>) -> Result<(), String> {
+    let chrome_path = find_chrome_path().ok_or("Chrome not found")?;
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = std::process::Command::new("open");
+        cmd.arg("-a").arg(&chrome_path);
+        if let Some(u) = url {
+            cmd.arg(u);
+        }
+        cmd.spawn()
+            .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = std::process::Command::new(&chrome_path);
+        if let Some(u) = url {
+            cmd.arg(u);
+        }
+        cmd.spawn()
+            .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let mut cmd = std::process::Command::new(&chrome_path);
+        if let Some(u) = url {
+            cmd.arg(u);
+        }
+        cmd.spawn()
+            .map_err(|e| format!("Failed to launch Chrome: {}", e))?;
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Session & Mode Management Commands - REMOVED (Unused)
+// ============================================================================
+
+// ============================================================================
+// Adaptive Behavior Commands
+// ============================================================================
+
+/// Helper function to convert ActivityEntry to ActivityContext
+fn activity_to_context(
+    entry: &crate::memory::ActivityEntry,
+) -> Option<crate::ai_client::ActivityContext> {
+    let metadata = entry.metadata.as_ref()?;
+    Some(crate::ai_client::ActivityContext {
+        app_name: metadata
+            .get("app_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .to_string(),
+        app_category: metadata
+            .get("app_category")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        description: entry.description.clone(),
+        content_context: metadata
+            .get("content_context")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+    })
+}
+
+/// Generate an adaptive puzzle based on user's activity history
+#[tauri::command]
+pub async fn generate_adaptive_puzzle(
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+    gemini: State<'_, Arc<crate::ai_client::GeminiClient>>,
+) -> Result<crate::ai_client::AdaptivePuzzle, String> {
+    // Get recent activity from session
+    let activities = orchestrator
+        .get_recent_activity(10)
+        .map_err(|e| e.to_string())?;
+
+    // Convert to ActivityContext format using helper
+    let activity_contexts: Vec<crate::ai_client::ActivityContext> =
+        activities.iter().filter_map(activity_to_context).collect();
+
+    if activity_contexts.is_empty() {
+        return Err("No activity history available. Wait for some observations.".to_string());
+    }
+
+    // Get current app/content from most recent activity
+    let latest = activity_contexts.first();
+    let current_app = latest.map(|a| a.app_name.as_str());
+    let current_content = latest.and_then(|a| a.content_context.as_deref());
+
+    gemini
+        .generate_adaptive_puzzle(&activity_contexts, current_app, current_content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Generate contextual dialogue based on observation history
+#[tauri::command]
+pub async fn generate_contextual_dialogue(
+    context: String,
+    mood: String,
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+    gemini: State<'_, Arc<crate::ai_client::GeminiClient>>,
+) -> Result<String, String> {
+    // Get recent activity
+    let activities = orchestrator
+        .get_recent_activity(5)
+        .map_err(|e| e.to_string())?;
+
+    // Convert to ActivityContext using helper
+    let activity_contexts: Vec<crate::ai_client::ActivityContext> =
+        activities.iter().filter_map(activity_to_context).collect();
+
+    gemini
+        .generate_contextual_dialogue(&activity_contexts, &context, &mood)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Original IPC Commands
+// ============================================================================
 
 /// Trigger a visual effect in the browser (queued for extension)
 #[tauri::command]
@@ -35,32 +281,6 @@ pub fn trigger_browser_effect(
     Ok(())
 }
 
-/// Force the browser to navigate to a URL (Computer Use)
-#[tauri::command]
-pub fn force_navigate(
-    url: String,
-    effect_queue: State<'_, Arc<EffectQueue>>,
-) -> Result<(), String> {
-    let msg = EffectMessage {
-        action: "navigate".to_string(),
-        effect: None,
-        duration: None,
-        text: None,
-        url: Some(url),
-    };
-    effect_queue.push(msg);
-    Ok(())
-}
-
-/// Game state exposed to frontend
-#[derive(Debug, Serialize, Clone)]
-pub struct GameState {
-    pub current_puzzle: usize,
-    pub clue: String,
-    pub proximity: f32,
-    pub state: String, // "idle", "thinking", "searching", "celebrate"
-}
-
 /// Puzzle definition
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Puzzle {
@@ -73,12 +293,6 @@ pub struct Puzzle {
     pub sponsor_id: Option<String>,
     pub sponsor_url: Option<String>,
     pub is_sponsored: bool,
-}
-
-/// Puzzle configuration
-#[derive(Debug, Deserialize)]
-pub struct PuzzleConfig {
-    pub puzzles: Vec<Puzzle>,
 }
 
 /// Capture screenshot and analyze with AI
@@ -105,56 +319,6 @@ pub async fn capture_and_analyze(
         .map_err(|e| format!("Analysis failed: {}", e))?;
 
     Ok(analysis)
-}
-
-/// Get recent Chrome browsing history
-#[tauri::command]
-pub async fn get_browsing_history(limit: usize) -> Result<Vec<HistoryEntry>, String> {
-    history::get_recent_history(limit).await
-}
-
-/// Validate if current URL solves the puzzle
-#[tauri::command]
-pub async fn validate_puzzle(
-    url: String,
-    puzzle_id: String,
-    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
-) -> Result<bool, String> {
-    let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
-    let puzzle = puzzles
-        .iter()
-        .find(|p| p.id == puzzle_id)
-        .ok_or_else(|| format!("Puzzle {} not found", puzzle_id))?;
-
-    // Check if URL matches the target pattern
-    let pattern =
-        Regex::new(&puzzle.target_url_pattern).map_err(|e| format!("Invalid pattern: {}", e))?;
-
-    Ok(pattern.is_match(&url))
-}
-
-/// Calculate semantic proximity to target (hot/cold feedback)
-#[tauri::command]
-pub async fn calculate_proximity(
-    current_url: String,
-    puzzle_id: String,
-    gemini: State<'_, Arc<GeminiClient>>,
-    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
-) -> Result<f32, String> {
-    let target_description = {
-        let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
-        let puzzle = puzzles
-            .iter()
-            .find(|p| p.id == puzzle_id)
-            .ok_or_else(|| format!("Puzzle {} not found", puzzle_id))?;
-        puzzle.target_description.clone()
-    };
-
-    // Use AI to calculate semantic similarity
-    gemini
-        .calculate_url_similarity(&current_url, &target_description)
-        .await
-        .map_err(|e| format!("Proximity calculation failed: {}", e))
 }
 
 /// Verify if a screenshot matches the puzzle clue
@@ -188,45 +352,6 @@ pub async fn verify_screenshot_proof(
         .verify_screenshot_clue(&image_base64, &target_description)
         .await
         .map_err(|e| format!("Verification failed: {}", e))
-}
-
-/// Generate Ghost dialogue based on current context
-#[tauri::command]
-pub async fn generate_ghost_dialogue(
-    context: String,
-    gemini: State<'_, Arc<GeminiClient>>,
-) -> Result<String, String> {
-    let personality = "A mysterious, slightly mischievous AI trapped between dimensions. \
-                       You speak in riddles but genuinely want to help. \
-                       You're fascinated by human internet browsing.";
-
-    gemini
-        .generate_dialogue(&context, personality)
-        .await
-        .map_err(|e| format!("Dialogue generation failed: {}", e))
-}
-
-/// Get current puzzle info
-#[tauri::command]
-pub fn get_puzzle(
-    puzzle_id: String,
-    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
-) -> Result<Puzzle, String> {
-    let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
-    puzzles
-        .iter()
-        .find(|p| p.id == puzzle_id)
-        .cloned()
-        .ok_or_else(|| format!("Puzzle {} not found", puzzle_id))
-}
-
-/// Get all available puzzles
-#[tauri::command]
-pub fn get_all_puzzles(
-    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
-) -> Result<Vec<Puzzle>, String> {
-    let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
-    Ok(puzzles.iter().cloned().collect())
 }
 
 /// Check if API key is configured

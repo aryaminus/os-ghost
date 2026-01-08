@@ -1068,3 +1068,297 @@ body {
 	color: var(--text-dim);
 	opacity: 0.8;
 }
+
+/* ============================================================================
+   System Status Banner
+   ============================================================================ */
+
+.system-status-banner {
+	width: 100%;
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	padding: 6px;
+	transition: all 0.3s ease;
+	cursor: pointer;
+}
+
+.system-status-banner.collapsed {
+	padding: 4px 8px;
+	background: rgba(0, 0, 0, 0.3);
+}
+
+.system-status-banner.expanded {
+	cursor: default;
+}
+
+.status-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	cursor: pointer;
+}
+
+.status-indicator {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.status-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.status-dot.connected {
+	background: var(--ghost-green);
+	box-shadow: 0 0 8px var(--ghost-glow);
+	animation: pulse-green 2s infinite;
+}
+
+.status-dot.warning {
+	background: var(--warm);
+	box-shadow: 0 0 8px rgba(255, 170, 0, 0.5);
+	animation: pulse-orange 2s infinite;
+}
+
+.status-dot.error {
+	background: var(--hot);
+	box-shadow: 0 0 8px rgba(255, 68, 68, 0.5);
+	animation: pulse-red 2s infinite;
+}
+
+.status-dot.checking {
+	background: var(--text-dim);
+	animation: pulse-dim 1s infinite;
+}
+
+@keyframes pulse-green {
+	0%,
+	100% {
+		box-shadow: 0 0 4px var(--ghost-glow);
+	}
+	50% {
+		box-shadow: 0 0 12px var(--ghost-glow);
+	}
+}
+
+@keyframes pulse-orange {
+	0%,
+	100% {
+		box-shadow: 0 0 4px rgba(255, 170, 0, 0.3);
+	}
+	50% {
+		box-shadow: 0 0 10px rgba(255, 170, 0, 0.6);
+	}
+}
+
+@keyframes pulse-red {
+	0%,
+	100% {
+		box-shadow: 0 0 4px rgba(255, 68, 68, 0.3);
+	}
+	50% {
+		box-shadow: 0 0 10px rgba(255, 68, 68, 0.6);
+	}
+}
+
+@keyframes pulse-dim {
+	0%,
+	100% {
+		opacity: 0.5;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
+.status-text {
+	font-size: 10px;
+	color: var(--text-secondary);
+}
+
+.status-text-mini {
+	font-size: 9px;
+	color: var(--text-dim);
+}
+
+.expand-icon {
+	font-size: 8px;
+	color: var(--text-dim);
+	transition: transform 0.2s ease;
+}
+
+.status-content {
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 9px;
+	margin-bottom: 4px;
+}
+
+.status-label {
+	color: var(--text-dim);
+}
+
+.status-value {
+	color: var(--text-secondary);
+}
+
+.status-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.status-action-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	font-size: 9px;
+	font-family: "Courier New", monospace;
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid var(--text-dim);
+	border-radius: 4px;
+	color: var(--text-dim);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.status-action-btn:hover:not(:disabled) {
+	background: rgba(0, 255, 136, 0.15);
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+}
+
+.status-action-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.status-action-btn.primary {
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+	background: rgba(0, 255, 136, 0.1);
+}
+
+.status-action-btn.primary:hover:not(:disabled) {
+	background: rgba(0, 255, 136, 0.25);
+	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+
+/* Fallback mode notice */
+.fallback-notice {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	margin-top: 8px;
+	padding: 6px;
+	background: rgba(136, 68, 255, 0.1);
+	border: 1px solid rgba(136, 68, 255, 0.3);
+	border-radius: 4px;
+}
+
+.fallback-icon {
+	font-size: 12px;
+	flex-shrink: 0;
+}
+
+.fallback-text {
+	font-size: 9px;
+	color: var(--text-dim);
+	line-height: 1.3;
+}
+
+/* ============================================================================
+   Companion Behavior Suggestions
+   ============================================================================ */
+
+.companion-suggestion {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px;
+	margin: 8px 0;
+	background: linear-gradient(
+		135deg,
+		rgba(136, 68, 255, 0.15) 0%,
+		rgba(0, 255, 136, 0.1) 100%
+	);
+	border: 1px solid rgba(136, 68, 255, 0.4);
+	border-radius: 8px;
+	animation: suggestion-pulse 3s ease-in-out infinite;
+}
+
+@keyframes suggestion-pulse {
+	0%,
+	100% {
+		border-color: rgba(136, 68, 255, 0.4);
+		box-shadow: 0 0 4px rgba(136, 68, 255, 0.2);
+	}
+	50% {
+		border-color: rgba(0, 255, 136, 0.5);
+		box-shadow: 0 0 12px rgba(0, 255, 136, 0.3);
+	}
+}
+
+.suggestion-message {
+	font-size: 10px;
+	color: var(--text-secondary);
+	line-height: 1.4;
+}
+
+.suggestion-action-btn {
+	padding: 6px 12px;
+	font-size: 9px;
+	font-family: "Courier New", monospace;
+	background: rgba(0, 255, 136, 0.15);
+	border: 1px solid var(--ghost-green);
+	border-radius: 4px;
+	color: var(--ghost-green);
+	cursor: pointer;
+	transition: all 0.2s ease;
+	align-self: flex-start;
+}
+
+.suggestion-action-btn:hover {
+	background: rgba(0, 255, 136, 0.3);
+	box-shadow: 0 0 10px rgba(0, 255, 136, 0.4);
+	transform: translateY(-1px);
+}
+
+/* Secondary action button style */
+.action-btn.secondary {
+	background: rgba(136, 68, 255, 0.15);
+	border-color: rgba(136, 68, 255, 0.5);
+	color: #aa88ff;
+}
+
+.action-btn.secondary:hover {
+	background: rgba(136, 68, 255, 0.3);
+	border-color: #aa88ff;
+	box-shadow: 0 0 10px rgba(136, 68, 255, 0.4);
+}
+
+/* Adaptive puzzle indicator */
+.adaptive-indicator {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 8px;
+	color: #aa88ff;
+	background: rgba(136, 68, 255, 0.1);
+	padding: 2px 6px;
+	border-radius: 4px;
+	margin-left: 6px;
+}

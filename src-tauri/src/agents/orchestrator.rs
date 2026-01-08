@@ -200,4 +200,61 @@ impl AgentOrchestrator {
             .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
         session.add_url(url)
     }
+
+    /// Get current session state
+    pub fn get_session_state(&self) -> anyhow::Result<crate::memory::session::SessionState> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+        session.load()
+    }
+
+    /// Set the app mode (Game or Companion)
+    pub fn set_mode(&self, mode: crate::memory::AppMode) -> anyhow::Result<()> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+        session.set_mode(mode)
+    }
+
+    /// Get current app mode
+    pub fn get_mode(&self) -> anyhow::Result<crate::memory::AppMode> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+        session.get_mode()
+    }
+
+    /// Get recent activity entries
+    pub fn get_recent_activity(
+        &self,
+        limit: usize,
+    ) -> anyhow::Result<Vec<crate::memory::ActivityEntry>> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+        session.get_recent_activity(limit)
+    }
+
+    /// Record a screenshot capture
+    pub fn record_screenshot(&self) -> anyhow::Result<()> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+        session.record_screenshot()
+    }
+
+    /// Record puzzle solved in session
+    pub fn record_puzzle_solved_session(&self) -> anyhow::Result<()> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock error: {}", e))?;
+        session.record_puzzle_solved()
+    }
 }

@@ -141,6 +141,18 @@ export function useGhostGame() {
 		recentHistory: [],
 		topSites: [],
 	});
+
+	// System status for Chrome/extension detection
+	const [systemStatus, setSystemStatus] = useState({
+		chromeInstalled: null, // null = checking, true/false = detected
+		chromePath: null,
+		extensionConnected: false,
+		extensionOperational: false,
+		apiKeyConfigured: false,
+		lastKnownUrl: null,
+		currentMode: "game",
+	});
+
 	/** @type {React.MutableRefObject<NodeJS.Timeout|null>} */
 	const hintTimerRef = useRef(null);
 	/** @type {React.MutableRefObject<{recentHistory: any[], topSites: any[]}>} */
@@ -157,6 +169,100 @@ export function useGhostGame() {
 	const agentCycleInProgressRef = useRef(false);
 	// Debounce timer for navigation events
 	const navigationDebounceRef = useRef(null);
+
+	/**
+	 * Detect system status (Chrome, extension, etc.)
+	 * Called on mount and periodically
+	 */
+	const detectSystemStatus = useCallback(async () => {
+		try {
+			const status = await invoke("detect_chrome");
+			setSystemStatus((prev) => ({
+				...prev,
+				chromeInstalled: status.chrome_installed,
+				chromePath: status.chrome_path,
+				apiKeyConfigured: status.api_key_configured,
+				currentMode: status.current_mode || "game",
+			}));
+		} catch (err) {
+			console.error("[Ghost] System detection failed:", err);
+		}
+	}, []);
+
+	// Detect system status on mount and periodically
+	useEffect(() => {
+		detectSystemStatus();
+		const interval = setInterval(detectSystemStatus, 30000); // Re-check every 30s
+		return () => clearInterval(interval);
+	}, [detectSystemStatus]);
+
+	// Update system status when extension connects/disconnects
+	useEffect(() => {
+		setSystemStatus((prev) => ({
+			...prev,
+			extensionConnected,
+			extensionOperational: extensionConnected,
+		}));
+	}, [extensionConnected]);
+
+	// Companion behavior state
+	const [companionBehavior, setCompanionBehavior] = useState(null);
+	const [lastObservation, setLastObservation] = useState(null);
+
+	/**
+	 * Generate an adaptive puzzle based on activity history
+	 */
+	const generateAdaptivePuzzle = useCallback(async () => {
+		setIsLoading(true);
+		try {
+			const puzzle = await invoke("generate_adaptive_puzzle");
+			log("Generated adaptive puzzle:", puzzle);
+
+			setGameState((prev) => ({
+				...prev,
+				state: "thinking",
+				clue: puzzle.clue,
+				puzzleId: `adaptive_${Date.now()}`,
+				currentPuzzle: puzzle.target_description,
+				hint: puzzle.hints?.[0] || "",
+				hints: puzzle.hints || [],
+				hintsRevealed: 0,
+				hintAvailable: false,
+				proximity: 0.2,
+				dialogue: `Inspired by your ${puzzle.inspired_by}... ${puzzle.clue}`,
+			}));
+
+			setCompanionBehavior(null); // Clear suggestion
+		} catch (err) {
+			console.error("[Ghost] Adaptive puzzle failed:", err);
+			setError(
+				"Could not generate adaptive puzzle. Need more observations."
+			);
+		} finally {
+			setIsLoading(false);
+		}
+	}, []);
+
+	/**
+	 * Get contextual dialogue based on observations
+	 */
+	const getContextualDialogue = useCallback(async () => {
+		try {
+			const dialogue = await invoke("generate_contextual_dialogue", {
+				context: lastObservation?.activity || "idle",
+				mood: gameState.state || "idle",
+			});
+
+			if (dialogue) {
+				setGameState((prev) => ({
+					...prev,
+					dialogue,
+				}));
+			}
+		} catch (err) {
+			console.error("[Ghost] Contextual dialogue failed:", err);
+		}
+	}, [lastObservation, gameState.state]);
 
 	/**
 	 * Trigger a visual effect in the browser.
@@ -468,10 +574,28 @@ export function useGhostGame() {
 				}
 			});
 
+			await register("companion_behavior", (event) => {
+				const behavior = event.payload;
+				log("Companion behavior:", behavior);
+				setCompanionBehavior(behavior);
+				setTimeout(() => setCompanionBehavior(null), 30000);
+			});
+
 			await register("ghost_observation", (event) => {
 				log("[Ghost] Received observation:", event.payload);
-				// Tauri emits serde structs as objects, no need to JSON.parse
 				const observation = event.payload;
+				setLastObservation(observation);
+
+				// Logic merged from both listeners
+				// 1. Contextual comment if no puzzle active (using ref to avoid dep)
+				if (observation.puzzle_theme && !gameStateRef.current.clue) {
+					setGameState((prev) => ({
+						...prev,
+						dialogue: `I sense something about ${observation.puzzle_theme}...`,
+					}));
+				}
+
+				// 2. Observant state update
 				if (
 					observation &&
 					observation.activity &&
@@ -480,10 +604,9 @@ export function useGhostGame() {
 					setGameState((prev) => ({
 						...prev,
 						dialogue: `I see you: ${observation.activity}`,
-						state: "observant", // New state for passive observation
+						state: "observant",
 					}));
 
-					// Revert to idle after 10 seconds of observant state
 					setTimeout(() => {
 						setGameState((prev) =>
 							prev.state === "observant"
@@ -1035,6 +1158,10 @@ export function useGhostGame() {
 		isLoading,
 		error,
 		extensionConnected,
+		systemStatus,
+		browsingContext,
+		companionBehavior,
+		lastObservation,
 		captureAndAnalyze,
 		verifyScreenshotProof,
 		triggerBrowserEffect,
@@ -1045,5 +1172,8 @@ export function useGhostGame() {
 		triggerDynamicPuzzle,
 		startBackgroundChecks,
 		enableAutonomousMode,
+		detectSystemStatus,
+		generateAdaptivePuzzle,
+		getContextualDialogue,
 	};
 }

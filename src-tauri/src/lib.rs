@@ -189,18 +189,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            capture::capture_screen,
-            history::get_recent_history,
-            window::set_window_clickable,
             window::start_window_drag,
             ipc::capture_and_analyze,
-            ipc::get_browsing_history,
-            ipc::validate_puzzle,
-            ipc::calculate_proximity,
-            ipc::generate_ghost_dialogue,
             ipc::verify_screenshot_proof,
-            ipc::get_puzzle,
-            ipc::get_all_puzzles,
             ipc::check_api_key,
             ipc::set_api_key,
             ipc::validate_api_key,
@@ -210,16 +201,16 @@ pub fn run() {
             ipc::start_background_checks,
             ipc::enable_autonomous_mode,
             ipc::trigger_browser_effect,
-            ipc::force_navigate,
+            // System detection commands
+            ipc::detect_chrome,
+            ipc::launch_chrome,
+            // Adaptive behavior commands
+            ipc::generate_adaptive_puzzle,
+            ipc::generate_contextual_dialogue,
             game_state::get_game_state,
             game_state::reset_game,
             game_state::check_hint_available,
             game_state::get_next_hint,
-            privacy::get_privacy_settings,
-            privacy::update_privacy_settings,
-            privacy::can_capture_screen,
-            privacy::can_analyze_with_ai,
-            privacy::get_privacy_notice,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

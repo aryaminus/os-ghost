@@ -12,9 +12,9 @@ import React, {
 	useMemo,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Command } from "@tauri-apps/plugin-shell";
 import { useGhostGame } from "../hooks/useTauriCommands";
 import ApiKeyInput from "./ApiKeyInput";
+import SystemStatusBanner from "./SystemStatus";
 
 /**
  * ASCII Art sprites for Ghost in different states.
@@ -201,6 +201,8 @@ const Ghost = () => {
 	const {
 		gameState,
 		extensionConnected,
+		systemStatus,
+		companionBehavior,
 		showHint,
 		captureAndAnalyze,
 		triggerDynamicPuzzle,
@@ -208,6 +210,7 @@ const Ghost = () => {
 		enableAutonomousMode,
 		verifyScreenshotProof,
 		resetGame,
+		generateAdaptivePuzzle,
 	} = useGhostGame();
 
 	const sprite = GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle;
@@ -324,198 +327,199 @@ const Ghost = () => {
 				</div>
 			)}
 
-			{/* Extension Connection Status - Show only when API key IS configured */}
-			{gameState.apiKeyConfigured &&
-				!showingKeyInput &&
-				!extensionConnected && (
-					<div className="status-section">
-						<div className="connection-box">
-							<div className="connection-header">
-								🔗 Browser Not Connected
-							</div>
-							<p className="connection-text">
-								Install the Chrome extension to enable browser
-								tracking.
-							</p>
-							<button
-								className="install-btn"
-								onMouseDown={(e) => e.stopPropagation()}
-								onClick={async () => {
-									try {
-										// Use the pre-configured command from capabilities
-										const cmd = Command.create(
-											"open-chrome-extensions"
-										);
-										await cmd.execute();
-									} catch (err) {
-										console.error(
-											"Failed to open Chrome:",
-											err
-										);
-										alert(
-											'To install the extension:\n\n1. Open Chrome and go to: chrome://extensions\n2. Enable "Developer mode"\n3. Click "Load unpacked"\n4. Select the ghost-extension folder'
-										);
-									}
-								}}
-							>
-								📦 Install Extension
-							</button>
-						</div>
-					</div>
-				)}
+			{/* System Status Banner - Non-blocking, always visible when API key configured */}
+			{gameState.apiKeyConfigured && !showingKeyInput && (
+				<SystemStatusBanner
+					status={systemStatus}
+					extensionConnected={extensionConnected}
+				/>
+			)}
 
-			{/* Game UI Section - Only show when everything is ready AND not configuring key */}
-			{gameState.apiKeyConfigured &&
-				extensionConnected &&
-				!showingKeyInput && (
-					<>
-						{/* Show Game UI ONLY when NOT resetting */}
-						{!showingResetConfirm ? (
-							<>
-								{/* Current Clue */}
-								<div className="clue-box">
-									<div className="clue-header">
-										📜 CURRENT MYSTERY
-										{gameState.is_sponsored && (
-											<span
-												style={{
-													marginLeft: "8px",
-													fontSize: "0.8em",
-													background: "var(--accent)",
-													color: "var(--bg-color)",
-													padding: "2px 6px",
-													borderRadius: "4px",
-													fontWeight: "bold",
-												}}
-											>
-												SPONSORED
-											</span>
-										)}
-									</div>
-									<p className="clue-text">
-										{gameState.clue ||
-											(gameState.puzzleId
-												? "Loading puzzle..."
-												: "Waiting for signal...")}
-									</p>
-									{gameState.puzzleId &&
-										!gameState.hintAvailable && (
-											<div className="hint-status">
-												<span className="hint-charging">
-													⏳ Hint charging...
-												</span>
-											</div>
-										)}
+			{/* Game UI Section - Shows when API key is configured (extension is now optional) */}
+			{gameState.apiKeyConfigured && !showingKeyInput && (
+				<>
+					{/* Show Game UI ONLY when NOT resetting */}
+					{!showingResetConfirm ? (
+						<>
+							{/* Current Clue */}
+							<div className="clue-box">
+								<div className="clue-header">
+									📜 CURRENT MYSTERY
+									{gameState.is_sponsored && (
+										<span
+											style={{
+												marginLeft: "8px",
+												fontSize: "0.8em",
+												background: "var(--accent)",
+												color: "var(--bg-color)",
+												padding: "2px 6px",
+												borderRadius: "4px",
+												fontWeight: "bold",
+											}}
+										>
+											SPONSORED
+										</span>
+									)}
 								</div>
+								<p className="clue-text">
+									{gameState.clue ||
+										(gameState.puzzleId
+											? "Loading puzzle..."
+											: "Waiting for signal...")}
+								</p>
+								{gameState.puzzleId &&
+									!gameState.hintAvailable && (
+										<div className="hint-status">
+											<span className="hint-charging">
+												⏳ Hint charging...
+											</span>
+										</div>
+									)}
+							</div>
 
-								{/* Dialogue Box */}
-								{gameState.dialogue && (
-									<div
-										className={`dialogue-box state-${gameState.state}`}
-									>
-										{gameState.state === "searching" && (
-											<div className="mode-indicator">
-												🔍 Background Scan
-											</div>
-										)}
-										{gameState.state === "thinking" && (
-											<div className="mode-indicator">
-												🔮 Consulting Oracle...
-											</div>
-										)}
-										<TypewriterText
-											text={gameState.dialogue}
-											speed={25}
-										/>
+							{/* Dialogue Box */}
+							{gameState.dialogue && (
+								<div
+									className={`dialogue-box state-${gameState.state}`}
+								>
+									{gameState.state === "searching" && (
+										<div className="mode-indicator">
+											🔍 Background Scan
+										</div>
+									)}
+									{gameState.state === "thinking" && (
+										<div className="mode-indicator">
+											🔮 Consulting Oracle...
+										</div>
+									)}
+									<TypewriterText
+										text={gameState.dialogue}
+										speed={25}
+									/>
+								</div>
+							)}
+
+							{/* Companion Behavior Suggestion */}
+							{companionBehavior && (
+								<div className="companion-suggestion">
+									<div className="suggestion-message">
+										💭 {companionBehavior.suggestion}
+									</div>
+									{companionBehavior.action ===
+										"generate_adaptive_puzzle" && (
+										<button
+											className="suggestion-action-btn"
+											onMouseDown={(e) =>
+												e.stopPropagation()
+											}
+											onClick={(e) => {
+												e.stopPropagation();
+												generateAdaptivePuzzle();
+											}}
+										>
+											🎯 Create Puzzle
+										</button>
+									)}
+								</div>
+							)}
+
+							{/* Dynamic Puzzle Trigger */}
+							{gameState.state === "idle" &&
+								!gameState.puzzleId && (
+									<div className="action-wrapper">
+										<button
+											className="action-btn"
+											onMouseDown={(e) =>
+												e.stopPropagation()
+											}
+											onClick={(e) => {
+												e.stopPropagation();
+												triggerDynamicPuzzle();
+											}}
+										>
+											🌀 Investigate This Signal
+										</button>
+										<button
+											className="action-btn secondary"
+											onMouseDown={(e) =>
+												e.stopPropagation()
+											}
+											onClick={(e) => {
+												e.stopPropagation();
+												generateAdaptivePuzzle();
+											}}
+										>
+											🧠 Puzzle From My Observations
+										</button>
+										<div className="helper-text">
+											Generate mysteries from your
+											activity
+										</div>
 									</div>
 								)}
 
-								{/* Dynamic Puzzle Trigger */}
-								{gameState.state === "idle" &&
-									!gameState.puzzleId && (
-										<div className="action-wrapper">
-											<button
-												className="action-btn"
-												onMouseDown={(e) =>
-													e.stopPropagation()
-												}
-												onClick={(e) => {
-													e.stopPropagation();
-													triggerDynamicPuzzle();
-												}}
-											>
-												🌀 Investigate This Signal
-											</button>
-											<div className="helper-text">
-												Generates a new mystery from
-												this page
-											</div>
+							{/* Prove Finding Button */}
+							{gameState.puzzleId &&
+								gameState.state !== "celebrate" && (
+									<div className="action-wrapper">
+										<button
+											className="action-btn verify-btn"
+											onMouseDown={(e) =>
+												e.stopPropagation()
+											}
+											onClick={(e) => {
+												e.stopPropagation();
+												verifyScreenshotProof(); // Call verification
+											}}
+											style={{
+												marginTop: "8px",
+												backgroundColor:
+													"var(--accent)",
+											}}
+										>
+											📸 Prove Finding
+										</button>
+										<div className="helper-text">
+											Verify you found the solution
 										</div>
-									)}
+									</div>
+								)}
 
-								{/* Prove Finding Button */}
-								{gameState.puzzleId &&
-									gameState.state !== "celebrate" && (
-										<div className="action-wrapper">
-											<button
-												className="action-btn verify-btn"
-												onMouseDown={(e) =>
-													e.stopPropagation()
-												}
-												onClick={(e) => {
-													e.stopPropagation();
-													verifyScreenshotProof(); // Call verification
-												}}
-												style={{
-													marginTop: "8px",
-													backgroundColor:
-														"var(--accent)",
-												}}
-											>
-												📸 Prove Finding
-											</button>
-											<div className="helper-text">
-												Verify you found the solution
-											</div>
-										</div>
-									)}
-
-								{/* Puzzle Counter */}
-								<div className="puzzle-counter">
-									Memory Fragment:{" "}
-									{gameState.currentPuzzle + 1}
-									/∞
-								</div>
-							</>
-						) : (
-							/* Reset Game Confirmation - Replaces Main UI */
-							<div className="reset-confirm-box">
-								<p>Reset all progress?</p>
-								<div className="reset-actions">
-									<button
-										className="confirm-reset-btn"
-										onMouseDown={(e) => e.stopPropagation()}
-										onClick={() => {
-											resetGame();
-											setShowingResetConfirm(false);
-										}}
-									>
-										Yes, Wipe Memory
-									</button>
-									<button
-										className="cancel-reset-btn"
-										onMouseDown={(e) => e.stopPropagation()}
-										onClick={() =>
-											setShowingResetConfirm(false)
-										}
-									>
-										Cancel
-									</button>
-								</div>
+							{/* Puzzle Counter */}
+							<div className="puzzle-counter">
+								Memory Fragment: {gameState.currentPuzzle + 1}
+								/∞
 							</div>
-						)}
-					</>
-				)}
+						</>
+					) : (
+						/* Reset Game Confirmation - Replaces Main UI */
+						<div className="reset-confirm-box">
+							<p>Reset all progress?</p>
+							<div className="reset-actions">
+								<button
+									className="confirm-reset-btn"
+									onMouseDown={(e) => e.stopPropagation()}
+									onClick={() => {
+										resetGame();
+										setShowingResetConfirm(false);
+									}}
+								>
+									Yes, Wipe Memory
+								</button>
+								<button
+									className="cancel-reset-btn"
+									onMouseDown={(e) => e.stopPropagation()}
+									onClick={() =>
+										setShowingResetConfirm(false)
+									}
+								>
+									Cancel
+								</button>
+							</div>
+						</div>
+					)}
+				</>
+			)}
 
 			{/* SYSTEM CONTROLS FOOTER - Always visible when key is configured */}
 			{gameState.apiKeyConfigured && (

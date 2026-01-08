@@ -1,11 +1,34 @@
 //! Session memory - short-term working memory for current game session
-//! Stores current puzzle state, recent interactions, and temporary data
+//! Stores current puzzle state, recent interactions, activity history, and mode state
 
 use super::store::MemoryStore;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 const SESSION_TREE: &str = "session";
+const ACTIVITY_TREE: &str = "activity_log";
+
+/// App mode - companion (passive) or game (active puzzle hunting)
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub enum AppMode {
+    #[default]
+    Game, // Active puzzle hunting mode
+    Companion, // Passive observation mode
+}
+
+/// An activity entry for the activity log
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityEntry {
+    /// Type of activity: "screenshot", "observation", "puzzle_attempt", "url_visit", "mode_change"
+    pub activity_type: String,
+    /// Human-readable description
+    pub description: String,
+    /// Unix timestamp
+    pub timestamp: u64,
+    /// Optional metadata (JSON value)
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+}
 
 /// Current session state
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +53,18 @@ pub struct SessionState {
     pub started_at: u64,
     /// Last activity timestamp
     pub last_activity: u64,
+    /// Current app mode
+    #[serde(default)]
+    pub current_mode: AppMode,
+    /// Last mode change timestamp
+    #[serde(default)]
+    pub last_mode_change: u64,
+    /// Puzzles solved this session
+    #[serde(default)]
+    pub puzzles_solved_session: usize,
+    /// Screenshots taken this session
+    #[serde(default)]
+    pub screenshots_taken: usize,
 }
 
 impl Default for SessionState {
@@ -40,7 +75,7 @@ impl Default for SessionState {
             .as_secs();
 
         Self {
-            puzzle_id: "puzzle_001".to_string(),
+            puzzle_id: String::new(), // Start empty for dynamic generation
             puzzle_index: 0,
             current_url: String::new(),
             current_title: String::new(),
@@ -50,6 +85,10 @@ impl Default for SessionState {
             hints_revealed: 0,
             started_at: now,
             last_activity: now,
+            current_mode: AppMode::Game,
+            last_mode_change: now,
+            puzzles_solved_session: 0,
+            screenshots_taken: 0,
         }
     }
 }
@@ -95,6 +134,10 @@ impl SessionMemory {
         if state.recent_urls.len() > 10 {
             state.recent_urls.remove(0);
         }
+        state.last_activity = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         self.save(&state)
     }
 
@@ -105,8 +148,93 @@ impl SessionMemory {
         self.save(&state)
     }
 
+    /// Set the current app mode
+    pub fn set_mode(&self, mode: AppMode) -> Result<()> {
+        let mut state = self.load()?;
+        if state.current_mode != mode {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            state.current_mode = mode.clone();
+            state.last_mode_change = now;
+
+            // Log mode change
+            self.add_activity(ActivityEntry {
+                activity_type: "mode_change".to_string(),
+                description: format!("Switched to {:?} mode", mode),
+                timestamp: now,
+                metadata: None,
+            })?;
+
+            self.save(&state)?;
+        }
+        Ok(())
+    }
+
+    /// Get current app mode
+    pub fn get_mode(&self) -> Result<AppMode> {
+        Ok(self.load()?.current_mode)
+    }
+
+    /// Increment screenshot counter
+    pub fn record_screenshot(&self) -> Result<()> {
+        let mut state = self.load()?;
+        state.screenshots_taken += 1;
+        state.last_activity = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.save(&state)
+    }
+
+    /// Increment puzzles solved counter
+    pub fn record_puzzle_solved(&self) -> Result<()> {
+        let mut state = self.load()?;
+        state.puzzles_solved_session += 1;
+        self.save(&state)
+    }
+
+    // --- Activity Log ---
+
+    /// Add an activity entry to the log and prune old entries
+    pub fn add_activity(&self, entry: ActivityEntry) -> Result<()> {
+        let key = format!("activity_{}", entry.timestamp);
+        self.store.set(ACTIVITY_TREE, &key, &entry)?;
+        // Auto-prune to keep history manageable (prevent unlimited growth)
+        self.prune_activity(200)
+    }
+
+    /// Get recent activity entries (last N)
+    pub fn get_recent_activity(&self, limit: usize) -> Result<Vec<ActivityEntry>> {
+        let mut entries: Vec<ActivityEntry> = self.store.get_all(ACTIVITY_TREE)?;
+        // Sort by timestamp descending
+        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        entries.truncate(limit);
+        Ok(entries)
+    }
+
+    /// Clear activity log (keeps last N entries)
+    pub fn prune_activity(&self, keep_count: usize) -> Result<()> {
+        let mut entries: Vec<ActivityEntry> = self.store.get_all(ACTIVITY_TREE)?;
+        if entries.len() <= keep_count {
+            return Ok(());
+        }
+
+        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        let to_delete: Vec<_> = entries.into_iter().skip(keep_count).collect();
+
+        for entry in to_delete {
+            let key = format!("activity_{}", entry.timestamp);
+            let _ = self.store.delete(ACTIVITY_TREE, &key);
+        }
+        Ok(())
+    }
+
     /// Reset session for new game
     pub fn reset(&self) -> Result<()> {
-        self.store.delete(SESSION_TREE, "current")
+        self.store.delete(SESSION_TREE, "current")?;
+        self.store.clear_tree(ACTIVITY_TREE)?;
+        Ok(())
     }
 }

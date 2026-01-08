@@ -591,3 +591,231 @@ pub struct VerificationResult {
     pub confidence: f32,
     pub explanation: String,
 }
+
+/// An adaptive puzzle generated from observed user activity
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdaptivePuzzle {
+    /// The puzzle clue
+    pub clue: String,
+    /// What the player should find
+    pub target_description: String,
+    /// Regex pattern for matching solution
+    pub target_url_pattern: String,
+    /// Progressive hints
+    pub hints: Vec<String>,
+    /// The activity context that inspired this puzzle
+    pub inspired_by: String,
+    /// Puzzle difficulty (1-5)
+    pub difficulty: u8,
+    /// Theme/category of the puzzle
+    pub theme: String,
+}
+
+// ============================================================================
+// Adaptive Behavior Methods
+// ============================================================================
+
+impl GeminiClient {
+    /// Generate an adaptive puzzle based on user's observed activity patterns
+    /// Uses activity history to create contextually relevant puzzles
+
+    pub async fn generate_adaptive_puzzle(
+        &self,
+        activities: &[ActivityContext],
+        current_app: Option<&str>,
+        current_content: Option<&str>,
+    ) -> Result<AdaptivePuzzle> {
+        if self.api_key.is_empty() {
+            return Err(anyhow::anyhow!("No API Key configured"));
+        }
+
+        if !self.wait_for_rate_limit().await {
+            return Err(anyhow::anyhow!("Rate limit exceeded"));
+        }
+
+        // Build activity context string
+        let activity_summary = activities
+            .iter()
+            .map(|a| format!("- {} ({}): {}", a.app_category, a.app_name, a.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let current_context = match (current_app, current_content) {
+            (Some(app), Some(content)) => format!("Currently using {} viewing {}", app, content),
+            (Some(app), None) => format!("Currently using {}", app),
+            _ => "No current context".to_string(),
+        };
+
+        let prompt = format!(
+            r#"You are creating an educational puzzle for a desktop companion game. 
+The user's recent activity shows their interests. Create a puzzle that connects to what they've been doing.
+
+Recent User Activity:
+{}
+
+Current Context: {}
+
+Create a fun, educational puzzle that:
+1. Relates to topics from their activity
+2. Leads them to discover something new but related
+3. Has a clear, verifiable answer (a webpage they can find)
+
+Respond with ONLY valid JSON (no markdown):
+{{
+    "clue": "A mysterious, engaging clue (max 100 chars)",
+    "target_description": "What they should find",
+    "target_url_pattern": "regex pattern for solution URL",
+    "hints": ["hint 1", "hint 2", "hint 3"],
+    "inspired_by": "which activity inspired this",
+    "difficulty": 2,
+    "theme": "category (history, science, tech, culture, etc.)"
+}}"#,
+            activity_summary, current_context
+        );
+
+        let request = GeminiRequest {
+            contents: vec![Content {
+                parts: vec![Part::Text { text: prompt }],
+            }],
+            tools: Some(vec![Tool {
+                google_search: GoogleSearch {},
+            }]),
+            generation_config: Some(GenerationConfig {
+                temperature: 0.8,
+                max_output_tokens: 400,
+            }),
+        };
+
+        let response = self
+            .client
+            .post(&self.get_api_url())
+            .json(&request)
+            .send()
+            .await?
+            .json::<GeminiResponse>()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Gemini API error: {}", error.message));
+        }
+
+        let candidates = response
+            .candidates
+            .ok_or_else(|| anyhow::anyhow!("No candidates"))?;
+
+        let text = candidates
+            .first()
+            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
+            .flatten()
+            .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
+
+        let clean_text = text
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        let puzzle: AdaptivePuzzle = serde_json::from_str(clean_text).map_err(|e| {
+            tracing::error!(
+                "Failed to parse adaptive puzzle JSON: {} - Raw: {}",
+                e,
+                text
+            );
+            anyhow::anyhow!("Failed to parse adaptive puzzle: {}", e)
+        })?;
+
+        tracing::info!(
+            "Generated adaptive puzzle inspired by '{}': {}",
+            puzzle.inspired_by,
+            puzzle.clue
+        );
+
+        Ok(puzzle)
+    }
+
+    /// Generate contextual dialogue based on observation history
+    pub async fn generate_contextual_dialogue(
+        &self,
+        recent_activities: &[ActivityContext],
+        current_context: &str,
+        ghost_mood: &str,
+    ) -> Result<String> {
+        if self.api_key.is_empty() {
+            return Ok("...".to_string());
+        }
+
+        if !self.wait_for_rate_limit().await {
+            return Ok("...".to_string());
+        }
+
+        let activity_summary = recent_activities
+            .iter()
+            .take(5)
+            .map(|a| format!("{} ({})", a.description, a.app_name))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let prompt = format!(
+            r#"You are a mysterious AI companion ghost. Generate a short, contextual comment.
+
+Ghost mood: {}
+Recent user activities: {}
+Current context: {}
+
+The ghost should:
+- Reference what the user has been doing naturally
+- Be helpful yet mysterious
+- Keep it under 80 characters
+- Stay in character
+
+Respond with ONLY the dialogue text, no quotes or formatting."#,
+            ghost_mood, activity_summary, current_context
+        );
+
+        let request = GeminiRequest {
+            contents: vec![Content {
+                parts: vec![Part::Text { text: prompt }],
+            }],
+            generation_config: Some(GenerationConfig {
+                temperature: 0.9,
+                max_output_tokens: 50,
+            }),
+            tools: None,
+        };
+
+        let response = self
+            .client
+            .post(&self.get_api_url())
+            .json(&request)
+            .send()
+            .await?
+            .json::<GeminiResponse>()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Gemini API error: {}", error.message));
+        }
+
+        let candidates = response
+            .candidates
+            .ok_or_else(|| anyhow::anyhow!("No candidates"))?;
+
+        let text = candidates
+            .first()
+            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
+            .flatten()
+            .ok_or_else(|| anyhow::anyhow!("No text"))?;
+
+        Ok(text.trim().replace('"', ""))
+    }
+}
+
+/// Context about a user activity for adaptive puzzle generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityContext {
+    pub app_name: String,
+    pub app_category: String,
+    pub description: String,
+    pub content_context: Option<String>,
+}
