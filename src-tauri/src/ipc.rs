@@ -507,54 +507,102 @@ pub struct GeneratedPuzzle {
     pub sponsor_id: Option<String>,
 }
 
-/// Generate a dynamic puzzle based on current page context AND register it
+/// Helper: Create a sponsored puzzle
+fn create_sponsored_puzzle() -> (Puzzle, GeneratedPuzzle) {
+    let id = format!(
+        "sponsored_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+    let puzzle = Puzzle {
+        id: id.clone(),
+        clue: "Seek the cloud where giants build their dreams. Find the console of the Titans."
+            .to_string(),
+        hint: "Search for 'Google Cloud Console'".to_string(),
+        target_url_pattern: "console\\.cloud\\.google\\.com".to_string(),
+        target_description: "Google Cloud Console".to_string(),
+        sponsor_id: Some("google_cloud".to_string()),
+        sponsor_url: Some("https://cloud.google.com".to_string()),
+        is_sponsored: true,
+    };
+
+    let generated = GeneratedPuzzle {
+        id,
+        clue: puzzle.clue.clone(),
+        hint: puzzle.hint.clone(),
+        hints: vec!["Search for 'Google Cloud Console'".to_string()],
+        target_url_pattern: puzzle.target_url_pattern.clone(),
+        target_description: puzzle.target_description.clone(),
+        is_sponsored: true,
+        sponsor_id: puzzle.sponsor_id.clone(),
+    };
+
+    (puzzle, generated)
+}
+
+/// Helper: Register a puzzle and start the timer
+fn register_puzzle(puzzles: &std::sync::RwLock<Vec<Puzzle>>, puzzle: Puzzle) -> Result<(), String> {
+    let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
+    // Count dynamic puzzles before cleanup
+    let dynamic_count = puzzles
+        .iter()
+        .filter(|p| p.id.starts_with("dynamic_"))
+        .count();
+    // Remove oldest dynamic puzzles to prevent buildup (keep max 5)
+    if dynamic_count >= 5 {
+        puzzles.retain(|p| !p.id.starts_with("dynamic_"));
+    }
+    puzzles.push(puzzle);
+
+    // Start timer for the new puzzle
+    let mut state = crate::game_state::GameState::load();
+    state.start_puzzle_timer();
+
+    Ok(())
+}
+
+/// Start an investigation (Unified command for puzzle generation)
+/// Decides best source (Content vs History) based on SessionMemory
 #[tauri::command]
-pub async fn generate_dynamic_puzzle(
-    url: String,
-    title: String,
-    content: String,
+pub async fn start_investigation(
+    _app_handle: tauri::AppHandle,
     gemini: State<'_, Arc<GeminiClient>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
+    session: State<'_, Arc<crate::memory::SessionMemory>>, // Inject SessionMemory
 ) -> Result<GeneratedPuzzle, String> {
+    // 1. Load Session State
+    let state = session
+        .load()
+        .map_err(|e| format!("Failed to load session: {}", e))?;
+
+    let url = state.current_url;
+    let title = state.current_title;
+
+    // Check if we have valid content
+    let content = if let Some(c) = state.current_content {
+        c
+    } else {
+        // Fallback to history logic if content missing
+        String::new()
+    };
+
     // 20% chance of sponsored puzzle
     let use_sponsored = rand::thread_rng().gen_range(0.0..1.0) < 0.2;
 
-    // Mock Sponsored Puzzle
     if use_sponsored {
-        let id = format!(
-            "sponsored_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        );
-        let puzzle = Puzzle {
-            id: id.clone(),
-            clue: "Seek the cloud where giants build their dreams. Find the console of the Titans."
-                .to_string(),
-            hint: "Search for 'Google Cloud Console'".to_string(),
-            target_url_pattern: "console\\.cloud\\.google\\.com".to_string(),
-            target_description: "Google Cloud Console".to_string(),
-            sponsor_id: Some("google_cloud".to_string()),
-            sponsor_url: Some("https://cloud.google.com".to_string()),
-            is_sponsored: true,
-        };
+        let (puzzle, generated) = create_sponsored_puzzle();
 
-        {
-            let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
-            puzzles.push(puzzle.clone());
+        register_puzzle(&puzzles, puzzle.clone())?;
+
+        // Update session
+        if let Ok(mut s) = session.load() {
+            s.puzzle_id = puzzle.id.clone();
+            let _ = session.save(&s);
         }
 
-        return Ok(GeneratedPuzzle {
-            id,
-            clue: puzzle.clue,
-            hint: puzzle.hint,
-            hints: vec!["Search for 'Google Cloud Console'".to_string()],
-            target_url_pattern: puzzle.target_url_pattern,
-            target_description: puzzle.target_description,
-            is_sponsored: true,
-            sponsor_id: puzzle.sponsor_id,
-        });
+        return Ok(generated);
     }
 
     let redacted_url = crate::privacy::redact_pii(&url);
@@ -573,17 +621,12 @@ pub async fn generate_dynamic_puzzle(
             })
             .collect::<Vec<String>>()
             .join("\n"),
-        Err(e) => {
-            tracing::warn!("Failed to fetch history context: {}", e);
-            "No recent history available.".to_string()
-        }
+        Err(_) => "No recent history available.".to_string(),
     };
 
-    tracing::info!(
-        "Using history context for puzzle generation:\n{}",
-        history_context
-    );
+    tracing::info!("Starting investigation for url: {}", redacted_url);
 
+    // Call AI
     let dynamic = gemini
         .generate_dynamic_puzzle(&redacted_url, &title, &redacted_content, &history_context)
         .await
@@ -598,7 +641,6 @@ pub async fn generate_dynamic_puzzle(
             .as_millis()
     );
 
-    // Create puzzle struct
     let puzzle = Puzzle {
         id: id.clone(),
         clue: dynamic.clue.clone(),
@@ -610,29 +652,13 @@ pub async fn generate_dynamic_puzzle(
         is_sponsored: false,
     };
 
-    // Register in backend storage
-    {
-        let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
-        // Count dynamic puzzles before cleanup
-        let dynamic_count = puzzles
-            .iter()
-            .filter(|p| p.id.starts_with("dynamic_"))
-            .count();
-        // Remove oldest dynamic puzzles to prevent buildup (keep max 5)
-        if dynamic_count >= 5 {
-            puzzles.retain(|p| !p.id.starts_with("dynamic_"));
-        }
-        puzzles.push(puzzle);
-        tracing::info!(
-            "Registered dynamic puzzle: {} (total puzzles: {})",
-            id,
-            puzzles.len()
-        );
-    }
+    register_puzzle(&puzzles, puzzle.clone())?;
 
-    // Start timer for the new puzzle
-    let mut state = crate::game_state::GameState::load();
-    state.start_puzzle_timer();
+    // Update session
+    if let Ok(mut s) = session.load() {
+        s.puzzle_id = id.clone();
+        let _ = session.save(&s);
+    }
 
     Ok(GeneratedPuzzle {
         id,
@@ -729,14 +755,7 @@ pub async fn generate_puzzle_from_history(
     };
 
     // Register puzzle
-    {
-        let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
-        puzzles.push(puzzle);
-    }
-
-    // Start timer for the new puzzle
-    let mut state = crate::game_state::GameState::load();
-    state.start_puzzle_timer();
+    register_puzzle(&puzzles, puzzle)?;
 
     Ok(GeneratedPuzzle {
         id,

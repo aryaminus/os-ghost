@@ -642,10 +642,10 @@ body {
 }
 
 .action-btn:hover {
-	background: rgba(136, 68, 255, 0.2);
-	border-color: #aa88ff;
+	background: rgba(0, 255, 136, 0.2);
+	border-color: var(--ghost-green);
 	color: #fff;
-	box-shadow: 0 0 10px rgba(136, 68, 255, 0.3);
+	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
 }
 
 .action-btn.verify-btn {

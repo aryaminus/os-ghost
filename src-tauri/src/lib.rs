@@ -22,7 +22,7 @@ use game_state::EffectQueue;
 use ipc::Puzzle;
 use memory::LongTermMemory; // Import LTM
 use std::sync::{Arc, Mutex}; // Import Mutex
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use window::GhostWindow;
 
 /// Default puzzles for the game
@@ -206,6 +206,27 @@ pub fn run() {
                 }
             });
 
+            // Start System Status Checker Loop (Background Task)
+            let status_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Check every 30 seconds (less frequent than hints)
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+
+                // Initial check immediate
+                let status = ipc::detect_chrome();
+                let _ = status_handle.emit("system_status_update", status);
+
+                loop {
+                    interval.tick().await;
+                    let status = ipc::detect_chrome();
+                    use tauri::Emitter;
+                    // Always emit for now so UI is always in sync, or could compare with last
+                    if let Err(e) = status_handle.emit("system_status_update", status) {
+                        tracing::error!("Failed to emit status event: {}", e);
+                    }
+                }
+            });
+
             // Start Native Messaging bridge for Chrome extension
             let app_handle = app.handle().clone();
             bridge::start_native_messaging_server(app_handle);
@@ -219,7 +240,7 @@ pub fn run() {
             ipc::check_api_key,
             ipc::set_api_key,
             ipc::validate_api_key,
-            ipc::generate_dynamic_puzzle,
+            ipc::start_investigation,
             ipc::generate_puzzle_from_history,
             ipc::process_agent_cycle,
             ipc::start_background_checks,

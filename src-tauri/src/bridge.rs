@@ -83,17 +83,26 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                 }
                 "page_content" => {
                     let url = message.url.unwrap_or_default();
-                    let body_len = message.body_text.as_ref().map(|s| s.len()).unwrap_or(0);
+                    let body_text = message.body_text.unwrap_or_default();
+                    let body_len = body_text.len();
                     tracing::info!(
                         "Emitting page_content event: url={}, body_len={}",
                         url,
                         body_len
                     );
+
+                    // Store in Session Memory
+                    use crate::memory::SessionMemory;
+                    let session_mem = app.state::<Arc<SessionMemory>>();
+                    if let Err(e) = session_mem.store_content(body_text.clone()) {
+                        tracing::error!("Failed to store page content: {}", e);
+                    }
+
                     let emit_result = app.emit(
                         "page_content",
                         serde_json::json!({
                             "url": url,
-                            "body_text": message.body_text.unwrap_or_default()
+                            "body_text": body_text
                         }),
                     );
                     if let Err(e) = emit_result {

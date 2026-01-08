@@ -136,11 +136,6 @@ export function useGhostGame() {
 	const [isLoading, setIsLoading] = useState(false);
 	/** @type {[string|null, function(string|null): void]} */
 	const [error, setError] = useState(null);
-	const [extensionConnected, setExtensionConnected] = useState(false);
-	const [browsingContext, setBrowsingContext] = useState({
-		recentHistory: [],
-		topSites: [],
-	});
 
 	// System status for Chrome/extension detection
 	const [systemStatus, setSystemStatus] = useState({
@@ -153,16 +148,11 @@ export function useGhostGame() {
 		currentMode: "game",
 	});
 
-	/** @type {React.MutableRefObject<NodeJS.Timeout|null>} */
-	const hintTimerRef = useRef(null);
-	/** @type {React.MutableRefObject<{recentHistory: any[], topSites: any[]}>} */
-	const browsingContextRef = useRef({ recentHistory: [], topSites: [] });
 	/** @type {React.MutableRefObject<PageContentPayload|null>} */
 	const latestContentRef = useRef(globalLatestContent);
 	/** @type {React.MutableRefObject<GameState>} */
 	const gameStateRef = useRef(gameState);
-	// Track last generated URL to prevent double-generation
-	const lastGeneratedUrlRef = useRef(null);
+
 	// Track last processed URL to debounce agent cycles
 	const lastProcessedUrlRef = useRef(null);
 	// Lock to prevent concurrent agent cycles
@@ -189,25 +179,13 @@ export function useGhostGame() {
 		}
 	}, []);
 
-	// Detect system status on mount and periodically
+	// Detect system status on mount (initial check)
 	useEffect(() => {
 		detectSystemStatus();
-		const interval = setInterval(detectSystemStatus, 30000); // Re-check every 30s
-		return () => clearInterval(interval);
 	}, [detectSystemStatus]);
-
-	// Update system status when extension connects/disconnects
-	useEffect(() => {
-		setSystemStatus((prev) => ({
-			...prev,
-			extensionConnected,
-			extensionOperational: extensionConnected,
-		}));
-	}, [extensionConnected]);
 
 	// Companion behavior state
 	const [companionBehavior, setCompanionBehavior] = useState(null);
-	const [lastObservation, setLastObservation] = useState(null);
 
 	/**
 	 * Generate an adaptive puzzle based on activity history
@@ -244,27 +222,6 @@ export function useGhostGame() {
 	}, []);
 
 	/**
-	 * Get contextual dialogue based on observations
-	 */
-	const getContextualDialogue = useCallback(async () => {
-		try {
-			const dialogue = await invoke("generate_contextual_dialogue", {
-				context: lastObservation?.activity || "idle",
-				mood: gameState.state || "idle",
-			});
-
-			if (dialogue) {
-				setGameState((prev) => ({
-					...prev,
-					dialogue,
-				}));
-			}
-		} catch (err) {
-			console.error("[Ghost] Contextual dialogue failed:", err);
-		}
-	}, [lastObservation, gameState.state]);
-
-	/**
 	 * Trigger a visual effect in the browser.
 	 * @param {string} effect - Effect name (glitch, scanlines, static, flash, start_trail, stop_trail)
 	 * @param {number} [duration] - Effect duration in ms
@@ -297,11 +254,6 @@ export function useGhostGame() {
 		gameStateRef.current = gameState;
 	}, [gameState]);
 
-	// Keep browsing context ref in sync
-	useEffect(() => {
-		browsingContextRef.current = browsingContext;
-	}, [browsingContext]);
-
 	/**
 	 * Handle page content events from Chrome extension.
 	 * Can be used for deeper content analysis.
@@ -320,135 +272,62 @@ export function useGhostGame() {
 			log(
 				"[Ghost] No active puzzle, triggering generation from content..."
 			);
-			// call triggerDynamicPuzzle but we can't call it directly if it's defined below
-			// Use the function directly or move definitions.
-			// To avoid hoisting issues, we'll access it via a ref or just call generateDynamicPuzzle directly
-			// since we have the payload right here.
-			const title = document.title || "Current Page";
-			// We need to access generateDynamicPuzzle which is defined below.
-			// Hooks order matters. Let's use a ref or useEffect...
-			// Actually, best to just trigger an effect or use a mutable ref for the trigger function.
+
+			// Use ref to avoid hoisting issues with triggerDynamicPuzzle being defined later
 			triggerPuzzleGenerationRef.current &&
 				triggerPuzzleGenerationRef.current();
 		}
 	}, []);
 
 	/**
-	 * Generate a puzzle from browsing history/top sites
+	 * Wrapper to generate puzzle from current context
 	 */
-	const generatePuzzleFromHistory = async () => {
-		const context = browsingContextRef.current;
-		if (!context.recentHistory.length && !context.topSites.length) {
-			log("[Ghost] No browsing context available");
-			return null;
-		}
-
-		// Use most visited or recent site as seed
-		const seed = context.topSites[0] || context.recentHistory[0];
-		if (!seed) return null;
-
-		log("[Ghost] Generating puzzle from history seed:", seed.url);
-
-		setGameState((prev) => ({
-			...prev,
-			state: "thinking",
-			dialogue: "Analyzing your digital footprint for patterns...",
-		}));
+	const triggerDynamicPuzzle = useCallback(async () => {
+		log("[Ghost] Requesting investigation from backend...");
 
 		try {
-			const puzzle = await invoke("generate_puzzle_from_history", {
-				seedUrl: seed.url,
-				seedTitle: seed.title || "Unknown",
-				recentHistory: context.recentHistory.slice(0, 20),
-				topSites: context.topSites,
-			});
+			const puzzle = await invoke("start_investigation");
 
 			if (puzzle) {
+				log(
+					"[Ghost] Investigation complete, puzzle received:",
+					puzzle.id
+				);
 				setGameState((prev) => ({
 					...prev,
 					puzzleId: puzzle.id,
 					clue: puzzle.clue,
-					hint: puzzle.hint || puzzle.hints?.[0] || "",
+					hint: puzzle.hint || "",
 					hints: puzzle.hints || [],
-					state: "idle",
-					dialogue: "A mystery emerges from your past journeys...",
+					hintsRevealed: 0,
+					hintAvailable: false,
+					state: "thinking", // Start thinking then idle?
+					dialogue: puzzle.clue, // Use clue as dialogue initially
+					currentPuzzle: puzzle.target_description,
+					proximity: 0,
 				}));
-				return puzzle;
 			}
 		} catch (err) {
-			console.error("[Ghost] Failed to generate from history:", err);
+			console.error("[Ghost] Investigation failed:", err);
+			// Fallback or just log
 			setGameState((prev) => ({
 				...prev,
 				state: "idle",
-				dialogue: "Start browsing to reveal new mysteries...",
+				dialogue: "Nothing found here. Keep browsing.",
 			}));
 		}
-		return null;
-	};
-
-	/**
-	 * Wrapper to generate puzzle from current context
-	 */
-	const triggerDynamicPuzzle = useCallback(async () => {
-		log(
-			"[Ghost] Triggering dynamic puzzle. Content ref:",
-			latestContentRef.current
-		);
-
-		// Simple retry mechanism (waits up to 2 seconds)
-		let attempts = 0;
-		while (!latestContentRef.current && attempts < 10) {
-			attempts++;
-		}
-
-		if (latestContentRef.current) {
-			const { url, body_text } = latestContentRef.current;
-			if (lastGeneratedUrlRef.current === url) {
-				log(`[Ghost] Puzzle already generated for this URL: ${url}`);
-				return null;
-			}
-
-			// PageContentPayload only has url/body_text, use document title or fallback
-			const title = document.title || "Current Page";
-
-			const puzzle = await generateDynamicPuzzle(
-				url,
-				title,
-				body_text || ""
-			);
-			if (puzzle) {
-				lastGeneratedUrlRef.current = url;
-			}
-			return puzzle;
-		} else if (
-			browsingContextRef.current.recentHistory.length > 0 ||
-			browsingContextRef.current.topSites.length > 0
-		) {
-			// Fallback to history
-			log(
-				"[Ghost] No page content, attempting generation from history..."
-			);
-			return generatePuzzleFromHistory();
-		} else {
-			warn(
-				"[Ghost] No content available for generation. Ref is null/undefined."
-			);
-			return null;
-		}
-	}, [gameState.apiKeyConfigured]); // eslint-disable-line react-hooks/exhaustive-deps
+	}, []);
 	// Load persistent state and check API key on mount
 	useEffect(() => {
 		initializeGame();
-		return () => {
-			if (hintTimerRef.current) clearInterval(hintTimerRef.current);
-		};
+		return () => {};
 	}, []);
 
 	// Listen for hint_available event instead of polling
 	// This is handled in the main event listener effect below
 
-	// Store refs for callbacks to avoid re-subscribing on every render
 	const handleNavigationRef = useRef(null);
+	const handlePageContentRef = useRef(null);
 	const advanceToNextPuzzleRef = useRef(null);
 	const triggerPuzzleGenerationRef = useRef(null);
 
@@ -456,6 +335,10 @@ export function useGhostGame() {
 	useEffect(() => {
 		triggerPuzzleGenerationRef.current = triggerDynamicPuzzle;
 	}, [triggerDynamicPuzzle]);
+
+	useEffect(() => {
+		handlePageContentRef.current = handlePageContent;
+	}, [handlePageContent]);
 
 	// Listen for browser navigation events from Chrome extension
 	// Only set up once on mount to avoid re-subscribing
@@ -488,7 +371,7 @@ export function useGhostGame() {
 
 			await register("page_content", (event) => {
 				log("[Ghost] Received page_content event:", event.payload);
-				handlePageContent(
+				handlePageContentRef.current?.(
 					/** @type {PageContentPayload} */ (event.payload)
 				);
 			});
@@ -502,13 +385,6 @@ export function useGhostGame() {
 					top_sites?.length,
 					"top sites"
 				);
-
-				const context = {
-					recentHistory: recent_history || [],
-					topSites: top_sites || [],
-				};
-				setBrowsingContext(context);
-				browsingContextRef.current = context;
 
 				// If no puzzle and no page content, generate from history!
 				const currentState = gameStateRef.current;
@@ -536,12 +412,33 @@ export function useGhostGame() {
 
 			await register("extension_connected", () => {
 				log(" Extension connected");
-				setExtensionConnected(true);
+				setSystemStatus((prev) => ({
+					...prev,
+					extensionConnected: true,
+					extensionOperational: true,
+				}));
 			});
 
 			await register("extension_disconnected", () => {
 				log(" Extension disconnected");
-				setExtensionConnected(false);
+				setSystemStatus((prev) => ({
+					...prev,
+					extensionConnected: false,
+					extensionOperational: false,
+				}));
+			});
+
+			await register("system_status_update", (event) => {
+				const status = event.payload;
+				setSystemStatus((prev) => ({
+					...prev,
+					chromeInstalled: status.chrome_installed,
+					chromePath: status.chrome_path,
+					apiKeyConfigured: status.api_key_configured,
+					currentMode: status.current_mode || "game",
+					// Preserve extension connection state as it might be handled separately
+					// or merge if backend sends it authoritative
+				}));
 			});
 
 			await register("autonomous_progress", (event) => {
@@ -577,7 +474,6 @@ export function useGhostGame() {
 			await register("ghost_observation", (event) => {
 				log("[Ghost] Received observation:", event.payload);
 				const observation = event.payload;
-				setLastObservation(observation);
 
 				// Logic merged from both listeners
 				// 1. Contextual comment if no puzzle active (using ref to avoid dep)
@@ -621,7 +517,7 @@ export function useGhostGame() {
 			isUnmounting = true;
 			unlistenFns.forEach((fn) => fn());
 		};
-	}, [handlePageContent]); // Only handlePageContent is stable (empty deps useCallback)
+	}, []);
 
 	/**
 	 * Initialize game by loading persistent state and puzzles from backend.
@@ -638,6 +534,7 @@ export function useGhostGame() {
 			setGameState((prev) => ({
 				...prev,
 				apiKeyConfigured: configured,
+				currentPuzzle: savedState?.current_puzzle_index || 0,
 				dialogue:
 					"Connection established. I need to see what you see... browse to a page.",
 				// Ensure we don't start with a default puzzle
@@ -940,12 +837,12 @@ export function useGhostGame() {
 			}));
 
 			// Reset refs to allow new generation
-			lastGeneratedUrlRef.current = null;
+
 			lastProcessedUrlRef.current = null;
 		} catch (err) {
 			console.error("[Ghost] Failed to reset game:", err);
 		}
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+	}, []);
 
 	/**
 	 * Generate a dynamic puzzle based on current page content.
@@ -955,51 +852,6 @@ export function useGhostGame() {
 	 * @param {string} content - Page body text (first 500 chars)
 	 * @returns {Promise<Object|null>} Generated puzzle or null if failed
 	 */
-	const generateDynamicPuzzle = async (url, title, content) => {
-		if (!gameState.apiKeyConfigured) {
-			warn(" Cannot generate dynamic puzzle - no API key");
-			return null;
-		}
-
-		try {
-			setGameState((prev) => ({
-				...prev,
-				state: "thinking",
-				dialogue: "Crafting a new mystery from the digital ether...",
-			}));
-
-			const puzzle = await invoke("generate_dynamic_puzzle", {
-				url,
-				title,
-				content: content.slice(0, 500),
-			});
-
-			if (puzzle) {
-				log(" Generated dynamic puzzle:", puzzle.id);
-				setGameState((prev) => ({
-					...prev,
-					puzzleId: puzzle.id, // Use ID from backend (registered puzzle)
-					clue: puzzle.clue,
-					hint: puzzle.hint || puzzle.hints?.[0] || "",
-					hints: puzzle.hints || [],
-					state: "idle",
-					dialogue:
-						"A new fragment materializes from your journey...",
-				}));
-
-				return puzzle;
-			}
-		} catch (err) {
-			console.error("[Ghost] Failed to generate dynamic puzzle:", err);
-			setGameState((prev) => ({
-				...prev,
-				state: "idle",
-				dialogue: "The static obscures this memory...",
-			}));
-		}
-
-		return null;
-	};
 
 	// Keep refs in sync with functions
 	useEffect(() => {
@@ -1149,24 +1001,19 @@ export function useGhostGame() {
 	return {
 		gameState,
 		isLoading,
-		error,
-		extensionConnected,
+		extensionConnected: systemStatus.extensionConnected,
 		systemStatus,
-		browsingContext,
 		companionBehavior,
-		lastObservation,
 		captureAndAnalyze,
 		verifyScreenshotProof,
 		triggerBrowserEffect,
 		showHint,
 		advanceToNextPuzzle,
 		resetGame,
-		generateDynamicPuzzle,
 		triggerDynamicPuzzle,
 		startBackgroundChecks,
 		enableAutonomousMode,
 		detectSystemStatus,
 		generateAdaptivePuzzle,
-		getContextualDialogue,
 	};
 }

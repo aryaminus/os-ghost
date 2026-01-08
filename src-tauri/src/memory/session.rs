@@ -65,6 +65,9 @@ pub struct SessionState {
     /// Screenshots taken this session
     #[serde(default)]
     pub screenshots_taken: usize,
+    /// Latest page content for analysis
+    #[serde(default, skip)]
+    pub current_content: Option<String>,
 }
 
 impl Default for SessionState {
@@ -89,6 +92,7 @@ impl Default for SessionState {
             last_mode_change: now,
             puzzles_solved_session: 0,
             screenshots_taken: 0,
+            current_content: None,
         }
     }
 }
@@ -123,6 +127,13 @@ impl SessionMemory {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        self.save(&state)
+    }
+
+    /// Store latest page content
+    pub fn store_content(&self, content: String) -> Result<()> {
+        let mut state = self.load()?;
+        state.current_content = Some(content);
         self.save(&state)
     }
 

@@ -260,4 +260,4 @@ const SystemStatusBanner = ({ status, extensionConnected, onStatusChange }) => {
 	);
 };
 
-export default SystemStatusBanner;
+export default React.memo(SystemStatusBanner);
