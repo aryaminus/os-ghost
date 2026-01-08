@@ -21,8 +21,8 @@
  * @property {number} [duration] - Effect duration in ms
  */
 
-/** Debug mode flag - set to true to enable verbose console logging */
-const DEBUG_MODE = true;
+/** Debug mode flag - set to false in production for performance */
+const DEBUG_MODE = false;
 
 /**
  * Conditional debug logger

@@ -247,7 +247,7 @@ export function useGhostGame() {
 		} else {
 			triggerBrowserEffect("stop_trail");
 		}
-	}, [gameState.state]);
+	}, [gameState.state, triggerBrowserEffect]);
 
 	// Keep ref in sync with state
 	useEffect(() => {
@@ -320,7 +320,6 @@ export function useGhostGame() {
 	// Load persistent state and check API key on mount
 	useEffect(() => {
 		initializeGame();
-		return () => {};
 	}, []);
 
 	// Listen for hint_available event instead of polling
@@ -463,7 +462,14 @@ export function useGhostGame() {
 				const behavior = event.payload;
 				log("Companion behavior:", behavior);
 				setCompanionBehavior(behavior);
-				setTimeout(() => setCompanionBehavior(null), 30000);
+				// Clear behavior after 30s - timeout cleaned up via isUnmounting check
+				const timeoutId = setTimeout(() => {
+					if (!isUnmounting) {
+						setCompanionBehavior(null);
+					}
+				}, 30000);
+				// Store for potential cleanup (though register handles unlisten)
+				unlistenFns.push(() => clearTimeout(timeoutId));
 			});
 
 			await register("hint_available", (event) => {
@@ -496,13 +502,17 @@ export function useGhostGame() {
 						state: "observant",
 					}));
 
-					setTimeout(() => {
-						setGameState((prev) =>
-							prev.state === "observant"
-								? { ...prev, state: "idle" }
-								: prev
-						);
+					// Reset to idle after 10s - with cleanup on unmount
+					const observantTimeoutId = setTimeout(() => {
+						if (!isUnmounting) {
+							setGameState((prev) =>
+								prev.state === "observant"
+									? { ...prev, state: "idle" }
+									: prev
+							);
+						}
 					}, 10000);
+					unlistenFns.push(() => clearTimeout(observantTimeoutId));
 				}
 			});
 
@@ -516,6 +526,11 @@ export function useGhostGame() {
 		return () => {
 			isUnmounting = true;
 			unlistenFns.forEach((fn) => fn());
+			// Clean up navigation debounce timer
+			if (navigationDebounceRef.current) {
+				clearTimeout(navigationDebounceRef.current);
+				navigationDebounceRef.current = null;
+			}
 		};
 	}, []);
 

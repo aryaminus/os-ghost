@@ -213,8 +213,15 @@ const Ghost = () => {
 		generateAdaptivePuzzle,
 	} = useGhostGame();
 
-	const sprite = GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle;
-	const glowIntensity = Math.min(gameState.proximity * 30 + 5, 40);
+	// Memoize sprite lookup to avoid object reference on every render
+	const sprite = useMemo(
+		() => GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle,
+		[gameState.state]
+	);
+	const glowIntensity = useMemo(
+		() => Math.min(gameState.proximity * 30 + 5, 40),
+		[gameState.proximity]
+	);
 
 	/**
 	 * Handle click on Ghost - memoized for performance.

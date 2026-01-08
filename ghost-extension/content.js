@@ -351,6 +351,7 @@ class GhostTrail {
 		this.ctx = null;
 		this.canvas = null;
 		this.animationId = null;
+		this.handleResize = null;
 
 		this.handleMouseMove = this.handleMouseMove.bind(this);
 		this.animate = this.animate.bind(this);
@@ -375,7 +376,9 @@ class GhostTrail {
 		this.ctx = this.canvas.getContext("2d");
 		this.resize();
 
-		window.addEventListener("resize", () => this.resize());
+		// Store bound resize handler for proper cleanup
+		this.handleResize = () => this.resize();
+		window.addEventListener("resize", this.handleResize);
 		window.addEventListener("mousemove", this.handleMouseMove);
 
 		this.animate();
@@ -385,13 +388,19 @@ class GhostTrail {
 		if (!this.active) return;
 		this.active = false;
 
+		// Remove all event listeners to prevent memory leaks
 		window.removeEventListener("mousemove", this.handleMouseMove);
+		if (this.handleResize) {
+			window.removeEventListener("resize", this.handleResize);
+			this.handleResize = null;
+		}
 		cancelAnimationFrame(this.animationId);
 
 		if (this.canvas) {
 			this.canvas.remove();
 			this.canvas = null;
 		}
+		this.ctx = null;
 		this.particles = [];
 	}
 
@@ -416,27 +425,34 @@ class GhostTrail {
 	}
 
 	animate() {
-		if (!this.active) return;
+		if (!this.active || !this.ctx || !this.canvas) return;
 
 		this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
+		// Filter dead particles in single pass - O(n) instead of O(n²) splice
+		let writeIndex = 0;
 		for (let i = 0; i < this.particles.length; i++) {
 			const p = this.particles[i];
 			p.life -= 0.02;
 			p.x += p.velocity.x;
 			p.y += p.velocity.y;
 
-			if (p.life <= 0) {
-				this.particles.splice(i, 1);
-				i--;
-				continue;
-			}
+			if (p.life > 0) {
+				// Draw live particle
+				this.ctx.beginPath();
+				this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+				this.ctx.fillStyle = `rgba(0, 255, 136, ${p.life * 0.5})`;
+				this.ctx.fill();
 
-			this.ctx.beginPath();
-			this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-			this.ctx.fillStyle = `rgba(0, 255, 136, ${p.life * 0.5})`;
-			this.ctx.fill();
+				// Compact array in-place
+				if (writeIndex !== i) {
+					this.particles[writeIndex] = p;
+				}
+				writeIndex++;
+			}
 		}
+		// Truncate dead particles
+		this.particles.length = writeIndex;
 
 		this.animationId = requestAnimationFrame(this.animate);
 	}

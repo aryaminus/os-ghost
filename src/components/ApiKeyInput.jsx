@@ -177,4 +177,4 @@ const ApiKeyInput = ({ onKeySet }) => {
 	);
 };
 
-export default ApiKeyInput;
+export default React.memo(ApiKeyInput);
