@@ -14,6 +14,19 @@ const DEFAULT_OLLAMA_STATUS = {
 	active_provider: "None",
 };
 
+/** Initial Ollama state object */
+const INITIAL_OLLAMA_STATE = Object.freeze({
+	expanded: false,
+	url: "",
+	visionModel: "",
+	textModel: "",
+	defaults: {},
+	status: null,
+	error: "",
+	success: "",
+	saving: false,
+});
+
 /**
  * Validates a URL string format.
  * @param {string} url - URL to validate
@@ -38,27 +51,36 @@ const isValidUrl = (url) => {
  * @returns {JSX.Element} AI configuration form
  */
 const ApiKeyInput = ({ onKeySet }) => {
-	// Gemini state
+	// Gemini state (kept separate - small, independent concerns)
 	const [apiKey, setApiKey] = useState("");
 	const [error, setError] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const [showKey, setShowKey] = useState(false);
 	const inputRef = useRef(null);
 
-	// Ollama state
-	const [showOllama, setShowOllama] = useState(false);
-	const [ollamaUrl, setOllamaUrl] = useState("");
-	const [ollamaVisionModel, setOllamaVisionModel] = useState("");
-	const [ollamaTextModel, setOllamaTextModel] = useState("");
-	const [ollamaDefaults, setOllamaDefaults] = useState({});
-	const [ollamaStatus, setOllamaStatus] = useState(null);
-	const [ollamaError, setOllamaError] = useState("");
-	const [ollamaSuccess, setOllamaSuccess] = useState("");
-	const [ollamaSaving, setOllamaSaving] = useState(false);
+	// Ollama state (grouped - related concerns)
+	const [ollama, setOllama] = useState(INITIAL_OLLAMA_STATE);
 
 	// Refs for cleanup
 	const successTimeoutRef = useRef(null);
 	const isMountedRef = useRef(true);
+
+	/**
+	 * Update a single field in Ollama state.
+	 * @param {string} field - Field name to update
+	 * @param {any} value - New value
+	 */
+	const updateOllama = useCallback((field, value) => {
+		setOllama((prev) => ({ ...prev, [field]: value }));
+	}, []);
+
+	/**
+	 * Update multiple fields in Ollama state.
+	 * @param {Object} updates - Object with field updates
+	 */
+	const updateOllamaMultiple = useCallback((updates) => {
+		setOllama((prev) => ({ ...prev, ...updates }));
+	}, []);
 
 	/**
 	 * Load Ollama configuration from backend.
@@ -68,20 +90,20 @@ const ApiKeyInput = ({ onKeySet }) => {
 			const config = await invoke("get_ollama_config");
 			if (!isMountedRef.current) return;
 
-			setOllamaUrl(config.url || config.default_url);
-			setOllamaVisionModel(
-				config.vision_model || config.default_vision_model
-			);
-			setOllamaTextModel(config.text_model || config.default_text_model);
-			setOllamaDefaults({
-				url: config.default_url,
-				visionModel: config.default_vision_model,
-				textModel: config.default_text_model,
+			updateOllamaMultiple({
+				url: config.url || config.default_url,
+				visionModel: config.vision_model || config.default_vision_model,
+				textModel: config.text_model || config.default_text_model,
+				defaults: {
+					url: config.default_url,
+					visionModel: config.default_vision_model,
+					textModel: config.default_text_model,
+				},
 			});
 		} catch (err) {
 			console.error("[ApiKeyInput] Failed to load Ollama config:", err);
 		}
-	}, []);
+	}, [updateOllamaMultiple]);
 
 	/**
 	 * Check Ollama server status.
@@ -90,14 +112,14 @@ const ApiKeyInput = ({ onKeySet }) => {
 		try {
 			const status = await invoke("get_ollama_status");
 			if (isMountedRef.current) {
-				setOllamaStatus(status);
+				updateOllama("status", status);
 			}
 		} catch {
 			if (isMountedRef.current) {
-				setOllamaStatus(DEFAULT_OLLAMA_STATUS);
+				updateOllama("status", DEFAULT_OLLAMA_STATUS);
 			}
 		}
-	}, []);
+	}, [updateOllama]);
 
 	// Load Ollama config on mount and cleanup on unmount
 	useEffect(() => {
@@ -155,16 +177,15 @@ const ApiKeyInput = ({ onKeySet }) => {
 	 */
 	const handleSaveOllama = useCallback(async () => {
 		// Validate URL before saving
-		if (!isValidUrl(ollamaUrl)) {
-			setOllamaError(
+		if (!isValidUrl(ollama.url)) {
+			updateOllama(
+				"error",
 				"Please enter a valid URL (e.g., http://localhost:11434)"
 			);
 			return;
 		}
 
-		setOllamaError("");
-		setOllamaSuccess("");
-		setOllamaSaving(true);
+		updateOllamaMultiple({ error: "", success: "", saving: true });
 
 		// Clear any existing timeout
 		if (successTimeoutRef.current) {
@@ -173,67 +194,71 @@ const ApiKeyInput = ({ onKeySet }) => {
 
 		try {
 			await invoke("set_ollama_config", {
-				url: ollamaUrl,
-				visionModel: ollamaVisionModel,
-				textModel: ollamaTextModel,
+				url: ollama.url,
+				visionModel: ollama.visionModel,
+				textModel: ollama.textModel,
 			});
 			await checkOllamaStatus();
 
 			if (!isMountedRef.current) return;
 
-			setOllamaSuccess("Configuration saved successfully!");
+			updateOllamaMultiple({
+				success: "Configuration saved successfully!",
+				saving: false,
+			});
 
 			// Clear success message after 3 seconds with cleanup
 			successTimeoutRef.current = setTimeout(() => {
 				if (isMountedRef.current) {
-					setOllamaSuccess("");
+					updateOllama("success", "");
 				}
 			}, 3000);
 
 			onKeySet?.();
 		} catch (err) {
 			if (isMountedRef.current) {
-				setOllamaError(
-					typeof err === "string" ? err : "Failed to save config"
-				);
-			}
-		} finally {
-			if (isMountedRef.current) {
-				setOllamaSaving(false);
+				updateOllamaMultiple({
+					error:
+						typeof err === "string" ? err : "Failed to save config",
+					saving: false,
+				});
 			}
 		}
 	}, [
-		ollamaUrl,
-		ollamaVisionModel,
-		ollamaTextModel,
+		ollama.url,
+		ollama.visionModel,
+		ollama.textModel,
 		onKeySet,
 		checkOllamaStatus,
+		updateOllama,
+		updateOllamaMultiple,
 	]);
 
 	/**
 	 * Reset Ollama to defaults.
 	 */
 	const handleResetOllama = useCallback(async () => {
-		setOllamaSaving(true);
-		setOllamaError("");
+		updateOllamaMultiple({ saving: true, error: "" });
 
 		try {
 			const config = await invoke("reset_ollama_config");
 			if (!isMountedRef.current) return;
 
-			setOllamaUrl(config.url);
-			setOllamaVisionModel(config.vision_model);
-			setOllamaTextModel(config.text_model);
+			updateOllamaMultiple({
+				url: config.url,
+				visionModel: config.vision_model,
+				textModel: config.text_model,
+				saving: false,
+			});
 		} catch {
 			if (isMountedRef.current) {
-				setOllamaError("Failed to reset config");
-			}
-		} finally {
-			if (isMountedRef.current) {
-				setOllamaSaving(false);
+				updateOllamaMultiple({
+					error: "Failed to reset config",
+					saving: false,
+				});
 			}
 		}
-	}, []);
+	}, [updateOllamaMultiple]);
 
 	/**
 	 * Handle Gemini API key input change.
@@ -246,20 +271,12 @@ const ApiKeyInput = ({ onKeySet }) => {
 	/**
 	 * Handle Ollama input changes - clear errors on user input.
 	 */
-	const handleOllamaUrlChange = (e) => {
-		setOllamaUrl(e.target.value);
-		setOllamaError("");
-	};
-
-	const handleOllamaVisionModelChange = (e) => {
-		setOllamaVisionModel(e.target.value);
-		setOllamaError("");
-	};
-
-	const handleOllamaTextModelChange = (e) => {
-		setOllamaTextModel(e.target.value);
-		setOllamaError("");
-	};
+	const handleOllamaFieldChange = useCallback(
+		(field) => (e) => {
+			updateOllamaMultiple({ [field]: e.target.value, error: "" });
+		},
+		[updateOllamaMultiple]
+	);
 
 	/**
 	 * Toggle API key visibility.
@@ -274,12 +291,12 @@ const ApiKeyInput = ({ onKeySet }) => {
 	 * Toggle Ollama section visibility and check status.
 	 */
 	const toggleOllama = useCallback(() => {
-		setShowOllama((prev) => {
+		setOllama((prev) => {
 			// Check status when opening (not closing)
-			if (!prev) {
+			if (!prev.expanded) {
 				checkOllamaStatus();
 			}
-			return !prev;
+			return { ...prev, expanded: !prev.expanded };
 		});
 	}, [checkOllamaStatus]);
 
@@ -369,13 +386,14 @@ const ApiKeyInput = ({ onKeySet }) => {
 				className="ollama-toggle"
 				onClick={toggleOllama}
 				onMouseDown={stopPropagation}
-				aria-expanded={showOllama}
+				aria-expanded={ollama.expanded}
 				aria-controls="ollama-section"
 			>
-				{showOllama ? "▼" : "▶"} Local AI (Ollama) - Free Alternative
+				{ollama.expanded ? "▼" : "▶"} Local AI (Ollama) - Free
+				Alternative
 			</button>
 
-			{showOllama && (
+			{ollama.expanded && (
 				<div id="ollama-section" className="ollama-section">
 					<p className="ollama-description">
 						Run AI locally without API costs. Requires{" "}
@@ -391,18 +409,18 @@ const ApiKeyInput = ({ onKeySet }) => {
 					</p>
 
 					{/* Status indicator */}
-					{ollamaStatus && (
+					{ollama.status && (
 						<div
-							className={`ollama-status ${ollamaStatus.ollama_available ? "available" : "unavailable"}`}
+							className={`ollama-status ${ollama.status.ollama_available ? "available" : "unavailable"}`}
 							role="status"
 							aria-live="polite"
 						>
-							{ollamaStatus.ollama_available
+							{ollama.status.ollama_available
 								? "✅ Ollama Running"
 								: "❌ Ollama Not Detected"}
-							{ollamaStatus.active_provider && (
+							{ollama.status.active_provider && (
 								<span className="active-provider">
-									Active: {ollamaStatus.active_provider}
+									Active: {ollama.status.active_provider}
 								</span>
 							)}
 						</div>
@@ -413,14 +431,14 @@ const ApiKeyInput = ({ onKeySet }) => {
 						<input
 							id="ollama-url"
 							type="url"
-							value={ollamaUrl}
-							onChange={handleOllamaUrlChange}
-							placeholder={ollamaDefaults.url}
+							value={ollama.url}
+							onChange={handleOllamaFieldChange("url")}
+							placeholder={ollama.defaults.url}
 							onMouseDown={stopPropagation}
 							aria-describedby="ollama-url-hint"
 						/>
 						<span id="ollama-url-hint" className="default-hint">
-							Default: {ollamaDefaults.url}
+							Default: {ollama.defaults.url}
 						</span>
 					</div>
 
@@ -431,14 +449,14 @@ const ApiKeyInput = ({ onKeySet }) => {
 						<input
 							id="ollama-vision-model"
 							type="text"
-							value={ollamaVisionModel}
-							onChange={handleOllamaVisionModelChange}
-							placeholder={ollamaDefaults.visionModel}
+							value={ollama.visionModel}
+							onChange={handleOllamaFieldChange("visionModel")}
+							placeholder={ollama.defaults.visionModel}
 							onMouseDown={stopPropagation}
 							aria-describedby="ollama-vision-hint"
 						/>
 						<span id="ollama-vision-hint" className="default-hint">
-							Default: {ollamaDefaults.visionModel}
+							Default: {ollama.defaults.visionModel}
 						</span>
 					</div>
 
@@ -449,30 +467,30 @@ const ApiKeyInput = ({ onKeySet }) => {
 						<input
 							id="ollama-text-model"
 							type="text"
-							value={ollamaTextModel}
-							onChange={handleOllamaTextModelChange}
-							placeholder={ollamaDefaults.textModel}
+							value={ollama.textModel}
+							onChange={handleOllamaFieldChange("textModel")}
+							placeholder={ollama.defaults.textModel}
 							onMouseDown={stopPropagation}
 							aria-describedby="ollama-text-hint"
 						/>
 						<span id="ollama-text-hint" className="default-hint">
-							Default: {ollamaDefaults.textModel}
+							Default: {ollama.defaults.textModel}
 						</span>
 					</div>
 
-					{ollamaError && (
+					{ollama.error && (
 						<div className="api-key-error" role="alert">
-							⚠️ {ollamaError}
+							⚠️ {ollama.error}
 						</div>
 					)}
 
-					{ollamaSuccess && (
+					{ollama.success && (
 						<div
 							className="ollama-success"
 							role="status"
 							aria-live="polite"
 						>
-							✅ {ollamaSuccess}
+							✅ {ollama.success}
 						</div>
 					)}
 
@@ -481,19 +499,19 @@ const ApiKeyInput = ({ onKeySet }) => {
 							type="button"
 							className="ollama-save"
 							onClick={handleSaveOllama}
-							disabled={ollamaSaving}
+							disabled={ollama.saving}
 							onMouseDown={stopPropagation}
 						>
-							{ollamaSaving ? "Saving..." : "Save Ollama Config"}
+							{ollama.saving ? "Saving..." : "Save Ollama Config"}
 						</button>
 						<button
 							type="button"
 							className="ollama-reset"
 							onClick={handleResetOllama}
-							disabled={ollamaSaving}
+							disabled={ollama.saving}
 							onMouseDown={stopPropagation}
 						>
-							{ollamaSaving
+							{ollama.saving
 								? "Resetting..."
 								: "Reset to Defaults"}
 						</button>
@@ -501,7 +519,7 @@ const ApiKeyInput = ({ onKeySet }) => {
 							type="button"
 							className="ollama-refresh"
 							onClick={checkOllamaStatus}
-							disabled={ollamaSaving}
+							disabled={ollama.saving}
 							onMouseDown={stopPropagation}
 							title="Refresh Ollama status"
 							aria-label="Refresh Ollama status"
@@ -525,13 +543,13 @@ const ApiKeyInput = ({ onKeySet }) => {
 							<li>
 								Run:{" "}
 								<code>
-									ollama pull {ollamaDefaults.visionModel}
+									ollama pull {ollama.defaults.visionModel}
 								</code>
 							</li>
 							<li>
 								Run:{" "}
 								<code>
-									ollama pull {ollamaDefaults.textModel}
+									ollama pull {ollama.defaults.textModel}
 								</code>
 							</li>
 							<li>
