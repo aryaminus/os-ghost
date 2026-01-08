@@ -97,6 +97,16 @@ pub enum NextAction {
 }
 
 /// Core agent trait - all agents implement this
+///
+/// # Thread Safety Requirements
+/// Agents must be `Send + Sync` because they are shared across async tasks:
+/// - `Send`: The agent can be transferred between threads
+/// - `Sync`: The agent can be referenced from multiple threads simultaneously
+///
+/// Implementors must ensure all internal state is thread-safe. Common patterns:
+/// - Use `Arc<Mutex<T>>` or `Arc<RwLock<T>>` for mutable shared state
+/// - Prefer immutable state where possible
+/// - Use atomic types for counters and flags
 #[async_trait]
 pub trait Agent: Send + Sync {
     /// Get agent name

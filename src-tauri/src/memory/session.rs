@@ -2,8 +2,10 @@
 //! Stores current puzzle state, recent interactions, activity history, and mode state
 
 use super::store::MemoryStore;
+use crate::utils::current_timestamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 
 const SESSION_TREE: &str = "session";
 const ACTIVITY_TREE: &str = "activity_log";
@@ -41,8 +43,8 @@ pub struct SessionState {
     pub current_url: String,
     /// Current page title
     pub current_title: String,
-    /// Recent URLs visited (last 10)
-    pub recent_urls: Vec<String>,
+    /// Recent URLs visited (last 10) - VecDeque for O(1) push/pop at both ends
+    pub recent_urls: VecDeque<String>,
     /// Current proximity score
     pub proximity: f32,
     /// Ghost mood/state
@@ -72,17 +74,14 @@ pub struct SessionState {
 
 impl Default for SessionState {
     fn default() -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = current_timestamp();
 
         Self {
             puzzle_id: String::new(), // Start empty for dynamic generation
             puzzle_index: 0,
             current_url: String::new(),
             current_title: String::new(),
-            recent_urls: Vec::new(),
+            recent_urls: VecDeque::with_capacity(10),
             proximity: 0.0,
             ghost_state: "idle".to_string(),
             hints_revealed: 0,
@@ -123,10 +122,7 @@ impl SessionMemory {
     /// Update last activity timestamp
     pub fn touch(&self) -> Result<()> {
         let mut state = self.load()?;
-        state.last_activity = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        state.last_activity = current_timestamp();
         self.save(&state)
     }
 
@@ -138,17 +134,16 @@ impl SessionMemory {
     }
 
     /// Add URL to recent history
+    /// Uses VecDeque for O(1) operations at both ends
     pub fn add_url(&self, url: &str) -> Result<()> {
         let mut state = self.load()?;
         state.current_url = url.to_string();
-        state.recent_urls.push(url.to_string());
-        if state.recent_urls.len() > 10 {
-            state.recent_urls.remove(0);
+        state.recent_urls.push_back(url.to_string());
+        // Keep only last 10 URLs - O(1) pop from front with VecDeque
+        while state.recent_urls.len() > 10 {
+            state.recent_urls.pop_front();
         }
-        state.last_activity = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        state.last_activity = current_timestamp();
         self.save(&state)
     }
 
@@ -163,10 +158,7 @@ impl SessionMemory {
     pub fn set_mode(&self, mode: AppMode) -> Result<()> {
         let mut state = self.load()?;
         if state.current_mode != mode {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
+            let now = current_timestamp();
             state.current_mode = mode.clone();
             state.last_mode_change = now;
 
@@ -192,10 +184,7 @@ impl SessionMemory {
     pub fn record_screenshot(&self) -> Result<()> {
         let mut state = self.load()?;
         state.screenshots_taken += 1;
-        state.last_activity = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        state.last_activity = current_timestamp();
         self.save(&state)
     }
 
@@ -208,16 +197,20 @@ impl SessionMemory {
 
     // --- Activity Log ---
 
-    /// Add an activity entry to the log and prune old entries
+    /// Add an activity entry to the log with lazy pruning
+    /// Uses probabilistic pruning to amortize cleanup cost
     pub fn add_activity(&self, entry: ActivityEntry) -> Result<()> {
         let key = format!("activity_{}", entry.timestamp);
         self.store.set(ACTIVITY_TREE, &key, &entry)?;
-        // Auto-prune to keep history manageable (prevent unlimited growth)
-        // Optimization: Only prune if we exceed limit + buffer (e.g. 250 items for 200 limit)
-        // This prevents expensive O(N) sort/delete on every single write
-        let count = self.store.count(ACTIVITY_TREE)?;
-        if count > 250 {
-            self.prune_activity(200)?;
+
+        // Probabilistic pruning: only check count occasionally (1 in 10 writes)
+        // This reduces the overhead of count() calls while still preventing unbounded growth
+        if entry.timestamp.is_multiple_of(10) {
+            let count = self.store.count(ACTIVITY_TREE)?;
+            // Use higher threshold to reduce pruning frequency
+            if count > 300 {
+                self.prune_activity(200)?;
+            }
         }
         Ok(())
     }

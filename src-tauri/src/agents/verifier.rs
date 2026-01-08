@@ -28,9 +28,15 @@ impl VerifierAgent {
             format!("(?i){}", pattern)
         };
 
-        // Check cache first
+        // Check cache first - handle poisoning gracefully
         {
-            let cache = self.pattern_cache.read().unwrap();
+            let cache = match self.pattern_cache.read() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::warn!("Pattern cache read lock poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
             if let Some(regex) = cache.get(&case_insensitive_pattern) {
                 return Ok(regex.is_match(url));
             }
@@ -42,9 +48,15 @@ impl VerifierAgent {
 
         let matches = regex.is_match(url);
 
-        // Cache for future use
+        // Cache for future use - handle poisoning gracefully
         {
-            let mut cache = self.pattern_cache.write().unwrap();
+            let mut cache = match self.pattern_cache.write() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::warn!("Pattern cache write lock poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
             cache.insert(case_insensitive_pattern, regex);
         }
 
@@ -52,27 +64,57 @@ impl VerifierAgent {
     }
 
     /// Check if page content contains expected keywords
+    /// Uses cached regex when possible for performance
     fn validate_content(&self, content: &str, keywords: &[&str]) -> bool {
-        // Construct a single regex for all keywords: (?i)\b(kw1|kw2|kw3)\b
-        // This is much faster than checking contains() on a fully lowercased huge string
-        let pattern = format!(
-            "(?i)\\b({:?})\\b",
-            keywords
-                .iter()
-                .map(|k| k.trim())
-                .filter(|k| !k.is_empty())
-                .collect::<Vec<_>>()
-                .join("|")
-        );
+        // Build keywords pattern
+        let filtered_keywords: Vec<&str> = keywords
+            .iter()
+            .map(|k| k.trim())
+            .filter(|k| !k.is_empty())
+            .collect();
 
-        if let Ok(re) = Regex::new(&pattern) {
-            re.is_match(content)
-        } else {
-            // Fallback to simple contains if regex fails (unlikely)
-            let content_lower = content.to_lowercase();
-            keywords
-                .iter()
-                .any(|kw| content_lower.contains(&kw.to_lowercase()))
+        if filtered_keywords.is_empty() {
+            return false;
+        }
+
+        // Create a cache key from sorted keywords for consistent lookup
+        let mut sorted_keywords = filtered_keywords.clone();
+        sorted_keywords.sort();
+        let cache_key = format!("content_(?i)\\b({})\\b", sorted_keywords.join("|"));
+
+        // Check cache first
+        {
+            let cache = match self.pattern_cache.read() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if let Some(regex) = cache.get(&cache_key) {
+                return regex.is_match(content);
+            }
+        }
+
+        // Build and cache the pattern
+        let pattern = format!("(?i)\\b({})\\b", filtered_keywords.join("|"));
+        match Regex::new(&pattern) {
+            Ok(re) => {
+                let matches = re.is_match(content);
+                // Cache for future use
+                {
+                    let mut cache = match self.pattern_cache.write() {
+                        Ok(guard) => guard,
+                        Err(poisoned) => poisoned.into_inner(),
+                    };
+                    cache.insert(cache_key, re);
+                }
+                matches
+            }
+            Err(_) => {
+                // Fallback to simple contains if regex fails (unlikely)
+                let content_lower = content.to_lowercase();
+                keywords
+                    .iter()
+                    .any(|kw| content_lower.contains(&kw.to_lowercase()))
+            }
         }
     }
 }

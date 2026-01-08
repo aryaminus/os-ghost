@@ -1,10 +1,11 @@
 //! Persistent game state management
 //! Stores player progress, solved puzzles, and hint timers
 
+use crate::utils::current_timestamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 const STATE_FILE: &str = "ghost_state.json";
 const HINT_DELAY_SECS: u64 = 60; // First hint after 60 seconds
@@ -35,18 +36,23 @@ impl Default for EffectQueue {
 
 impl EffectQueue {
     pub fn push(&self, msg: EffectMessage) {
-        if let Ok(mut q) = self.queue.lock() {
-            q.push(msg);
+        match self.queue.lock() {
+            Ok(mut q) => q.push(msg),
+            Err(poisoned) => {
+                tracing::warn!("EffectQueue mutex poisoned, recovering");
+                poisoned.into_inner().push(msg);
+            }
         }
     }
 
+    /// Pop all items from the queue efficiently using mem::take
     pub fn pop_all(&self) -> Vec<EffectMessage> {
-        if let Ok(mut q) = self.queue.lock() {
-            let items = q.clone();
-            q.clear();
-            items
-        } else {
-            Vec::new()
+        match self.queue.lock() {
+            Ok(mut q) => std::mem::take(&mut *q),
+            Err(poisoned) => {
+                tracing::warn!("EffectQueue mutex poisoned, recovering");
+                std::mem::take(&mut *poisoned.into_inner())
+            }
         }
     }
 }
@@ -90,13 +96,11 @@ impl GameState {
         let path = Self::state_path();
         if path.exists() {
             match tokio::fs::read_to_string(&path).await {
-                Ok(contents) => match serde_json::from_str(&contents) {
+                Ok(contents) => match serde_json::from_str::<GameState>(&contents) {
                     Ok(state) => {
                         tracing::info!(
                             "Loaded game state: {} puzzles solved",
-                            serde_json::from_str::<GameState>(&contents)
-                                .map(|s| s.solved_puzzles.len())
-                                .unwrap_or(0)
+                            state.solved_puzzles.len()
                         );
                         return state;
                     }
@@ -112,6 +116,8 @@ impl GameState {
 
     /// Save state to disk (Async)
     pub async fn save(&self) -> Result<()> {
+        // Ensure directory exists before writing
+        Self::ensure_config_dir().await?;
         let path = Self::state_path();
         let contents = serde_json::to_string_pretty(self)?;
         tokio::fs::write(&path, contents).await?;
@@ -119,24 +125,20 @@ impl GameState {
         Ok(())
     }
 
-    /// Get the state file path
+    /// Get the state file path (pure, no I/O)
     fn state_path() -> PathBuf {
-        // Store in config directory
         let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
         path.push("os-ghost");
-
-        // Create directory if needed
-        // Note: usage of std::fs here is acceptable as it's a one-off path check or could be moved
-        // but for path construction avoiding sync I/O is best.
-        // We will assume directory exists or lazily create it in save() if we wanted to be pure.
-        // For now, let's keep the path builder synchronous as it generates a PathBuf,
-        // but we should essentially ensure directories exist in save/load.
-        if !path.exists() {
-            let _ = std::fs::create_dir_all(&path);
-        }
-
         path.push(STATE_FILE);
         path
+    }
+
+    /// Ensure the config directory exists (async-safe)
+    async fn ensure_config_dir() -> Result<()> {
+        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("os-ghost");
+        tokio::fs::create_dir_all(&path).await?;
+        Ok(())
     }
 
     /// Mark a puzzle as solved
@@ -220,13 +222,7 @@ impl GameState {
     }
 }
 
-/// Get current Unix timestamp
-fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
+// current_timestamp is now imported from crate::utils
 
 /// Tauri command to get current game state
 #[tauri::command]

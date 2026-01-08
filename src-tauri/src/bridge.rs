@@ -5,10 +5,16 @@ use crate::game_state::EffectQueue;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 
 const BRIDGE_PORT: u16 = 9876;
+/// Maximum concurrent connections to prevent DoS
+const MAX_CONNECTIONS: usize = 10;
+
+/// Global connection counter for limiting concurrent connections
+static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
 
 /// Message received from Chrome extension (via native_bridge)
 #[derive(Debug, Deserialize)]
@@ -31,9 +37,29 @@ pub struct NativeResponse {
     pub data: serde_json::Value,
 }
 
+/// Connection guard that decrements counter on drop
+struct ConnectionGuard;
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::SeqCst);
+        tracing::debug!(
+            "Connection closed. Active connections: {}",
+            ACTIVE_CONNECTIONS.load(Ordering::SeqCst)
+        );
+    }
+}
+
 /// Handle a single client connection
 fn handle_client(mut stream: TcpStream, app: &AppHandle) {
-    tracing::info!("Native bridge connected from {:?}", stream.peer_addr());
+    // Create guard to ensure connection count is decremented on exit
+    let _guard = ConnectionGuard;
+
+    tracing::info!(
+        "Native bridge connected from {:?}. Active connections: {}",
+        stream.peer_addr(),
+        ACTIVE_CONNECTIONS.load(Ordering::SeqCst)
+    );
 
     // Emit connection event to frontend
     let _ = app.emit(
@@ -200,6 +226,22 @@ pub fn start_native_messaging_server(app: AppHandle) {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
+                    // Check connection limit before accepting
+                    let current = ACTIVE_CONNECTIONS.load(Ordering::SeqCst);
+                    if current >= MAX_CONNECTIONS {
+                        tracing::warn!(
+                            "Connection limit reached ({}/{}), rejecting new connection",
+                            current,
+                            MAX_CONNECTIONS
+                        );
+                        // Drop the stream to close connection
+                        drop(stream);
+                        continue;
+                    }
+
+                    // Increment connection count
+                    ACTIVE_CONNECTIONS.fetch_add(1, Ordering::SeqCst);
+
                     let app_clone = app.clone();
                     std::thread::spawn(move || {
                         handle_client(stream, &app_clone);

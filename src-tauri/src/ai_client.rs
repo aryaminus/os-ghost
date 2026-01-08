@@ -1,23 +1,30 @@
 //! Gemini AI client for screen analysis and semantic similarity
 //! Uses Google's Gemini API for vision and text understanding
 
+use crate::utils::clean_json_response;
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Rate limiting configuration
 const MAX_REQUESTS_PER_MINUTE: u64 = 10;
 const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
+/// Thread-safe rate limiter state
+struct RateLimitState {
+    /// Timestamp of window start (seconds since epoch)
+    window_start: u64,
+    /// Request count in current window
+    request_count: u64,
+}
+
 pub struct GeminiClient {
     client: Client,
     api_key: String,
-    /// Timestamp of window start (seconds since epoch)
-    rate_limit_window_start: AtomicU64,
-    /// Request count in current window
-    request_count: AtomicU64,
+    /// Rate limiter state protected by mutex
+    rate_limit: Mutex<RateLimitState>,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,52 +105,46 @@ impl GeminiClient {
         Self {
             client: Client::new(),
             api_key,
-            rate_limit_window_start: AtomicU64::new(now),
-            request_count: AtomicU64::new(0),
+            rate_limit: Mutex::new(RateLimitState {
+                window_start: now,
+                request_count: 0,
+            }),
         }
     }
 
     /// Check and update rate limit, returns true if request is allowed
+    /// Thread-safe: uses mutex to ensure atomic check-and-update
+    #[must_use]
     fn check_rate_limit(&self) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
-        let window_start = self.rate_limit_window_start.load(Ordering::SeqCst);
-
-        // If window has expired, try to reset atomically
-        if now.saturating_sub(window_start) >= RATE_LIMIT_WINDOW_SECS {
-            // Try to be the one that resets the window
-            if self
-                .rate_limit_window_start
-                .compare_exchange(window_start, now, Ordering::SeqCst, Ordering::SeqCst)
-                .is_ok()
-            {
-                self.request_count.store(1, Ordering::SeqCst);
-                return true;
+        // Lock the rate limit state - handle poisoning gracefully
+        let mut state = match self.rate_limit.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::warn!("Rate limit mutex was poisoned, recovering");
+                poisoned.into_inner()
             }
-            // Another thread reset it, re-check
-            return self.check_rate_limit();
+        };
+
+        // If window has expired, reset it
+        if now.saturating_sub(state.window_start) >= RATE_LIMIT_WINDOW_SECS {
+            state.window_start = now;
+            state.request_count = 1;
+            return true;
         }
 
-        // Check current count BEFORE incrementing
-        let current = self.request_count.load(Ordering::SeqCst);
-        if current >= MAX_REQUESTS_PER_MINUTE {
+        // Check if we're within limits
+        if state.request_count >= MAX_REQUESTS_PER_MINUTE {
             return false;
         }
 
-        // Try to increment atomically
-        if self
-            .request_count
-            .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            true
-        } else {
-            // Race condition, re-check
-            self.check_rate_limit()
-        }
+        // Increment and allow
+        state.request_count += 1;
+        true
     }
 
     /// Wait for rate limit availability with smart backoff
@@ -166,22 +167,28 @@ impl GeminiClient {
                 return false;
             }
 
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            let window_start = self.rate_limit_window_start.load(Ordering::SeqCst);
-
             // Calculate time until window reset
-            let elapsed = now.saturating_sub(window_start);
-            let wait_secs = if elapsed < RATE_LIMIT_WINDOW_SECS {
-                RATE_LIMIT_WINDOW_SECS - elapsed
-            } else {
-                1
+            let wait_secs = {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
+                let window_start = match self.rate_limit.lock() {
+                    Ok(state) => state.window_start,
+                    Err(poisoned) => poisoned.into_inner().window_start,
+                };
+
+                let elapsed = now.saturating_sub(window_start);
+                if elapsed < RATE_LIMIT_WINDOW_SECS {
+                    RATE_LIMIT_WINDOW_SECS - elapsed
+                } else {
+                    1
+                }
             };
 
             // Wait longer between checks to avoid busy-looping
-            // Cap at 10s to allow periodic re-checks of atomic state
+            // Cap at 10s to allow periodic re-checks
             let wait_secs = wait_secs.clamp(2, 10);
 
             // Only log on first attempt to avoid spam
@@ -521,12 +528,7 @@ Make the puzzle interesting and educational. The target should be related but no
         tracing::debug!("Raw AI response text: {}", text);
 
         // Clean up markdown code blocks if present
-        let clean_text = text
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
+        let clean_text = clean_json_response(&text);
 
         // Parse JSON response
         let puzzle: DynamicPuzzle = serde_json::from_str(clean_text)
@@ -606,12 +608,7 @@ Make the puzzle interesting and educational. The target should be related but no
             .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
-        let clean_text = text
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
+        let clean_text = clean_json_response(&text);
 
         let result: VerificationResult = serde_json::from_str(clean_text)?;
         Ok(result)
@@ -750,16 +747,11 @@ Respond with ONLY valid JSON (no markdown):
             .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
-        let clean_text = text
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
+        let clean_text = clean_json_response(&text);
 
         let puzzle: AdaptivePuzzle = serde_json::from_str(clean_text).context(format!(
             "Failed to parse adaptive puzzle JSON. Raw: {}",
-            text
+            clean_text
         ))?;
 
         tracing::info!(

@@ -4,6 +4,7 @@
 use crate::ai_client::GeminiClient;
 use crate::capture;
 use crate::game_state::{EffectMessage, EffectQueue};
+use crate::utils::current_timestamp_millis;
 use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -38,7 +39,7 @@ pub struct SystemStatus {
 pub fn detect_chrome() -> SystemStatus {
     let chrome_path = find_chrome_path();
     let chrome_installed = chrome_path.is_some();
-    let api_key_configured = std::env::var("GEMINI_API_KEY").is_ok();
+    let api_key_configured = crate::utils::runtime_config().has_api_key();
 
     SystemStatus {
         chrome_path,
@@ -364,7 +365,7 @@ pub async fn verify_screenshot_proof(
 /// Check if API key is configured
 #[tauri::command]
 pub fn check_api_key() -> Result<bool, String> {
-    Ok(std::env::var("GEMINI_API_KEY").is_ok())
+    Ok(crate::utils::runtime_config().has_api_key())
 }
 
 /// Get the config file path for storing API key
@@ -422,8 +423,8 @@ pub async fn set_api_key(api_key: String) -> Result<(), String> {
         return Err("API key cannot be empty".to_string());
     }
 
-    // Set environment variable for current session
-    std::env::set_var("GEMINI_API_KEY", trimmed_key);
+    // Set in thread-safe runtime config (instead of env::set_var which is not thread-safe)
+    crate::utils::runtime_config().set_api_key(trimmed_key.to_string());
 
     // Persist to config file
     let mut config = load_config();
@@ -509,13 +510,7 @@ pub struct GeneratedPuzzle {
 
 /// Helper: Create a sponsored puzzle
 fn create_sponsored_puzzle() -> (Puzzle, GeneratedPuzzle) {
-    let id = format!(
-        "sponsored_{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    );
+    let id = generate_puzzle_id("sponsored");
     let puzzle = Puzzle {
         id: id.clone(),
         clue: "Seek the cloud where giants build their dreams. Find the console of the Titans."
@@ -583,10 +578,7 @@ fn generate_puzzle_id(prefix: &str) -> String {
     format!(
         "{}_{}_{}",
         prefix,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis(),
+        current_timestamp_millis(),
         rand::thread_rng().gen_range(1000..9999)
     )
 }
@@ -763,15 +755,8 @@ pub async fn generate_puzzle_from_history(
         .await
         .map_err(|e| format!("Failed to generate puzzle: {}", e))?;
 
-    // Generate unique ID
-    let id = format!(
-        "history_{}_{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis(),
-        rand::thread_rng().gen_range(1000..9999)
-    );
+    // Generate unique ID using shared helper
+    let id = generate_puzzle_id("history");
 
     let puzzle = Puzzle {
         id: id.clone(),

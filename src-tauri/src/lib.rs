@@ -8,8 +8,9 @@ pub mod capture;
 pub mod game_state;
 pub mod history;
 pub mod ipc;
-pub mod monitor; // [NEW] Monitor module
+pub mod monitor;
 pub mod privacy;
+pub mod utils;
 pub mod window;
 
 // Multi-agent system
@@ -81,6 +82,7 @@ pub fn run() {
 
     // Load API key from config file if not in environment
     // This allows production builds to use user-provided keys
+    // Uses thread-safe runtime config instead of env::set_var
     if std::env::var("GEMINI_API_KEY").is_err() {
         if let Some(config_dir) = dirs::config_dir() {
             let config_path = config_dir.join("os-ghost").join("config.json");
@@ -89,7 +91,8 @@ pub fn run() {
                     if let Ok(config) = serde_json::from_str::<serde_json::Value>(&contents) {
                         if let Some(key) = config.get("gemini_api_key").and_then(|k| k.as_str()) {
                             if !key.is_empty() {
-                                std::env::set_var("GEMINI_API_KEY", key);
+                                // Use thread-safe runtime config
+                                utils::runtime_config().set_api_key(key.to_string());
                                 tracing::info!("Loaded API key from config file");
                             }
                         }
@@ -114,10 +117,13 @@ pub fn run() {
             app.manage(puzzles);
 
             // Initialize Gemini client
-            let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| {
-                tracing::warn!("GEMINI_API_KEY not set - user must provide via UI");
-                String::new()
-            });
+            // Get API key from thread-safe runtime config or environment
+            let api_key = utils::runtime_config()
+                .get_api_key()
+                .unwrap_or_else(|| {
+                    tracing::warn!("GEMINI_API_KEY not set - user must provide via UI");
+                    String::new()
+                });
 
             // Create shared Gemini client
             let gemini_client = Arc::new(GeminiClient::new(api_key));
@@ -126,13 +132,22 @@ pub fn run() {
             app.manage(gemini_client.clone());
 
             // Create shared memory instances (used by both Orchestrator and Monitor)
+            // Note: We use std::sync::Mutex here because:
+            // 1. The underlying sled database is already thread-safe
+            // 2. Lock durations are short (just for state reads/writes)
+            // 3. The mutex protects higher-level state coordination, not sled access
             let store = memory::MemoryStore::new().map_err(|e| {
                 tracing::error!("Failed to create memory store: {}", e);
                 e
             })?;
 
             let shared_ltm = Arc::new(Mutex::new(LongTermMemory::new(store.clone())));
-            let shared_session = Arc::new(Mutex::new(memory::SessionMemory::new(store)));
+            let shared_session = Arc::new(Mutex::new(memory::SessionMemory::new(store.clone())));
+
+            // Register session memory as managed state for IPC commands
+            // Create a separate Arc for SessionMemory to be used directly by bridge
+            let session_for_ipc = Arc::new(memory::SessionMemory::new(store));
+            app.manage(session_for_ipc);
 
             // Create Orchestrator with shared memory
             match crate::agents::AgentOrchestrator::new(
@@ -199,7 +214,6 @@ pub fn run() {
                     // Only emit if state changed to true, or periodically to ensure UI is in sync
                     // For now, simple edge detection + periodic refresh every minute
                     if available && !last_availability {
-                        use tauri::Emitter;
                         if let Err(e) = hint_handle.emit("hint_available", true) {
                             tracing::error!("Failed to emit hint event: {}", e);
                         }
@@ -222,8 +236,7 @@ pub fn run() {
                 loop {
                     interval.tick().await;
                     let status = ipc::detect_chrome();
-                    use tauri::Emitter;
-                    // Always emit for now so UI is always in sync, or could compare with last
+                    // Always emit for now so UI is always in sync
                     if let Err(e) = status_handle.emit("system_status_update", status) {
                         tracing::error!("Failed to emit status event: {}", e);
                     }

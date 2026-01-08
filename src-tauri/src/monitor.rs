@@ -5,6 +5,7 @@
 use crate::ai_client::GeminiClient;
 use crate::capture;
 use crate::memory::{ActivityEntry, LongTermMemory, SessionMemory};
+use crate::utils::{clean_json_response, current_timestamp};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
@@ -103,30 +104,54 @@ pub async fn start_monitor_loop(
         };
 
         // 2. Build rich context from memory
+        // Helper to handle mutex poisoning gracefully
         let (user_facts, current_url, recent_activities) = {
-            let facts = if let Ok(ltm) = long_term.lock() {
-                ltm.get_user_facts()
+            let facts = match long_term.lock() {
+                Ok(ltm) => ltm
+                    .get_user_facts()
                     .unwrap_or_default()
                     .iter()
                     .map(|(k, v)| format!("{}: {}", k, crate::privacy::redact_pii(v)))
                     .collect::<Vec<_>>()
-                    .join(", ")
-            } else {
-                String::new()
+                    .join(", "),
+                Err(poisoned) => {
+                    tracing::warn!("Long-term memory mutex poisoned, recovering");
+                    poisoned
+                        .into_inner()
+                        .get_user_facts()
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|(k, v)| format!("{}: {}", k, crate::privacy::redact_pii(v)))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                }
             };
 
-            let (url, activities) = if let Ok(sess) = session.lock() {
-                let state = sess.load().unwrap_or_default();
-                let recent = sess
-                    .get_recent_activity(5)
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|a| crate::privacy::redact_pii(&a.description))
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                (crate::privacy::redact_pii(&state.current_url), recent)
-            } else {
-                (String::new(), String::new())
+            let (url, activities) = match session.lock() {
+                Ok(sess) => {
+                    let state = sess.load().unwrap_or_default();
+                    let recent = sess
+                        .get_recent_activity(5)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|a| crate::privacy::redact_pii(&a.description))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    (crate::privacy::redact_pii(&state.current_url), recent)
+                }
+                Err(poisoned) => {
+                    tracing::warn!("Session memory mutex poisoned, recovering");
+                    let sess = poisoned.into_inner();
+                    let state = sess.load().unwrap_or_default();
+                    let recent = sess
+                        .get_recent_activity(5)
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|a| crate::privacy::redact_pii(&a.description))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    (crate::privacy::redact_pii(&state.current_url), recent)
+                }
             };
 
             (facts, url, activities)
@@ -166,21 +191,13 @@ Categories:
 
         match gemini.analyze_image(&base64_image, &prompt).await {
             Ok(json_str) => {
-                let clean_json = json_str
-                    .trim()
-                    .trim_start_matches("```json")
-                    .trim_start_matches("```")
-                    .trim_end_matches("```")
-                    .trim();
+                let clean_json = clean_json_response(&json_str);
 
                 match serde_json::from_str::<ObservationResult>(clean_json) {
                     Ok(observation) => {
                         tracing::debug!("Monitor observed: {:?}", observation);
 
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs();
+                        let now = current_timestamp();
 
                         // Track idle patterns
                         if observation.is_idle {
@@ -195,36 +212,46 @@ Categories:
                             recent_categories.remove(0);
                         }
 
-                        // Store facts
+                        // Store facts - handle mutex poisoning
                         if let Some(ref fact) = observation.new_fact {
-                            if let Ok(ltm) = long_term.lock() {
-                                let _ = ltm.record_fact("last_activity", &observation.activity);
-                                let _ = ltm.record_fact("last_new_fact", fact);
-                                if let Some(ref app) = observation.app_name {
-                                    let _ = ltm.record_fact("last_app", app);
+                            let ltm_guard = match long_term.lock() {
+                                Ok(guard) => guard,
+                                Err(poisoned) => {
+                                    tracing::warn!("Long-term memory mutex poisoned, recovering");
+                                    poisoned.into_inner()
                                 }
-                                tracing::info!("Recorded new fact: {}", fact);
+                            };
+                            let _ = ltm_guard.record_fact("last_activity", &observation.activity);
+                            let _ = ltm_guard.record_fact("last_new_fact", fact);
+                            if let Some(ref app) = observation.app_name {
+                                let _ = ltm_guard.record_fact("last_app", app);
                             }
+                            tracing::info!("Recorded new fact: {}", fact);
                         }
 
-                        // Update session with detailed activity
-                        if let Ok(sess) = session.lock() {
-                            let _ = sess.touch();
-
-                            if !observation.is_idle {
-                                let _ = sess.add_activity(ActivityEntry {
-                                    activity_type: "observation".to_string(),
-                                    description: observation.activity.clone(),
-                                    timestamp: now,
-                                    metadata: Some(serde_json::json!({
-                                        "app_name": observation.app_name,
-                                        "app_category": observation.app_category,
-                                        "content_context": observation.content_context,
-                                        "puzzle_theme": observation.puzzle_theme,
-                                        "is_idle": observation.is_idle,
-                                    })),
-                                });
+                        // Update session with detailed activity - handle mutex poisoning
+                        let sess_guard = match session.lock() {
+                            Ok(guard) => guard,
+                            Err(poisoned) => {
+                                tracing::warn!("Session memory mutex poisoned, recovering");
+                                poisoned.into_inner()
                             }
+                        };
+                        let _ = sess_guard.touch();
+
+                        if !observation.is_idle {
+                            let _ = sess_guard.add_activity(ActivityEntry {
+                                activity_type: "observation".to_string(),
+                                description: observation.activity.clone(),
+                                timestamp: now,
+                                metadata: Some(serde_json::json!({
+                                    "app_name": observation.app_name,
+                                    "app_category": observation.app_category,
+                                    "content_context": observation.content_context,
+                                    "puzzle_theme": observation.puzzle_theme,
+                                    "is_idle": observation.is_idle,
+                                })),
+                            });
                         }
 
                         // Generate companion behavior based on observation
@@ -250,11 +277,13 @@ Categories:
                         }
                     }
                     Err(e) => {
-                        tracing::debug!(
+                        // Log at warn level for better visibility of parsing issues
+                        tracing::warn!(
                             "Failed to parse observation JSON: {} - Raw: {}",
                             e,
-                            clean_json
+                            &clean_json[..clean_json.len().min(200)] // Truncate for logging
                         );
+                        // Continue monitoring loop - don't let parse errors stop observation
                     }
                 }
             }

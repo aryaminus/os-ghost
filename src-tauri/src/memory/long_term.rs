@@ -2,6 +2,7 @@
 //! Stores solved puzzles, player discoveries, and semantic embeddings
 
 use super::store::MemoryStore;
+use crate::utils::current_timestamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -109,10 +110,7 @@ impl LongTermMemory {
 
     /// Record a fact about the user/environment
     pub fn record_fact(&self, key: &str, value: &str) -> Result<()> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        let now = current_timestamp();
 
         // Use a simple key-value structure for now
         // In a real app, this could be a vector store
@@ -149,10 +147,7 @@ impl LongTermMemory {
         self.store
             .get(STATS_TREE, "player")?
             .unwrap_or_else(|| {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
+                let now = current_timestamp();
                 PlayerStats {
                     first_played: now,
                     last_played: now,
@@ -171,10 +166,7 @@ impl LongTermMemory {
     pub fn add_playtime(&self, seconds: u64) -> Result<()> {
         let mut stats = self.get_stats()?;
         stats.total_playtime_secs += seconds;
-        stats.last_played = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+        stats.last_played = current_timestamp();
         self.save_stats(&stats)
     }
 
