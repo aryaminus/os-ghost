@@ -2,7 +2,7 @@
 //! Provides contextual awareness by periodically analyzing the screen
 //! and detecting user activity patterns for adaptive behavior
 
-use crate::ai_client::GeminiClient;
+use crate::ai_provider::SmartAiRouter;
 use crate::capture;
 use crate::memory::{ActivityEntry, LongTermMemory, SessionMemory};
 use crate::utils::{clean_json_response, current_timestamp};
@@ -68,7 +68,7 @@ pub struct CompanionBehavior {
 /// Main background loop with shared memory access
 pub async fn start_monitor_loop(
     app: AppHandle,
-    gemini: Arc<GeminiClient>,
+    ai_router: Arc<SmartAiRouter>,
     long_term: Arc<Mutex<LongTermMemory>>,
     session: Arc<Mutex<SessionMemory>>,
 ) {
@@ -189,7 +189,7 @@ Categories:
             user_facts, current_url, recent_activities
         );
 
-        match gemini.analyze_image(&base64_image, &prompt).await {
+        match ai_router.analyze_image(&base64_image, &prompt).await {
             Ok(json_str) => {
                 let clean_json = clean_json_response(&json_str);
 

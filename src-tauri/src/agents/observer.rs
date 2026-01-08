@@ -2,19 +2,19 @@
 //! Analyzes what the user is viewing and extracts semantic meaning
 
 use super::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
-use crate::ai_client::GeminiClient;
+use crate::ai_provider::SmartAiRouter;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Observer agent for screen/page analysis
 pub struct ObserverAgent {
-    gemini: Arc<GeminiClient>,
+    ai_router: Arc<SmartAiRouter>,
 }
 
 impl ObserverAgent {
-    pub fn new(gemini: Arc<GeminiClient>) -> Self {
-        Self { gemini }
+    pub fn new(ai_router: Arc<SmartAiRouter>) -> Self {
+        Self { ai_router }
     }
 
     /// Analyze page content for relevance to puzzle
@@ -22,9 +22,9 @@ impl ObserverAgent {
         // Redact URL for privacy
         let redacted_url = crate::privacy::redact_pii(&context.current_url);
 
-        // Use Gemini to calculate semantic similarity
+        // Use AI router to calculate semantic similarity
         let similarity = self
-            .gemini
+            .ai_router
             .calculate_url_similarity(&redacted_url, &context.target_pattern)
             .await
             .map_err(|e| AgentError::ServiceError(e.to_string()))?;
@@ -41,7 +41,7 @@ impl ObserverAgent {
         );
 
         let response = self
-            .gemini
+            .ai_router
             .generate_text(&prompt)
             .await
             .map_err(|e| AgentError::ServiceError(e.to_string()))?;

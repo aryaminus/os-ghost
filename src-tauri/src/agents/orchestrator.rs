@@ -5,7 +5,7 @@ use super::narrator::NarratorAgent;
 use super::observer::ObserverAgent;
 use super::traits::{AgentContext, AgentOutput, AgentResult, NextAction};
 use super::verifier::VerifierAgent;
-use crate::ai_client::GeminiClient;
+use crate::ai_provider::SmartAiRouter;
 use crate::memory::{LongTermMemory, SessionMemory};
 use crate::workflow::{
     loop_agent::create_hotcold_loop, parallel::create_parallel_checks,
@@ -48,14 +48,14 @@ pub struct OrchestrationResult {
 impl AgentOrchestrator {
     /// Create a new orchestrator with all agents and shared memory
     pub fn new(
-        gemini: Arc<GeminiClient>,
+        ai_router: Arc<SmartAiRouter>,
         long_term: SharedLongTermMemory,
         session: SharedSessionMemory,
     ) -> anyhow::Result<Self> {
         // Create agents
-        let observer = Arc::new(ObserverAgent::new(Arc::clone(&gemini)));
+        let observer = Arc::new(ObserverAgent::new(Arc::clone(&ai_router)));
         let verifier = Arc::new(VerifierAgent::new());
-        let narrator = Arc::new(NarratorAgent::new(gemini));
+        let narrator = Arc::new(NarratorAgent::new(ai_router));
 
         // Build workflow pipeline: Observer -> Verifier -> Narrator
         let workflow = create_puzzle_pipeline(observer.clone(), verifier.clone(), narrator.clone());

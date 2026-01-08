@@ -11,6 +11,7 @@ import React, {
 	useCallback,
 	useMemo,
 } from "react";
+import PropTypes from "prop-types";
 import { invoke } from "@tauri-apps/api/core";
 import { useGhostGame } from "../hooks/useTauriCommands";
 import ApiKeyInput from "./ApiKeyInput";
@@ -18,9 +19,10 @@ import SystemStatusBanner from "./SystemStatus";
 
 /**
  * ASCII Art sprites for Ghost in different states.
- * @type {Record<string, string>}
+ * @readonly
+ * @type {Readonly<Record<string, string>>}
  */
-const GHOST_SPRITES = {
+const GHOST_SPRITES = Object.freeze({
 	idle: `
     .-.
    (o.o)
@@ -88,6 +90,51 @@ const GHOST_SPRITES = {
     || ||
    ==' '==
   `,
+});
+
+/** Typewriter speed in milliseconds between characters */
+const TYPEWRITER_SPEED = 25;
+
+/** Maximum glow intensity in pixels */
+const MAX_GLOW_INTENSITY = 40;
+
+/** Base glow intensity in pixels */
+const BASE_GLOW_INTENSITY = 5;
+
+/** Glow intensity multiplier based on proximity */
+const GLOW_PROXIMITY_MULTIPLIER = 30;
+
+/** Style for sponsored badge - extracted to avoid inline object creation */
+const SPONSORED_BADGE_STYLE = Object.freeze({
+	marginLeft: "8px",
+	fontSize: "0.8em",
+	background: "var(--accent)",
+	color: "var(--bg-color)",
+	padding: "2px 6px",
+	borderRadius: "4px",
+	fontWeight: "bold",
+});
+
+/** Style for verify button - extracted to avoid inline object creation */
+const VERIFY_BUTTON_STYLE = Object.freeze({
+	marginTop: "8px",
+	backgroundColor: "var(--accent)",
+});
+
+/**
+ * Prevent event propagation - shared utility for drag handling.
+ * @param {React.SyntheticEvent} e - Event to stop
+ */
+const stopPropagation = (e) => e.stopPropagation();
+
+/**
+ * Wrap a handler to stop propagation.
+ * @param {function} handler - Handler function
+ * @returns {function} Wrapped handler
+ */
+const withStopPropagation = (handler) => (e) => {
+	e.stopPropagation();
+	handler();
 };
 
 /**
@@ -103,14 +150,21 @@ const TypewriterText = React.memo(({ text, speed = 30 }) => {
 	const [displayed, setDisplayed] = useState("");
 	/** @type {React.MutableRefObject<number>} */
 	const indexRef = useRef(0);
+	const isMountedRef = useRef(true);
 
 	useEffect(() => {
+		isMountedRef.current = true;
 		setDisplayed("");
 		indexRef.current = 0;
 
 		if (!text) return;
 
 		const timer = setInterval(() => {
+			if (!isMountedRef.current) {
+				clearInterval(timer);
+				return;
+			}
+
 			if (indexRef.current < text.length) {
 				setDisplayed(text.slice(0, indexRef.current + 1));
 				indexRef.current++;
@@ -119,7 +173,10 @@ const TypewriterText = React.memo(({ text, speed = 30 }) => {
 			}
 		}, speed);
 
-		return () => clearInterval(timer);
+		return () => {
+			isMountedRef.current = false;
+			clearInterval(timer);
+		};
 	}, [text, speed]);
 
 	return (
@@ -134,6 +191,16 @@ const TypewriterText = React.memo(({ text, speed = 30 }) => {
 
 TypewriterText.displayName = "TypewriterText";
 
+TypewriterText.propTypes = {
+	text: PropTypes.string,
+	speed: PropTypes.number,
+};
+
+TypewriterText.defaultProps = {
+	text: "",
+	speed: 30,
+};
+
 /**
  * Proximity indicator bar showing hot/cold feedback.
  * Changes color based on proximity value.
@@ -146,13 +213,13 @@ const ProximityBar = React.memo(({ proximity }) => {
 	/**
 	 * Get color based on proximity value - memoized for performance
 	 */
-	const color = React.useMemo(() => {
+	const color = useMemo(() => {
 		if (proximity < 0.3) return "var(--cold)";
 		if (proximity < 0.6) return "var(--warm)";
 		return "var(--hot)";
 	}, [proximity]);
 
-	const fillStyle = React.useMemo(
+	const fillStyle = useMemo(
 		() => ({
 			width: `${proximity * 100}%`,
 			backgroundColor: color,
@@ -160,12 +227,14 @@ const ProximityBar = React.memo(({ proximity }) => {
 		[proximity, color]
 	);
 
+	const percentValue = Math.round(proximity * 100);
+
 	return (
 		<div
 			className="proximity-container"
 			role="meter"
 			aria-label="Signal strength"
-			aria-valuenow={Math.round(proximity * 100)}
+			aria-valuenow={percentValue}
 			aria-valuemin={0}
 			aria-valuemax={100}
 		>
@@ -186,6 +255,14 @@ const ProximityBar = React.memo(({ proximity }) => {
 });
 
 ProximityBar.displayName = "ProximityBar";
+
+ProximityBar.propTypes = {
+	proximity: PropTypes.number,
+};
+
+ProximityBar.defaultProps = {
+	proximity: 0,
+};
 
 /**
  * Main Ghost component.
@@ -213,14 +290,35 @@ const Ghost = () => {
 		generateAdaptivePuzzle,
 	} = useGhostGame();
 
+	const [showingKeyInput, setShowingKeyInput] = useState(false);
+	const [showingResetConfirm, setShowingResetConfirm] = useState(false);
+
 	// Memoize sprite lookup to avoid object reference on every render
 	const sprite = useMemo(
 		() => GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle,
 		[gameState.state]
 	);
+
 	const glowIntensity = useMemo(
-		() => Math.min(gameState.proximity * 30 + 5, 40),
+		() =>
+			Math.min(
+				gameState.proximity * GLOW_PROXIMITY_MULTIPLIER +
+					BASE_GLOW_INTENSITY,
+				MAX_GLOW_INTENSITY
+			),
 		[gameState.proximity]
+	);
+
+	// Memoize sprite style to avoid object recreation
+	const spriteStyle = useMemo(
+		() => ({
+			"--glow-intensity": `${glowIntensity}px`,
+			"--glow-color":
+				gameState.state === "celebrate"
+					? "var(--celebrate-glow)"
+					: "var(--ghost-glow)",
+		}),
+		[glowIntensity, gameState.state]
 	);
 
 	/**
@@ -234,6 +332,19 @@ const Ghost = () => {
 			showHint();
 		}
 	}, [gameState.state, captureAndAnalyze, showHint]);
+
+	/**
+	 * Handle keyboard interaction on Ghost sprite.
+	 */
+	const handleSpriteKeyDown = useCallback(
+		(e) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				handleClick();
+			}
+		},
+		[handleClick]
+	);
 
 	/**
 	 * Handle drag to move window (Clippy-style) - memoized.
@@ -252,27 +363,11 @@ const Ghost = () => {
 		}
 	}, []);
 
-	// Memoize sprite style to avoid object recreation
-	const spriteStyle = useMemo(
-		() => ({
-			"--glow-intensity": `${glowIntensity}px`,
-			"--glow-color":
-				gameState.state === "celebrate"
-					? "var(--celebrate-glow)"
-					: "var(--ghost-glow)",
-		}),
-		[glowIntensity, gameState.state]
-	);
-
-	const [showingKeyInput, setShowingKeyInput] = useState(false);
-	const [showingResetConfirm, setShowingResetConfirm] = useState(false);
-
 	/**
 	 * Handle successful API key set - refresh game state.
 	 */
 	const handleKeySet = useCallback(async () => {
 		setShowingKeyInput(false);
-		// Re-check API key status by calling backend
 		try {
 			const configured = await invoke("check_api_key");
 			if (configured) {
@@ -283,6 +378,66 @@ const Ghost = () => {
 			console.error("Failed to check API key:", err);
 		}
 	}, []);
+
+	/**
+	 * Toggle API key input visibility.
+	 */
+	const toggleKeyInput = useCallback(() => {
+		setShowingKeyInput((prev) => {
+			if (!prev) {
+				setShowingResetConfirm(false);
+			}
+			return !prev;
+		});
+	}, []);
+
+	/**
+	 * Toggle reset confirmation visibility.
+	 */
+	const toggleResetConfirm = useCallback(() => {
+		setShowingResetConfirm((prev) => {
+			if (!prev) {
+				setShowingKeyInput(false);
+			}
+			return !prev;
+		});
+	}, []);
+
+	/**
+	 * Handle reset game confirmation.
+	 */
+	const handleConfirmReset = useCallback(() => {
+		resetGame();
+		setShowingResetConfirm(false);
+	}, [resetGame]);
+
+	/**
+	 * Close reset confirmation.
+	 */
+	const closeResetConfirm = useCallback(() => {
+		setShowingResetConfirm(false);
+	}, []);
+
+	/**
+	 * Close key input.
+	 */
+	const closeKeyInput = useCallback(() => {
+		setShowingKeyInput(false);
+	}, []);
+
+	// Derive aria-label for sprite based on state
+	const spriteAriaLabel =
+		gameState.state === "idle"
+			? "Click to analyze screen"
+			: "Click for hint";
+
+	// Determine clue text to display
+	const clueText = useMemo(() => {
+		if (gameState.clue) return gameState.clue;
+		return gameState.puzzleId
+			? "Loading puzzle..."
+			: "Waiting for signal...";
+	}, [gameState.clue, gameState.puzzleId]);
 
 	return (
 		<div
@@ -295,20 +450,11 @@ const Ghost = () => {
 			<div
 				className={`ghost-sprite state-${gameState.state}`}
 				onClick={handleClick}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						handleClick();
-					}
-				}}
+				onKeyDown={handleSpriteKeyDown}
 				style={spriteStyle}
 				role="button"
 				tabIndex={0}
-				aria-label={
-					gameState.state === "idle"
-						? "Click to analyze screen"
-						: "Click for hint"
-				}
+				aria-label={spriteAriaLabel}
 			>
 				<pre className="ascii-art" aria-hidden="true">
 					{sprite}
@@ -324,9 +470,10 @@ const Ghost = () => {
 					<ApiKeyInput onKeySet={handleKeySet} />
 					{showingKeyInput && (
 						<button
+							type="button"
 							className="cancel-key-btn"
-							onMouseDown={(e) => e.stopPropagation()}
-							onClick={() => setShowingKeyInput(false)}
+							onMouseDown={stopPropagation}
+							onClick={closeKeyInput}
 						>
 							Cancel
 						</button>
@@ -351,34 +498,26 @@ const Ghost = () => {
 							{/* Current Clue */}
 							<div className="clue-box">
 								<div className="clue-header">
-									📜 CURRENT MYSTERY
+									<span aria-hidden="true">📜</span> CURRENT
+									MYSTERY
 									{gameState.is_sponsored && (
-										<span
-											style={{
-												marginLeft: "8px",
-												fontSize: "0.8em",
-												background: "var(--accent)",
-												color: "var(--bg-color)",
-												padding: "2px 6px",
-												borderRadius: "4px",
-												fontWeight: "bold",
-											}}
-										>
+										<span style={SPONSORED_BADGE_STYLE}>
 											SPONSORED
 										</span>
 									)}
 								</div>
-								<p className="clue-text">
-									{gameState.clue ||
-										(gameState.puzzleId
-											? "Loading puzzle..."
-											: "Waiting for signal...")}
-								</p>
+								<p className="clue-text">{clueText}</p>
 								{gameState.puzzleId &&
 									!gameState.hintAvailable && (
 										<div className="hint-status">
-											<span className="hint-charging">
-												⏳ Hint charging...
+											<span
+												className="hint-charging"
+												aria-live="polite"
+											>
+												<span aria-hidden="true">
+													⏳
+												</span>{" "}
+												Hint charging...
 											</span>
 										</div>
 									)}
@@ -388,43 +527,50 @@ const Ghost = () => {
 							{gameState.dialogue && (
 								<div
 									className={`dialogue-box state-${gameState.state}`}
+									role="status"
+									aria-live="polite"
 								>
 									{gameState.state === "searching" && (
 										<div className="mode-indicator">
-											🔍 Background Scan
+											<span aria-hidden="true">🔍</span>{" "}
+											Background Scan
 										</div>
 									)}
 									{gameState.state === "thinking" && (
 										<div className="mode-indicator">
-											🔮 Consulting Oracle...
+											<span aria-hidden="true">🔮</span>{" "}
+											Consulting Oracle...
 										</div>
 									)}
 									<TypewriterText
 										text={gameState.dialogue}
-										speed={25}
+										speed={TYPEWRITER_SPEED}
 									/>
 								</div>
 							)}
 
 							{/* Companion Behavior Suggestion */}
 							{companionBehavior && (
-								<div className="companion-suggestion">
+								<div
+									className="companion-suggestion"
+									role="status"
+								>
 									<div className="suggestion-message">
-										💭 {companionBehavior.suggestion}
+										<span aria-hidden="true">💭</span>{" "}
+										{companionBehavior.suggestion}
 									</div>
 									{companionBehavior.action ===
 										"generate_adaptive_puzzle" && (
 										<button
+											type="button"
 											className="suggestion-action-btn"
-											onMouseDown={(e) =>
-												e.stopPropagation()
-											}
-											onClick={(e) => {
-												e.stopPropagation();
-												generateAdaptivePuzzle();
-											}}
+											onMouseDown={stopPropagation}
+											onClick={withStopPropagation(
+												generateAdaptivePuzzle
+											)}
 										>
-											🎯 Create Puzzle
+											<span aria-hidden="true">🎯</span>{" "}
+											Create Puzzle
 										</button>
 									)}
 								</div>
@@ -433,30 +579,32 @@ const Ghost = () => {
 							{/* Dynamic Puzzle Trigger */}
 							{gameState.state === "idle" &&
 								!gameState.puzzleId && (
-									<div className="action-wrapper">
+									<div
+										className="action-wrapper"
+										role="group"
+										aria-label="Puzzle actions"
+									>
 										<button
+											type="button"
 											className="action-btn"
-											onMouseDown={(e) =>
-												e.stopPropagation()
-											}
-											onClick={(e) => {
-												e.stopPropagation();
-												triggerDynamicPuzzle();
-											}}
+											onMouseDown={stopPropagation}
+											onClick={withStopPropagation(
+												triggerDynamicPuzzle
+											)}
 										>
-											🌀 Investigate This Signal
+											<span aria-hidden="true">🌀</span>{" "}
+											Investigate This Signal
 										</button>
 										<button
+											type="button"
 											className="action-btn secondary"
-											onMouseDown={(e) =>
-												e.stopPropagation()
-											}
-											onClick={(e) => {
-												e.stopPropagation();
-												generateAdaptivePuzzle();
-											}}
+											onMouseDown={stopPropagation}
+											onClick={withStopPropagation(
+												generateAdaptivePuzzle
+											)}
 										>
-											🧠 Puzzle From My Observations
+											<span aria-hidden="true">🧠</span>{" "}
+											Puzzle From My Observations
 										</button>
 										<div className="helper-text">
 											Generate mysteries from your
@@ -470,21 +618,16 @@ const Ghost = () => {
 								gameState.state !== "celebrate" && (
 									<div className="action-wrapper">
 										<button
+											type="button"
 											className="action-btn verify-btn"
-											onMouseDown={(e) =>
-												e.stopPropagation()
-											}
-											onClick={(e) => {
-												e.stopPropagation();
-												verifyScreenshotProof(); // Call verification
-											}}
-											style={{
-												marginTop: "8px",
-												backgroundColor:
-													"var(--accent)",
-											}}
+											onMouseDown={stopPropagation}
+											onClick={withStopPropagation(
+												verifyScreenshotProof
+											)}
+											style={VERIFY_BUTTON_STYLE}
 										>
-											📸 Prove Finding
+											<span aria-hidden="true">📸</span>{" "}
+											Prove Finding
 										</button>
 										<div className="helper-text">
 											Verify you found the solution
@@ -493,32 +636,33 @@ const Ghost = () => {
 								)}
 
 							{/* Puzzle Counter */}
-							<div className="puzzle-counter">
-								Memory Fragment: {gameState.currentPuzzle + 1}
-								/∞
+							<div className="puzzle-counter" aria-live="polite">
+								Memory Fragment: {gameState.currentPuzzle + 1}/∞
 							</div>
 						</>
 					) : (
 						/* Reset Game Confirmation - Replaces Main UI */
-						<div className="reset-confirm-box">
-							<p>Reset all progress?</p>
+						<div
+							className="reset-confirm-box"
+							role="alertdialog"
+							aria-modal="true"
+							aria-labelledby="reset-confirm-title"
+						>
+							<p id="reset-confirm-title">Reset all progress?</p>
 							<div className="reset-actions">
 								<button
+									type="button"
 									className="confirm-reset-btn"
-									onMouseDown={(e) => e.stopPropagation()}
-									onClick={() => {
-										resetGame();
-										setShowingResetConfirm(false);
-									}}
+									onMouseDown={stopPropagation}
+									onClick={handleConfirmReset}
 								>
 									Yes, Wipe Memory
 								</button>
 								<button
+									type="button"
 									className="cancel-reset-btn"
-									onMouseDown={(e) => e.stopPropagation()}
-									onClick={() =>
-										setShowingResetConfirm(false)
-									}
+									onMouseDown={stopPropagation}
+									onClick={closeResetConfirm}
 								>
 									Cancel
 								</button>
@@ -530,59 +674,53 @@ const Ghost = () => {
 
 			{/* SYSTEM CONTROLS FOOTER - Always visible when key is configured */}
 			{gameState.apiKeyConfigured && (
-				<div className="system-controls">
+				<div
+					className="system-controls"
+					role="toolbar"
+					aria-label="System controls"
+				>
 					<div className="system-header">SYSTEM CONTROLS</div>
 					<div className="system-controls-grid">
 						{/* Top Row: Core Actions */}
 						<button
-							className={`system-btn change-key ${
-								showingKeyInput ? "active" : ""
-							}`}
-							onMouseDown={(e) => e.stopPropagation()}
-							onClick={() => {
-								if (showingKeyInput) {
-									setShowingKeyInput(false);
-								} else {
-									setShowingKeyInput(true);
-									setShowingResetConfirm(false);
-								}
-							}}
+							type="button"
+							className={`system-btn change-key ${showingKeyInput ? "active" : ""}`}
+							onMouseDown={stopPropagation}
+							onClick={toggleKeyInput}
+							aria-pressed={showingKeyInput}
 						>
 							{showingKeyInput ? "Close Key" : "Change Key"}
 						</button>
 
 						<button
-							className={`system-btn danger ${
-								showingResetConfirm ? "active" : ""
-							}`}
-							onMouseDown={(e) => e.stopPropagation()}
-							onClick={() => {
-								if (showingResetConfirm) {
-									setShowingResetConfirm(false);
-								} else {
-									setShowingResetConfirm(true);
-									setShowingKeyInput(false);
-								}
-							}}
+							type="button"
+							className={`system-btn danger ${showingResetConfirm ? "active" : ""}`}
+							onMouseDown={stopPropagation}
+							onClick={toggleResetConfirm}
+							aria-pressed={showingResetConfirm}
 						>
 							{showingResetConfirm ? "Cancel" : "Reset Game"}
 						</button>
 
 						{/* Bottom Row: Dev/Tools */}
 						<button
+							type="button"
 							className="system-btn dev-scan"
-							onMouseDown={(e) => e.stopPropagation()}
+							onMouseDown={stopPropagation}
 							onClick={startBackgroundChecks}
 							title="Scan Background Content"
+							aria-label="Scan background content"
 						>
 							Scan BG
 						</button>
 
 						<button
+							type="button"
 							className="system-btn dev-auto"
-							onMouseDown={(e) => e.stopPropagation()}
+							onMouseDown={stopPropagation}
 							onClick={enableAutonomousMode}
 							title="Enable Auto-Agent Mode"
+							aria-label="Enable auto-agent mode"
 						>
 							Auto Mode
 						</button>

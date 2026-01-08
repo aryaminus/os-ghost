@@ -1362,3 +1362,227 @@ body {
 	border-radius: 4px;
 	margin-left: 6px;
 }
+
+/* Ollama Configuration Styles */
+.ollama-toggle {
+	width: 100%;
+	margin-top: 12px;
+	padding: 6px 8px;
+	font-size: 9px;
+	font-family: "Courier New", monospace;
+	background: rgba(100, 150, 255, 0.1);
+	border: 1px solid rgba(100, 150, 255, 0.3);
+	border-radius: 4px;
+	color: #88aaff;
+	cursor: pointer;
+	text-align: left;
+	transition: all 0.2s ease;
+}
+
+.ollama-toggle:hover {
+	background: rgba(100, 150, 255, 0.2);
+	border-color: rgba(100, 150, 255, 0.5);
+}
+
+.ollama-section {
+	margin-top: 8px;
+	padding: 10px;
+	background: rgba(100, 150, 255, 0.05);
+	border: 1px solid rgba(100, 150, 255, 0.2);
+	border-radius: 4px;
+}
+
+.ollama-description {
+	font-size: 9px;
+	color: var(--text-dim);
+	margin-bottom: 10px;
+	line-height: 1.4;
+}
+
+.ollama-description a {
+	color: #88aaff;
+	text-decoration: none;
+}
+
+.ollama-description a:hover {
+	text-decoration: underline;
+}
+
+.ollama-status {
+	font-size: 9px;
+	padding: 6px 8px;
+	border-radius: 4px;
+	margin-bottom: 10px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.ollama-status.available {
+	background: rgba(0, 255, 136, 0.1);
+	border: 1px solid rgba(0, 255, 136, 0.3);
+	color: var(--ghost-green);
+}
+
+.ollama-status.unavailable {
+	background: rgba(255, 100, 100, 0.1);
+	border: 1px solid rgba(255, 100, 100, 0.3);
+	color: #ff6b6b;
+}
+
+.active-provider {
+	font-size: 8px;
+	opacity: 0.7;
+}
+
+.ollama-field {
+	margin-bottom: 8px;
+}
+
+.ollama-field label {
+	display: block;
+	font-size: 9px;
+	color: var(--text-secondary);
+	margin-bottom: 4px;
+}
+
+.ollama-field input {
+	width: 100%;
+	padding: 5px 8px;
+	font-size: 10px;
+	font-family: "Courier New", monospace;
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid rgba(100, 150, 255, 0.3);
+	border-radius: 4px;
+	color: #88aaff;
+	outline: none;
+	transition: border-color 0.2s ease;
+}
+
+.ollama-field input:focus {
+	border-color: #88aaff;
+	box-shadow: 0 0 6px rgba(100, 150, 255, 0.3);
+}
+
+.default-hint {
+	display: block;
+	font-size: 8px;
+	color: var(--text-dim);
+	margin-top: 2px;
+	opacity: 0.7;
+}
+
+.ollama-buttons {
+	display: flex;
+	gap: 6px;
+	margin-top: 10px;
+}
+
+.ollama-save,
+.ollama-reset,
+.ollama-refresh {
+	padding: 6px 8px;
+	font-size: 9px;
+	font-family: "Courier New", monospace;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.ollama-save,
+.ollama-reset {
+	flex: 1;
+}
+
+.ollama-save {
+	background: rgba(100, 150, 255, 0.15);
+	border: 1px solid #88aaff;
+	color: #88aaff;
+}
+
+.ollama-save:hover {
+	background: rgba(100, 150, 255, 0.3);
+	box-shadow: 0 0 8px rgba(100, 150, 255, 0.3);
+}
+
+.ollama-reset {
+	background: transparent;
+	border: 1px solid var(--text-dim);
+	color: var(--text-dim);
+}
+
+.ollama-reset:hover {
+	border-color: var(--text-secondary);
+	color: var(--text-secondary);
+}
+
+.ollama-refresh {
+	background: transparent;
+	border: 1px solid rgba(100, 150, 255, 0.3);
+	color: #88aaff;
+	min-width: 32px;
+}
+
+.ollama-refresh:hover {
+	background: rgba(100, 150, 255, 0.15);
+	border-color: #88aaff;
+}
+
+.ollama-save:disabled,
+.ollama-reset:disabled,
+.ollama-refresh:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.ollama-success {
+	font-size: 9px;
+	padding: 6px 8px;
+	border-radius: 4px;
+	margin-bottom: 8px;
+	background: rgba(0, 255, 136, 0.1);
+	border: 1px solid rgba(0, 255, 136, 0.3);
+	color: var(--ghost-green);
+}
+
+.ollama-install-guide {
+	margin-top: 12px;
+	padding: 8px;
+	background: rgba(0, 0, 0, 0.3);
+	border-radius: 4px;
+	font-size: 9px;
+	color: var(--text-dim);
+}
+
+.ollama-install-guide strong {
+	color: var(--text-secondary);
+	display: block;
+	margin-bottom: 6px;
+}
+
+.ollama-install-guide ol {
+	margin: 0;
+	padding-left: 16px;
+}
+
+.ollama-install-guide li {
+	margin-bottom: 4px;
+	line-height: 1.4;
+}
+
+.ollama-install-guide a {
+	color: #88aaff;
+	text-decoration: none;
+}
+
+.ollama-install-guide a:hover {
+	text-decoration: underline;
+}
+
+.ollama-install-guide code {
+	background: rgba(100, 150, 255, 0.1);
+	padding: 1px 4px;
+	border-radius: 2px;
+	font-size: 8px;
+	color: #aaccff;
+}

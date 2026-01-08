@@ -1,7 +1,7 @@
 //! IPC commands for Tauri frontend-backend communication
 //! Exposes Rust functionality to JavaScript via Tauri commands
 
-use crate::ai_client::GeminiClient;
+use crate::ai_provider::SmartAiRouter;
 use crate::capture;
 use crate::game_state::{EffectMessage, EffectQueue};
 use crate::utils::current_timestamp_millis;
@@ -188,9 +188,9 @@ pub async fn launch_chrome(url: Option<String>) -> Result<(), String> {
 /// Helper function to convert ActivityEntry to ActivityContext
 fn activity_to_context(
     entry: &crate::memory::ActivityEntry,
-) -> Option<crate::ai_client::ActivityContext> {
+) -> Option<crate::gemini_client::ActivityContext> {
     let metadata = entry.metadata.as_ref()?;
-    Some(crate::ai_client::ActivityContext {
+    Some(crate::gemini_client::ActivityContext {
         app_name: metadata
             .get("app_name")
             .and_then(|v| v.as_str())
@@ -213,15 +213,15 @@ fn activity_to_context(
 #[tauri::command]
 pub async fn generate_adaptive_puzzle(
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
-    gemini: State<'_, Arc<crate::ai_client::GeminiClient>>,
-) -> Result<crate::ai_client::AdaptivePuzzle, String> {
+    ai_router: State<'_, Arc<SmartAiRouter>>,
+) -> Result<crate::gemini_client::AdaptivePuzzle, String> {
     // Get recent activity from session
     let activities = orchestrator
         .get_recent_activity(10)
         .map_err(|e| e.to_string())?;
 
     // Convert to ActivityContext format using helper
-    let activity_contexts: Vec<crate::ai_client::ActivityContext> =
+    let activity_contexts: Vec<crate::gemini_client::ActivityContext> =
         activities.iter().filter_map(activity_to_context).collect();
 
     if activity_contexts.is_empty() {
@@ -233,7 +233,7 @@ pub async fn generate_adaptive_puzzle(
     let current_app = latest.map(|a| a.app_name.as_str());
     let current_content = latest.and_then(|a| a.content_context.as_deref());
 
-    gemini
+    ai_router
         .generate_adaptive_puzzle(&activity_contexts, current_app, current_content)
         .await
         .map_err(|e| e.to_string())
@@ -245,7 +245,7 @@ pub async fn generate_contextual_dialogue(
     context: String,
     mood: String,
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
-    gemini: State<'_, Arc<crate::ai_client::GeminiClient>>,
+    ai_router: State<'_, Arc<SmartAiRouter>>,
 ) -> Result<String, String> {
     // Get recent activity
     let activities = orchestrator
@@ -253,10 +253,10 @@ pub async fn generate_contextual_dialogue(
         .map_err(|e| e.to_string())?;
 
     // Convert to ActivityContext using helper
-    let activity_contexts: Vec<crate::ai_client::ActivityContext> =
+    let activity_contexts: Vec<crate::gemini_client::ActivityContext> =
         activities.iter().filter_map(activity_to_context).collect();
 
-    gemini
+    ai_router
         .generate_contextual_dialogue(&activity_contexts, &context, &mood)
         .await
         .map_err(|e| e.to_string())
@@ -307,7 +307,7 @@ pub struct Puzzle {
 #[tauri::command]
 pub async fn capture_and_analyze(
     app: tauri::AppHandle,
-    gemini: State<'_, Arc<GeminiClient>>,
+    ai_router: State<'_, Arc<SmartAiRouter>>,
 ) -> Result<String, String> {
     // Capture screen (handles hiding window internally)
     let screenshot = capture::capture_screen(app)
@@ -321,7 +321,7 @@ pub async fn capture_and_analyze(
                   Focus on: URLs visible, page titles, main content topics. \
                   Be concise (max 200 words).";
 
-    let analysis = gemini
+    let analysis = ai_router
         .analyze_image(&screenshot, prompt)
         .await
         .map_err(|e| format!("Analysis failed: {}", e))?;
@@ -334,9 +334,9 @@ pub async fn capture_and_analyze(
 pub async fn verify_screenshot_proof(
     app: tauri::AppHandle,
     puzzle_id: String,
-    gemini: State<'_, Arc<GeminiClient>>,
+    ai_router: State<'_, Arc<SmartAiRouter>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
-) -> Result<crate::ai_client::VerificationResult, String> {
+) -> Result<crate::gemini_client::VerificationResult, String> {
     // 1. Capture screen within the backend
     let image_base64 = capture::capture_screen(app)
         .await
@@ -356,7 +356,7 @@ pub async fn verify_screenshot_proof(
         )
     };
 
-    gemini
+    ai_router
         .verify_screenshot_clue(&image_base64, &target_description)
         .await
         .map_err(|e| format!("Verification failed: {}", e))
@@ -385,6 +385,9 @@ fn get_config_path() -> Result<std::path::PathBuf, String> {
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct AppConfig {
     gemini_api_key: Option<String>,
+    ollama_url: Option<String>,
+    ollama_vision_model: Option<String>,
+    ollama_text_model: Option<String>,
 }
 
 /// Load config from file
@@ -449,7 +452,7 @@ pub async fn validate_api_key(api_key: String) -> Result<bool, String> {
     }
 
     // Create a temporary client with the provided key
-    let test_client = crate::ai_client::GeminiClient::new(trimmed_key.to_string());
+    let test_client = crate::gemini_client::GeminiClient::new(trimmed_key.to_string());
 
     // Try to make a simple API call to validate the key
     match test_client
@@ -493,6 +496,113 @@ pub async fn validate_api_key(api_key: String) -> Result<bool, String> {
             }
         }
     }
+}
+
+// ============================================================================
+// Ollama Configuration Commands
+// ============================================================================
+
+/// Ollama configuration response
+#[derive(Debug, Serialize)]
+pub struct OllamaConfig {
+    pub url: String,
+    pub vision_model: String,
+    pub text_model: String,
+    pub default_url: String,
+    pub default_vision_model: String,
+    pub default_text_model: String,
+}
+
+/// Get current Ollama configuration
+#[tauri::command]
+pub fn get_ollama_config() -> OllamaConfig {
+    let config = crate::utils::runtime_config();
+    OllamaConfig {
+        url: config.get_ollama_url(),
+        vision_model: config.get_ollama_vision_model(),
+        text_model: config.get_ollama_text_model(),
+        default_url: crate::utils::DEFAULT_OLLAMA_URL.to_string(),
+        default_vision_model: crate::utils::DEFAULT_OLLAMA_VISION_MODEL.to_string(),
+        default_text_model: crate::utils::DEFAULT_OLLAMA_TEXT_MODEL.to_string(),
+    }
+}
+
+/// Set Ollama configuration
+#[tauri::command]
+pub fn set_ollama_config(
+    url: String,
+    vision_model: String,
+    text_model: String,
+) -> Result<(), String> {
+    let config = crate::utils::runtime_config();
+
+    // Validate URL format
+    let url = url.trim();
+    if url.is_empty() || !url.starts_with("http") {
+        return Err("Invalid URL format. Must start with http:// or https://".to_string());
+    }
+
+    // Validate model names
+    let vision_model = vision_model.trim();
+    let text_model = text_model.trim();
+    if vision_model.is_empty() || text_model.is_empty() {
+        return Err("Model names cannot be empty".to_string());
+    }
+
+    config.set_ollama_url(url.to_string());
+    config.set_ollama_vision_model(vision_model.to_string());
+    config.set_ollama_text_model(text_model.to_string());
+
+    // Persist to config file
+    let mut saved_config = load_config();
+    saved_config.ollama_url = Some(url.to_string());
+    saved_config.ollama_vision_model = Some(vision_model.to_string());
+    saved_config.ollama_text_model = Some(text_model.to_string());
+    save_config(&saved_config)?;
+
+    tracing::info!(
+        "Ollama config updated: url={}, vision={}, text={}",
+        url,
+        vision_model,
+        text_model
+    );
+    Ok(())
+}
+
+/// Reset Ollama configuration to defaults
+#[tauri::command]
+pub fn reset_ollama_config() -> Result<OllamaConfig, String> {
+    let config = crate::utils::runtime_config();
+    config.reset_ollama_to_defaults();
+
+    // Clear from saved config
+    let mut saved_config = load_config();
+    saved_config.ollama_url = None;
+    saved_config.ollama_vision_model = None;
+    saved_config.ollama_text_model = None;
+    save_config(&saved_config)?;
+
+    tracing::info!("Ollama config reset to defaults");
+    Ok(get_ollama_config())
+}
+
+/// Check if Ollama is running and return status
+#[tauri::command]
+pub async fn get_ollama_status(
+    ai_router: State<'_, Arc<SmartAiRouter>>,
+) -> Result<serde_json::Value, String> {
+    // Refresh Ollama availability
+    ai_router.refresh_ollama_status().await;
+
+    let available = ai_router.has_ollama();
+    let has_gemini = ai_router.has_gemini();
+    let active = ai_router.active_provider().to_string();
+
+    Ok(serde_json::json!({
+        "ollama_available": available,
+        "gemini_configured": has_gemini,
+        "active_provider": active
+    }))
 }
 
 /// Generated puzzle with ID for frontend
@@ -586,7 +696,7 @@ fn generate_puzzle_id(prefix: &str) -> String {
 /// Helper: Common logic to register a dynamic puzzle
 async fn register_dynamic_puzzle(
     puzzles: &std::sync::RwLock<Vec<Puzzle>>,
-    dynamic: crate::ai_client::DynamicPuzzle,
+    dynamic: crate::gemini_client::DynamicPuzzle,
     id_prefix: &str,
 ) -> Result<GeneratedPuzzle, String> {
     let id = generate_puzzle_id(id_prefix);
@@ -621,7 +731,7 @@ async fn register_dynamic_puzzle(
 #[tauri::command]
 pub async fn start_investigation(
     _app_handle: tauri::AppHandle,
-    gemini: State<'_, Arc<GeminiClient>>,
+    ai_router: State<'_, Arc<SmartAiRouter>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
     session: State<'_, Arc<crate::memory::SessionMemory>>, // Inject SessionMemory
 ) -> Result<GeneratedPuzzle, String> {
@@ -677,7 +787,7 @@ pub async fn start_investigation(
     tracing::info!("Starting investigation for url: {}", redacted_url);
 
     // Call AI
-    let dynamic = gemini
+    let dynamic = ai_router
         .generate_dynamic_puzzle(&redacted_url, &title, &redacted_content, &history_context)
         .await
         .map_err(|e| format!("Failed to generate puzzle: {}", e))?;
@@ -717,7 +827,7 @@ pub async fn generate_puzzle_from_history(
     seed_title: String,
     recent_history: Vec<HistoryItem>,
     top_sites: Vec<TopSite>,
-    gemini: State<'_, Arc<GeminiClient>>,
+    ai_router: State<'_, Arc<SmartAiRouter>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<GeneratedPuzzle, String> {
     let redacted_url = crate::privacy::redact_pii(&seed_url);
@@ -750,7 +860,7 @@ pub async fn generate_puzzle_from_history(
 
     tracing::info!("Generating puzzle from history with seed: {}", redacted_url);
 
-    let dynamic = gemini
+    let dynamic = ai_router
         .generate_dynamic_puzzle(&redacted_url, &seed_title, "", &combined_context)
         .await
         .map_err(|e| format!("Failed to generate puzzle: {}", e))?;

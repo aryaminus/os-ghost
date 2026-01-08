@@ -159,6 +159,14 @@ export function useGhostGame() {
 	const agentCycleInProgressRef = useRef(false);
 	// Debounce timer for navigation events
 	const navigationDebounceRef = useRef(null);
+	// Mounted state for safe async cleanup
+	const isMountedRef = useRef(true);
+
+	// Ref for function hoisting (must be declared before use)
+	const handleNavigationRef = useRef(null);
+	const handlePageContentRef = useRef(null);
+	const advanceToNextPuzzleRef = useRef(null);
+	const triggerPuzzleGenerationRef = useRef(null);
 
 	/**
 	 * Detect system status (Chrome, extension, etc.)
@@ -317,20 +325,7 @@ export function useGhostGame() {
 			}));
 		}
 	}, []);
-	// Load persistent state and check API key on mount
-	useEffect(() => {
-		initializeGame();
-	}, []);
-
-	// Listen for hint_available event instead of polling
-	// This is handled in the main event listener effect below
-
-	const handleNavigationRef = useRef(null);
-	const handlePageContentRef = useRef(null);
-	const advanceToNextPuzzleRef = useRef(null);
-	const triggerPuzzleGenerationRef = useRef(null);
-
-	// Update ref when function changes
+	// Update refs when functions change (must happen before event listeners use them)
 	useEffect(() => {
 		triggerPuzzleGenerationRef.current = triggerDynamicPuzzle;
 	}, [triggerDynamicPuzzle]);
@@ -525,6 +520,7 @@ export function useGhostGame() {
 
 		return () => {
 			isUnmounting = true;
+			isMountedRef.current = false;
 			unlistenFns.forEach((fn) => fn());
 			// Clean up navigation debounce timer
 			if (navigationDebounceRef.current) {
@@ -536,15 +532,18 @@ export function useGhostGame() {
 
 	/**
 	 * Initialize game by loading persistent state and puzzles from backend.
+	 * Wrapped in useCallback for proper useEffect dependency.
 	 * @returns {Promise<void>}
 	 */
-	const initializeGame = async () => {
+	const initializeGame = useCallback(async () => {
 		try {
 			// Load persistent state from backend
 			const savedState = await invoke("get_game_state");
 
 			// Check API key
 			const configured = await invoke("check_api_key");
+
+			if (!isMountedRef.current) return;
 
 			setGameState((prev) => ({
 				...prev,
@@ -562,12 +561,18 @@ export function useGhostGame() {
 				log(
 					"[Ghost] Found existing content, triggering initial puzzle..."
 				);
-				triggerDynamicPuzzle();
+				triggerPuzzleGenerationRef.current?.();
 			}
 		} catch (err) {
 			console.error("[Ghost] Failed to initialize game:", err);
 		}
-	};
+	}, []);
+
+	// Load persistent state and check API key on mount
+	useEffect(() => {
+		isMountedRef.current = true;
+		initializeGame();
+	}, [initializeGame]);
 
 	/**
 	 * Advance to the next puzzle after solving current one.
@@ -703,10 +708,12 @@ export function useGhostGame() {
 
 	/**
 	 * Capture screen and analyze with Gemini Vision AI.
+	 * Uses gameStateRef to avoid stale closures.
 	 * @returns {Promise<string|null>} Analysis text or null if failed
 	 */
-	const captureAndAnalyze = async () => {
-		if (!gameState.apiKeyConfigured) {
+	const captureAndAnalyze = useCallback(async () => {
+		const currentState = gameStateRef.current;
+		if (!currentState.apiKeyConfigured) {
 			setError("GEMINI_API_KEY not configured");
 			return null;
 		}
@@ -718,6 +725,8 @@ export function useGhostGame() {
 			const analysis = /** @type {string} */ (
 				await invoke("capture_and_analyze")
 			);
+			if (!isMountedRef.current) return null;
+
 			setGameState((prev) => ({
 				...prev,
 				state: "idle",
@@ -725,19 +734,24 @@ export function useGhostGame() {
 			}));
 			return analysis;
 		} catch (err) {
-			setError(/** @type {string} */ (err));
-			setGameState((prev) => ({ ...prev, state: "idle" }));
+			if (isMountedRef.current) {
+				setError(/** @type {string} */ (err));
+				setGameState((prev) => ({ ...prev, state: "idle" }));
+			}
 			return null;
 		} finally {
-			setIsLoading(false);
+			if (isMountedRef.current) {
+				setIsLoading(false);
+			}
 		}
-	};
+	}, []);
 
 	/**
 	 * Verify if the current screen matches the puzzle clue.
+	 * Uses refs to avoid stale closures and isMountedRef for safe cleanup.
 	 * @returns {Promise<Object|null>} Verification result
 	 */
-	const verifyScreenshotProof = async () => {
+	const verifyScreenshotProof = useCallback(async () => {
 		const currentState = gameStateRef.current;
 		if (!currentState.apiKeyConfigured || !currentState.puzzleId) {
 			return null;
@@ -755,6 +769,8 @@ export function useGhostGame() {
 				puzzleId: currentState.puzzleId,
 			});
 
+			if (!isMountedRef.current) return null;
+
 			log(" Verification result:", result);
 
 			if (result.found) {
@@ -767,8 +783,12 @@ export function useGhostGame() {
 						"Proof accepted! You found the fragment.",
 					proximity: 1.0,
 				}));
-				// Advance after delay
-				setTimeout(() => advanceToNextPuzzle(), 4000);
+				// Advance after delay - use ref to avoid stale closure
+				setTimeout(() => {
+					if (isMountedRef.current) {
+						advanceToNextPuzzleRef.current?.();
+					}
+				}, 4000);
 			} else {
 				setGameState((prev) => ({
 					...prev,
@@ -782,16 +802,20 @@ export function useGhostGame() {
 			return result;
 		} catch (err) {
 			console.error("[Ghost] Verification failed:", err);
-			setGameState((prev) => ({
-				...prev,
-				state: "idle",
-				dialogue: "I couldn't verify that visual...",
-			}));
+			if (isMountedRef.current) {
+				setGameState((prev) => ({
+					...prev,
+					state: "idle",
+					dialogue: "I couldn't verify that visual...",
+				}));
+			}
 			return null;
 		} finally {
-			setIsLoading(false);
+			if (isMountedRef.current) {
+				setIsLoading(false);
+			}
 		}
-	};
+	}, [triggerBrowserEffect]);
 
 	/**
 	 * Show the next available hint if timer has elapsed.

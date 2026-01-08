@@ -2,7 +2,7 @@
 //! Generates Ghost dialogue and manages personality/mood
 
 use super::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
-use crate::ai_client::GeminiClient;
+use crate::ai_provider::SmartAiRouter;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -40,12 +40,12 @@ impl GhostMood {
 
 /// Narrator agent for dialogue generation
 pub struct NarratorAgent {
-    gemini: Arc<GeminiClient>,
+    ai_router: Arc<SmartAiRouter>,
 }
 
 impl NarratorAgent {
-    pub fn new(gemini: Arc<GeminiClient>) -> Self {
-        Self { gemini }
+    pub fn new(ai_router: Arc<SmartAiRouter>) -> Self {
+        Self { ai_router }
     }
 
     /// Generate contextual dialogue
@@ -70,7 +70,7 @@ impl NarratorAgent {
         );
 
         let dialogue = self
-            .gemini
+            .ai_router
             .generate_dialogue(&prompt, mood.as_prompt())
             .await
             .map_err(|e| AgentError::ServiceError(e.to_string()))?;
@@ -88,7 +88,7 @@ impl NarratorAgent {
         );
 
         let dialogue = self
-            .gemini
+            .ai_router
             .generate_dialogue(&prompt, "excited and grateful")
             .await
             .map_err(|e| AgentError::ServiceError(e.to_string()))?;

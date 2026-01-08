@@ -2,13 +2,15 @@
 //! A screen-aware meta-game where an AI entity lives in your desktop
 
 // Core modules
-pub mod ai_client;
+pub mod gemini_client;
+pub mod ai_provider;
 pub mod bridge;
 pub mod capture;
 pub mod game_state;
 pub mod history;
 pub mod ipc;
 pub mod monitor;
+pub mod ollama_client;
 pub mod privacy;
 pub mod utils;
 pub mod window;
@@ -18,11 +20,13 @@ pub mod agents;
 pub mod memory;
 pub mod workflow;
 
-use ai_client::GeminiClient;
+use gemini_client::GeminiClient;
+use ai_provider::SmartAiRouter;
 use game_state::EffectQueue;
 use ipc::Puzzle;
-use memory::LongTermMemory; // Import LTM
-use std::sync::{Arc, Mutex}; // Import Mutex
+use memory::LongTermMemory;
+use ollama_client::OllamaClient;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 use window::GhostWindow;
 
@@ -80,21 +84,44 @@ pub fn run() {
         tracing::debug!("No .env file found or error loading: {}", e);
     }
 
-    // Load API key from config file if not in environment
+    // Load configuration from config file if not in environment
     // This allows production builds to use user-provided keys
     // Uses thread-safe runtime config instead of env::set_var
-    if std::env::var("GEMINI_API_KEY").is_err() {
-        if let Some(config_dir) = dirs::config_dir() {
-            let config_path = config_dir.join("os-ghost").join("config.json");
-            if config_path.exists() {
-                if let Ok(contents) = std::fs::read_to_string(&config_path) {
-                    if let Ok(config) = serde_json::from_str::<serde_json::Value>(&contents) {
+    if let Some(config_dir) = dirs::config_dir() {
+        let config_path = config_dir.join("os-ghost").join("config.json");
+        if config_path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&config_path) {
+                if let Ok(config) = serde_json::from_str::<serde_json::Value>(&contents) {
+                    let runtime = utils::runtime_config();
+
+                    // Load Gemini API key if not in environment
+                    if std::env::var("GEMINI_API_KEY").is_err() {
                         if let Some(key) = config.get("gemini_api_key").and_then(|k| k.as_str()) {
                             if !key.is_empty() {
-                                // Use thread-safe runtime config
-                                utils::runtime_config().set_api_key(key.to_string());
-                                tracing::info!("Loaded API key from config file");
+                                runtime.set_api_key(key.to_string());
+                                tracing::info!("Loaded Gemini API key from config file");
                             }
+                        }
+                    }
+
+                    // Load Ollama configuration (always from config, env is fallback)
+                    if let Some(url) = config.get("ollama_url").and_then(|v| v.as_str()) {
+                        if !url.is_empty() {
+                            runtime.set_ollama_url(url.to_string());
+                            tracing::debug!("Loaded Ollama URL from config: {}", url);
+                        }
+                    }
+                    if let Some(model) = config.get("ollama_vision_model").and_then(|v| v.as_str())
+                    {
+                        if !model.is_empty() {
+                            runtime.set_ollama_vision_model(model.to_string());
+                            tracing::debug!("Loaded Ollama vision model from config: {}", model);
+                        }
+                    }
+                    if let Some(model) = config.get("ollama_text_model").and_then(|v| v.as_str()) {
+                        if !model.is_empty() {
+                            runtime.set_ollama_text_model(model.to_string());
+                            tracing::debug!("Loaded Ollama text model from config: {}", model);
                         }
                     }
                 }
@@ -116,20 +143,38 @@ pub fn run() {
             );
             app.manage(puzzles);
 
-            // Initialize Gemini client
+            // Initialize AI Providers (Gemini + Ollama with smart routing)
             // Get API key from thread-safe runtime config or environment
-            let api_key = utils::runtime_config()
-                .get_api_key()
-                .unwrap_or_else(|| {
-                    tracing::warn!("GEMINI_API_KEY not set - user must provide via UI");
-                    String::new()
-                });
+            let api_key = utils::runtime_config().get_api_key();
 
-            // Create shared Gemini client
-            let gemini_client = Arc::new(GeminiClient::new(api_key));
+            // Create Gemini client only if API key exists
+            let gemini_client = if let Some(ref key) = api_key {
+                if !key.is_empty() {
+                    tracing::info!("Gemini API key configured");
+                    Some(Arc::new(GeminiClient::new(key.clone())))
+                } else {
+                    tracing::warn!("GEMINI_API_KEY empty - will use Ollama if available");
+                    None
+                }
+            } else {
+                tracing::warn!("GEMINI_API_KEY not set - will use Ollama if available");
+                None
+            };
 
-            // Register client for direct access by IPC commands
-            app.manage(gemini_client.clone());
+            // Create Ollama client (always available, will check server at runtime)
+            let ollama_client = Arc::new(OllamaClient::new());
+
+            // Create SmartAiRouter with both providers
+            let ai_router = Arc::new(SmartAiRouter::new(gemini_client.clone(), ollama_client));
+
+            // Initialize router (check Ollama availability)
+            let router_init = ai_router.clone();
+            tauri::async_runtime::spawn(async move {
+                router_init.initialize().await;
+            });
+
+            // Register router for IPC commands
+            app.manage(ai_router.clone());
 
             // Create shared memory instances (used by both Orchestrator and Monitor)
             // Note: We use std::sync::Mutex here because:
@@ -149,9 +194,9 @@ pub fn run() {
             let session_for_ipc = Arc::new(memory::SessionMemory::new(store));
             app.manage(session_for_ipc);
 
-            // Create Orchestrator with shared memory
+            // Create Orchestrator with shared memory (uses AI router)
             match crate::agents::AgentOrchestrator::new(
-                gemini_client.clone(),
+                ai_router.clone(),
                 shared_ltm.clone(),
                 shared_session.clone(),
             ) {
@@ -184,8 +229,8 @@ pub fn run() {
                 }
             }
 
-            // Start Background Monitor with shared memory
-            let monitor_gemini = gemini_client.clone();
+            // Start Background Monitor with AI router
+            let monitor_router = ai_router.clone();
             let monitor_handle = app.handle().clone();
             let monitor_ltm = shared_ltm.clone();
             let monitor_session = shared_session.clone();
@@ -193,7 +238,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 monitor::start_monitor_loop(
                     monitor_handle,
-                    monitor_gemini,
+                    monitor_router,
                     monitor_ltm,
                     monitor_session,
                 )
@@ -268,6 +313,11 @@ pub fn run() {
             // Adaptive behavior commands
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,
+            // Ollama configuration commands
+            ipc::get_ollama_config,
+            ipc::set_ollama_config,
+            ipc::reset_ollama_config,
+            ipc::get_ollama_status,
             game_state::get_game_state,
             game_state::reset_game,
             game_state::check_hint_available,
