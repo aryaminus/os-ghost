@@ -13,7 +13,7 @@ use tokio::time::{sleep, Duration};
 const MONITOR_INTERVAL_SECS: u64 = 60;
 
 /// Detected application category
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AppCategory {
     Browser,
@@ -24,13 +24,8 @@ pub enum AppCategory {
     Productivity,
     Gaming,
     System,
+    #[default]
     Unknown,
-}
-
-impl Default for AppCategory {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// Enhanced observation result with app categorization
@@ -93,8 +88,7 @@ pub async fn start_monitor_loop(
             sleep(Duration::from_millis(150)).await;
         }
 
-        let screenshot_res =
-            tokio::task::spawn_blocking(|| capture::capture_primary_monitor()).await;
+        let screenshot_res = tokio::task::spawn_blocking(capture::capture_primary_monitor).await;
 
         if let Some(ref w) = window {
             let _ = w.show();
@@ -114,7 +108,7 @@ pub async fn start_monitor_loop(
                 ltm.get_user_facts()
                     .unwrap_or_default()
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, v))
+                    .map(|(k, v)| format!("{}: {}", k, crate::privacy::redact_pii(v)))
                     .collect::<Vec<_>>()
                     .join(", ")
             } else {
@@ -127,10 +121,10 @@ pub async fn start_monitor_loop(
                     .get_recent_activity(5)
                     .unwrap_or_default()
                     .iter()
-                    .map(|a| a.description.clone())
+                    .map(|a| crate::privacy::redact_pii(&a.description))
                     .collect::<Vec<_>>()
                     .join("; ");
-                (state.current_url, recent)
+                (crate::privacy::redact_pii(&state.current_url), recent)
             } else {
                 (String::new(), String::new())
             };

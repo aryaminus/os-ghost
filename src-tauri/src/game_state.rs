@@ -3,7 +3,6 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -86,11 +85,11 @@ impl Default for GameState {
 }
 
 impl GameState {
-    /// Load state from disk or create default
-    pub fn load() -> Self {
+    /// Load state from disk or create default (Async)
+    pub async fn load() -> Self {
         let path = Self::state_path();
         if path.exists() {
-            match fs::read_to_string(&path) {
+            match tokio::fs::read_to_string(&path).await {
                 Ok(contents) => match serde_json::from_str(&contents) {
                     Ok(state) => {
                         tracing::info!(
@@ -111,11 +110,11 @@ impl GameState {
         Self::default()
     }
 
-    /// Save state to disk
-    pub fn save(&self) -> Result<()> {
+    /// Save state to disk (Async)
+    pub async fn save(&self) -> Result<()> {
         let path = Self::state_path();
         let contents = serde_json::to_string_pretty(self)?;
-        fs::write(&path, contents)?;
+        tokio::fs::write(&path, contents).await?;
         tracing::debug!("Saved game state to {:?}", path);
         Ok(())
     }
@@ -127,8 +126,13 @@ impl GameState {
         path.push("os-ghost");
 
         // Create directory if needed
+        // Note: usage of std::fs here is acceptable as it's a one-off path check or could be moved
+        // but for path construction avoiding sync I/O is best.
+        // We will assume directory exists or lazily create it in save() if we wanted to be pure.
+        // For now, let's keep the path builder synchronous as it generates a PathBuf,
+        // but we should essentially ensure directories exist in save/load.
         if !path.exists() {
-            let _ = fs::create_dir_all(&path);
+            let _ = std::fs::create_dir_all(&path);
         }
 
         path.push(STATE_FILE);
@@ -136,7 +140,7 @@ impl GameState {
     }
 
     /// Mark a puzzle as solved
-    pub fn solve_puzzle(&mut self, puzzle_id: &str, url: &str, title: &str) {
+    pub async fn solve_puzzle(&mut self, puzzle_id: &str, url: &str, title: &str) {
         if !self.solved_puzzles.contains(&puzzle_id.to_string()) {
             self.solved_puzzles.push(puzzle_id.to_string());
             self.discoveries.push(Discovery {
@@ -149,15 +153,15 @@ impl GameState {
             self.hints_revealed = 0;
             self.puzzle_start_time = Some(current_timestamp());
 
-            let _ = self.save();
+            let _ = self.save().await;
         }
     }
 
     /// Start timing for current puzzle
-    pub fn start_puzzle_timer(&mut self) {
+    pub async fn start_puzzle_timer(&mut self) {
         self.puzzle_start_time = Some(current_timestamp());
         self.hints_revealed = 0;
-        let _ = self.save();
+        let _ = self.save().await;
     }
 
     /// Check if a hint should be revealed
@@ -176,10 +180,10 @@ impl GameState {
     }
 
     /// Reveal the next hint
-    pub fn reveal_hint(&mut self) -> Option<usize> {
+    pub async fn reveal_hint(&mut self) -> Option<usize> {
         if self.hints_revealed < MAX_HINTS {
             self.hints_revealed += 1;
-            let _ = self.save();
+            let _ = self.save().await;
             Some(self.hints_revealed - 1)
         } else {
             None
@@ -205,9 +209,9 @@ impl GameState {
     }
 
     /// Reset game to start
-    pub fn reset(&mut self) {
+    pub async fn reset(&mut self) {
         *self = Self::default();
-        let _ = self.save();
+        let _ = self.save().await;
     }
 
     /// Check if game is complete
@@ -226,30 +230,30 @@ fn current_timestamp() -> u64 {
 
 /// Tauri command to get current game state
 #[tauri::command]
-pub fn get_game_state() -> GameState {
-    GameState::load()
+pub async fn get_game_state() -> GameState {
+    GameState::load().await
 }
 
 /// Tauri command to reset game
 #[tauri::command]
-pub fn reset_game() -> Result<(), String> {
-    let mut state = GameState::load();
-    state.reset();
+pub async fn reset_game() -> Result<(), String> {
+    let mut state = GameState::load().await;
+    state.reset().await;
     Ok(())
 }
 
 /// Tauri command to check for available hint
 #[tauri::command]
-pub fn check_hint_available() -> bool {
-    let state = GameState::load();
+pub async fn check_hint_available() -> bool {
+    let state = GameState::load().await;
     state.should_reveal_hint()
 }
 
 /// Tauri command to get next hint
 #[tauri::command]
-pub fn get_next_hint(hints: Vec<String>) -> Option<String> {
-    let mut state = GameState::load();
-    if let Some(hint_index) = state.reveal_hint() {
+pub async fn get_next_hint(hints: Vec<String>) -> Option<String> {
+    let mut state = GameState::load().await;
+    if let Some(hint_index) = state.reveal_hint().await {
         hints.get(hint_index).cloned()
     } else {
         None

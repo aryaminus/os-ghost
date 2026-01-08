@@ -80,6 +80,12 @@ impl MemoryStore {
         Ok(keys)
     }
 
+    /// Count items in a tree (O(1))
+    pub fn count(&self, tree: &str) -> Result<usize> {
+        let tree = self.db.open_tree(tree)?;
+        Ok(tree.len())
+    }
+
     /// Get all values in a tree
     pub fn get_all<T: DeserializeOwned>(&self, tree: &str) -> Result<Vec<T>> {
         let tree = self.db.open_tree(tree)?;

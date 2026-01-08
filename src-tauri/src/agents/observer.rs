@@ -36,13 +36,13 @@ impl ObserverAgent {
     async fn extract_topics(&self, context: &AgentContext) -> AgentResult<Vec<String>> {
         let redacted_content = crate::privacy::redact_pii(&context.page_content);
         let prompt = format!(
-            "Extract 3-5 key topics from this page content. Return as comma-separated list:\n{}",
-            &redacted_content.chars().take(500).collect::<String>()
+            "Extract 3-5 key topics from this page content. Return as comma-separated list, nothing else:\n{}",
+            &redacted_content.chars().take(2000).collect::<String>()
         );
 
         let response = self
             .gemini
-            .generate_dialogue(&prompt, "analytical")
+            .generate_text(&prompt)
             .await
             .map_err(|e| AgentError::ServiceError(e.to_string()))?;
 

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 const PRIVACY_FILE: &str = "privacy_settings.json";
 
 /// Privacy settings stored locally
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PrivacySettings {
     /// User has consented to screen capture
     pub capture_consent: bool,
@@ -18,17 +18,6 @@ pub struct PrivacySettings {
     pub privacy_notice_acknowledged: bool,
     /// Timestamp of consent
     pub consent_timestamp: Option<u64>,
-}
-
-impl Default for PrivacySettings {
-    fn default() -> Self {
-        Self {
-            capture_consent: false,
-            ai_analysis_consent: false,
-            privacy_notice_acknowledged: false,
-            consent_timestamp: None,
-        }
-    }
 }
 
 impl PrivacySettings {
@@ -150,6 +139,8 @@ pub fn redact_pii(text: &str) -> String {
     use regex::Regex;
     use std::sync::OnceLock;
 
+    // Use static OnceLocks to compile regexes only once per program run
+    // This is thread-safe and efficient
     static EMAIL_REGEX: OnceLock<Regex> = OnceLock::new();
     static PHONE_REGEX: OnceLock<Regex> = OnceLock::new();
     static CREDIT_CARD_REGEX: OnceLock<Regex> = OnceLock::new();

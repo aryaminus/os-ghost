@@ -23,10 +23,17 @@ impl GhostWindow {
 
         // Platform-specific transparency setup
         #[cfg(target_os = "macos")]
-        self.setup_macos()?;
+        if let Err(e) = self.setup_macos() {
+            tracing::warn!("Failed to configure macOS specific window settings: {}", e);
+        }
 
         #[cfg(target_os = "windows")]
-        self.setup_windows()?;
+        if let Err(e) = self.setup_windows() {
+            tracing::warn!(
+                "Failed to configure Windows specific window settings: {}",
+                e
+            );
+        }
 
         Ok(())
     }

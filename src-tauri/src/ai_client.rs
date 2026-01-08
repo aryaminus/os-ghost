@@ -1,7 +1,7 @@
 //! Gemini AI client for screen analysis and semantic similarity
 //! Uses Google's Gemini API for vision and text understanding
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -182,7 +182,7 @@ impl GeminiClient {
 
             // Wait longer between checks to avoid busy-looping
             // Cap at 10s to allow periodic re-checks of atomic state
-            let wait_secs = wait_secs.min(10).max(2);
+            let wait_secs = wait_secs.clamp(2, 10);
 
             // Only log on first attempt to avoid spam
             if attempts == 1 {
@@ -238,7 +238,7 @@ impl GeminiClient {
 
         let response = self
             .client
-            .post(&self.get_api_url())
+            .post(self.get_api_url())
             .json(&request)
             .send()
             .await?
@@ -255,11 +255,58 @@ impl GeminiClient {
 
         let text = candidates
             .first()
-            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
-            .flatten()
+            .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
         Ok(text)
+    }
+
+    /// Generate raw text from a prompt
+    pub async fn generate_text(&self, prompt: &str) -> Result<String> {
+        if self.api_key.is_empty() {
+            return Ok(String::new());
+        }
+
+        if !self.wait_for_rate_limit().await {
+            return Err(anyhow::anyhow!("Rate limit exceeded"));
+        }
+
+        let request = GeminiRequest {
+            contents: vec![Content {
+                parts: vec![Part::Text {
+                    text: prompt.to_string(),
+                }],
+            }],
+            generation_config: Some(GenerationConfig {
+                temperature: 0.7,
+                max_output_tokens: 500,
+            }),
+            tools: None,
+        };
+
+        let response = self
+            .client
+            .post(self.get_api_url())
+            .json(&request)
+            .send()
+            .await?
+            .json::<GeminiResponse>()
+            .await?;
+
+        if let Some(error) = response.error {
+            return Err(anyhow::anyhow!("Gemini API error: {}", error.message));
+        }
+
+        let candidates = response
+            .candidates
+            .ok_or_else(|| anyhow::anyhow!("No candidates"))?;
+
+        let text = candidates
+            .first()
+            .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
+            .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
+
+        Ok(text.trim().to_string())
     }
 
     /// Calculate semantic similarity between two URLs (returns 0.0-1.0)
@@ -284,6 +331,8 @@ impl GeminiClient {
             url1, url2
         );
 
+        // We can use the internal logic here or just keep as is to avoid breaking changes if specific config needed
+        // For now, keeping as is but improved structure
         let request = GeminiRequest {
             contents: vec![Content {
                 parts: vec![Part::Text { text: prompt }],
@@ -297,7 +346,7 @@ impl GeminiClient {
 
         let response = self
             .client
-            .post(&self.get_api_url())
+            .post(self.get_api_url())
             .json(&request)
             .send()
             .await?
@@ -314,8 +363,7 @@ impl GeminiClient {
 
         let text = candidates
             .first()
-            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
-            .flatten()
+            .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
         let similarity = text.trim().parse::<f32>().unwrap_or(0.0);
@@ -357,7 +405,7 @@ impl GeminiClient {
 
         let response = self
             .client
-            .post(&self.get_api_url())
+            .post(self.get_api_url())
             .json(&request)
             .send()
             .await?
@@ -374,8 +422,7 @@ impl GeminiClient {
 
         let text = candidates
             .first()
-            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
-            .flatten()
+            .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
         Ok(text.trim().to_string())
@@ -448,7 +495,7 @@ Make the puzzle interesting and educational. The target should be related but no
 
         let response = self
             .client
-            .post(&self.get_api_url())
+            .post(self.get_api_url())
             .json(&request)
             .send()
             .await?
@@ -468,8 +515,7 @@ Make the puzzle interesting and educational. The target should be related but no
 
         let text = candidates
             .first()
-            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
-            .flatten()
+            .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
         tracing::debug!("Raw AI response text: {}", text);
@@ -483,10 +529,8 @@ Make the puzzle interesting and educational. The target should be related but no
             .trim();
 
         // Parse JSON response
-        let puzzle: DynamicPuzzle = serde_json::from_str(clean_text).map_err(|e| {
-            tracing::error!("Failed to parse puzzle JSON: {} - Raw: {}", e, text);
-            anyhow::anyhow!("Failed to parse puzzle JSON: {} - Raw: {}", e, text)
-        })?;
+        let puzzle: DynamicPuzzle = serde_json::from_str(clean_text)
+            .context(format!("Failed to parse puzzle JSON. Raw: {}", text))?;
 
         tracing::info!("Successfully generated puzzle: {:?}", puzzle.clue);
 
@@ -542,7 +586,7 @@ Make the puzzle interesting and educational. The target should be related but no
 
         let response = self
             .client
-            .post(&self.get_api_url())
+            .post(self.get_api_url())
             .json(&request)
             .send()
             .await?
@@ -559,8 +603,7 @@ Make the puzzle interesting and educational. The target should be related but no
 
         let text = candidates
             .first()
-            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
-            .flatten()
+            .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
         let clean_text = text
@@ -618,7 +661,6 @@ pub struct AdaptivePuzzle {
 impl GeminiClient {
     /// Generate an adaptive puzzle based on user's observed activity patterns
     /// Uses activity history to create contextually relevant puzzles
-
     pub async fn generate_adaptive_puzzle(
         &self,
         activities: &[ActivityContext],
@@ -688,7 +730,7 @@ Respond with ONLY valid JSON (no markdown):
 
         let response = self
             .client
-            .post(&self.get_api_url())
+            .post(self.get_api_url())
             .json(&request)
             .send()
             .await?
@@ -705,8 +747,7 @@ Respond with ONLY valid JSON (no markdown):
 
         let text = candidates
             .first()
-            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
-            .flatten()
+            .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text in response"))?;
 
         let clean_text = text
@@ -716,14 +757,10 @@ Respond with ONLY valid JSON (no markdown):
             .trim_end_matches("```")
             .trim();
 
-        let puzzle: AdaptivePuzzle = serde_json::from_str(clean_text).map_err(|e| {
-            tracing::error!(
-                "Failed to parse adaptive puzzle JSON: {} - Raw: {}",
-                e,
-                text
-            );
-            anyhow::anyhow!("Failed to parse adaptive puzzle: {}", e)
-        })?;
+        let puzzle: AdaptivePuzzle = serde_json::from_str(clean_text).context(format!(
+            "Failed to parse adaptive puzzle JSON. Raw: {}",
+            text
+        ))?;
 
         tracing::info!(
             "Generated adaptive puzzle inspired by '{}': {}",
@@ -786,7 +823,7 @@ Respond with ONLY the dialogue text, no quotes or formatting."#,
 
         let response = self
             .client
-            .post(&self.get_api_url())
+            .post(self.get_api_url())
             .json(&request)
             .send()
             .await?
@@ -803,8 +840,7 @@ Respond with ONLY the dialogue text, no quotes or formatting."#,
 
         let text = candidates
             .first()
-            .map(|c| c.content.parts.first().map(|p| p.text.clone()))
-            .flatten()
+            .and_then(|c| c.content.parts.first().map(|p| p.text.clone()))
             .ok_or_else(|| anyhow::anyhow!("No text"))?;
 
         Ok(text.trim().replace('"', ""))

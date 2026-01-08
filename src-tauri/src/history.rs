@@ -71,11 +71,11 @@ pub fn get_recent_urls(limit: usize) -> Result<Vec<HistoryEntry>> {
         "SELECT url, title, visit_count, last_visit_time 
          FROM urls 
          ORDER BY last_visit_time DESC 
-         LIMIT ?1",
+         LIMIT ?",
     )?;
 
     let entries: Vec<HistoryEntry> = stmt
-        .query_map([limit as i64], |row| {
+        .query_map([limit], |row| {
             Ok(HistoryEntry {
                 url: row.get(0)?,
                 title: row.get(1)?,

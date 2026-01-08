@@ -147,6 +147,9 @@ pub fn run() {
                 Err(e) => tracing::error!("Failed to initialize orchestrator: {}", e),
             }
 
+            // Initialize Autonomous Task State (for controlling background loops)
+            app.manage(ipc::AutonomousTask(tokio::sync::Mutex::new(None)));
+
             // Initialize EffectQueue for browser visual effects
             app.manage(Arc::new(EffectQueue::default()));
 
@@ -190,7 +193,7 @@ pub fn run() {
 
                 loop {
                     interval.tick().await;
-                    let state = game_state::GameState::load();
+                    let state = game_state::GameState::load().await;
                     let available = state.should_reveal_hint();
 
                     // Only emit if state changed to true, or periodically to ensure UI is in sync

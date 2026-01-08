@@ -10,15 +10,18 @@ use tauri::Manager;
 // Use the image types from screenshots crate to avoid version conflicts
 use screenshots::image::ImageFormat;
 
+/// Helper: Get the primary screen
+fn get_primary_screen() -> Result<Screen> {
+    let screens = Screen::all()?;
+    screens
+        .first()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("No screens found"))
+}
+
 /// Capture the primary monitor's screen and return as base64-encoded PNG
 pub fn capture_primary_monitor() -> Result<String> {
-    // Get all screens
-    let screens = Screen::all()?;
-
-    // Use primary (first) screen
-    let primary = screens
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("No screens found"))?;
+    let primary = get_primary_screen()?;
 
     // Capture screenshot - returns an ImageBuffer<Rgba<u8>, Vec<u8>>
     let image = primary.capture()?;
@@ -35,11 +38,7 @@ pub fn capture_primary_monitor() -> Result<String> {
 
 /// Capture a specific region of the screen
 pub fn capture_region(x: i32, y: i32, width: u32, height: u32) -> Result<String> {
-    let screens = Screen::all()?;
-
-    let primary = screens
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("No screens found"))?;
+    let primary = get_primary_screen()?;
 
     // Capture the region
     let image = primary.capture_area(x, y, width, height)?;
@@ -68,7 +67,7 @@ pub async fn capture_screen(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     // 2. Perform capture in blocking thread
-    let result = tokio::task::spawn_blocking(|| capture_primary_monitor())
+    let result = tokio::task::spawn_blocking(capture_primary_monitor)
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string());

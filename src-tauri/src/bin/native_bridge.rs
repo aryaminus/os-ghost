@@ -49,7 +49,15 @@ fn main() {
         if tauri_connection.is_none() {
             match TcpStream::connect(format!("127.0.0.1:{}", TAURI_PORT)) {
                 Ok(stream) => {
-                    stream.set_nonblocking(false).ok();
+                    // unexpected delays are bad for IPC, disable Nagle's algo
+                    stream.set_nodelay(true).ok();
+                    // Prevent hanging forever if Tauri stops responding
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                        .ok();
+                    stream
+                        .set_write_timeout(Some(std::time::Duration::from_secs(2)))
+                        .ok();
                     tauri_connection = Some(stream);
                 }
                 Err(_) => {

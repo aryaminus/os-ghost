@@ -213,7 +213,13 @@ impl SessionMemory {
         let key = format!("activity_{}", entry.timestamp);
         self.store.set(ACTIVITY_TREE, &key, &entry)?;
         // Auto-prune to keep history manageable (prevent unlimited growth)
-        self.prune_activity(200)
+        // Optimization: Only prune if we exceed limit + buffer (e.g. 250 items for 200 limit)
+        // This prevents expensive O(N) sort/delete on every single write
+        let count = self.store.count(ACTIVITY_TREE)?;
+        if count > 250 {
+            self.prune_activity(200)?;
+        }
+        Ok(())
     }
 
     /// Get recent activity entries (last N)

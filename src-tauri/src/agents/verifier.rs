@@ -52,12 +52,28 @@ impl VerifierAgent {
     }
 
     /// Check if page content contains expected keywords
-    #[allow(dead_code)]
     fn validate_content(&self, content: &str, keywords: &[&str]) -> bool {
-        let content_lower = content.to_lowercase();
-        keywords
-            .iter()
-            .any(|kw| content_lower.contains(&kw.to_lowercase()))
+        // Construct a single regex for all keywords: (?i)\b(kw1|kw2|kw3)\b
+        // This is much faster than checking contains() on a fully lowercased huge string
+        let pattern = format!(
+            "(?i)\\b({:?})\\b",
+            keywords
+                .iter()
+                .map(|k| k.trim())
+                .filter(|k| !k.is_empty())
+                .collect::<Vec<_>>()
+                .join("|")
+        );
+
+        if let Ok(re) = Regex::new(&pattern) {
+            re.is_match(content)
+        } else {
+            // Fallback to simple contains if regex fails (unlikely)
+            let content_lower = content.to_lowercase();
+            keywords
+                .iter()
+                .any(|kw| content_lower.contains(&kw.to_lowercase()))
+        }
     }
 }
 
