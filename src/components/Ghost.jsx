@@ -292,6 +292,7 @@ const Ghost = () => {
 
 	const [showingKeyInput, setShowingKeyInput] = useState(false);
 	const [showingResetConfirm, setShowingResetConfirm] = useState(false);
+	const [extensionAccordionOpen, setExtensionAccordionOpen] = useState(false);
 
 	// Memoize sprite lookup to avoid object reference on every render
 	const sprite = useMemo(
@@ -486,6 +487,8 @@ const Ghost = () => {
 				<SystemStatusBanner
 					status={systemStatus}
 					extensionConnected={extensionConnected}
+					isExpanded={extensionAccordionOpen}
+					onToggleExpand={setExtensionAccordionOpen}
 				/>
 			)}
 
@@ -559,8 +562,8 @@ const Ghost = () => {
 										<span aria-hidden="true">💭</span>{" "}
 										{companionBehavior.suggestion}
 									</div>
-									{companionBehavior.action ===
-										"generate_adaptive_puzzle" && (
+									{companionBehavior.behavior_type ===
+										"puzzle" && (
 										<button
 											type="button"
 											className="suggestion-action-btn"
@@ -606,10 +609,6 @@ const Ghost = () => {
 											<span aria-hidden="true">🧠</span>{" "}
 											Puzzle From My Observations
 										</button>
-										<div className="helper-text">
-											Generate mysteries from your
-											activity
-										</div>
 									</div>
 								)}
 
@@ -629,16 +628,8 @@ const Ghost = () => {
 											<span aria-hidden="true">📸</span>{" "}
 											Prove Finding
 										</button>
-										<div className="helper-text">
-											Verify you found the solution
-										</div>
 									</div>
 								)}
-
-							{/* Puzzle Counter */}
-							<div className="puzzle-counter" aria-live="polite">
-								Memory Fragment: {gameState.currentPuzzle + 1}/∞
-							</div>
 						</>
 					) : (
 						/* Reset Game Confirmation - Replaces Main UI */

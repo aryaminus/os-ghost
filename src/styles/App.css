@@ -113,10 +113,29 @@ body {
 	max-width: 300px;
 	width: 100%;
 	cursor: grab;
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding-bottom: 8px;
 }
 
 .ghost-container:active {
 	cursor: grabbing;
+}
+
+/* Custom scrollbar for main container */
+.ghost-container::-webkit-scrollbar {
+	width: 4px;
+}
+
+.ghost-container::-webkit-scrollbar-track {
+	background: rgba(0, 0, 0, 0.3);
+	border-radius: 2px;
+}
+
+.ghost-container::-webkit-scrollbar-thumb {
+	background: var(--ghost-glow);
+	border-radius: 2px;
 }
 
 /* Ghost sprite (ASCII art) */
@@ -249,8 +268,25 @@ body {
 	border: 1px solid var(--border-color);
 	border-radius: 6px;
 	padding: 6px;
+	min-height: 50px;
 	max-height: 70px;
-	overflow: hidden;
+	overflow-y: auto;
+	flex-shrink: 0;
+}
+
+/* Custom scrollbar for clue box */
+.clue-box::-webkit-scrollbar {
+	width: 4px;
+}
+
+.clue-box::-webkit-scrollbar-track {
+	background: rgba(0, 0, 0, 0.3);
+	border-radius: 2px;
+}
+
+.clue-box::-webkit-scrollbar-thumb {
+	background: var(--ghost-glow);
+	border-radius: 2px;
 }
 
 .clue-header {
@@ -273,10 +309,12 @@ body {
 	border: 1px solid var(--border-color);
 	border-radius: 6px;
 	padding: 8px;
+	min-height: 60px;
 	max-height: 80px;
 	overflow-y: auto;
 	overflow-x: hidden;
 	position: relative;
+	flex-shrink: 0;
 }
 
 /* Custom scrollbar for dialogue box */
@@ -1316,6 +1354,23 @@ body {
 	font-size: 10px;
 	color: var(--text-secondary);
 	line-height: 1.4;
+	max-height: 60px;
+	overflow-y: auto;
+}
+
+/* Custom scrollbar for suggestion message */
+.suggestion-message::-webkit-scrollbar {
+	width: 4px;
+}
+
+.suggestion-message::-webkit-scrollbar-track {
+	background: rgba(0, 0, 0, 0.3);
+	border-radius: 2px;
+}
+
+.suggestion-message::-webkit-scrollbar-thumb {
+	background: var(--ghost-glow);
+	border-radius: 2px;
 }
 
 .suggestion-action-btn {

@@ -74,8 +74,12 @@ const getStatusMessage = (status) => {
  * @param {boolean} props.extensionConnected - Live extension connection state (WebSocket)
  * @returns {JSX.Element} Status banner component
  */
-const SystemStatusBanner = ({ status, extensionConnected }) => {
-	const [isExpanded, setIsExpanded] = useState(false);
+const SystemStatusBanner = ({
+	status,
+	extensionConnected,
+	isExpanded = false,
+	onToggleExpand,
+}) => {
 	const [isLaunching, setIsLaunching] = useState(false);
 	const [actionError, setActionError] = useState(null);
 
@@ -189,19 +193,13 @@ const SystemStatusBanner = ({ status, extensionConnected }) => {
 		}
 	};
 
-	/**
-	 * Toggle expanded state.
-	 */
 	const toggleExpanded = useCallback(() => {
-		setIsExpanded((prev) => !prev);
-	}, []);
+		onToggleExpand?.((prev) => !prev);
+	}, [onToggleExpand]);
 
-	/**
-	 * Expand the panel.
-	 */
 	const expand = useCallback(() => {
-		setIsExpanded(true);
-	}, []);
+		onToggleExpand?.(true);
+	}, [onToggleExpand]);
 
 	/**
 	 * Handle keyboard interaction for toggle.
@@ -281,7 +279,7 @@ const SystemStatusBanner = ({ status, extensionConnected }) => {
 			</div>
 
 			{/* Expandable content */}
-			{(isExpanded || statusLevel !== STATUS_LEVELS.CONNECTED) && (
+			{isExpanded && (
 				<div id={contentId} className="status-content">
 					{/* Error Banner */}
 					{actionError && (
@@ -409,10 +407,14 @@ SystemStatusBanner.propTypes = {
 		extensionConnected: PropTypes.bool,
 	}).isRequired,
 	extensionConnected: PropTypes.bool,
+	isExpanded: PropTypes.bool,
+	onToggleExpand: PropTypes.func,
 };
 
 SystemStatusBanner.defaultProps = {
 	extensionConnected: false,
+	isExpanded: false,
+	onToggleExpand: undefined,
 };
 
 export default React.memo(SystemStatusBanner);

@@ -8,7 +8,7 @@ use crate::memory::{ActivityEntry, LongTermMemory, SessionMemory};
 use crate::utils::{clean_json_response, current_timestamp};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::time::{sleep, Duration};
 
 const MONITOR_INTERVAL_SECS: u64 = 60;
@@ -81,19 +81,8 @@ pub async fn start_monitor_loop(
     loop {
         sleep(Duration::from_secs(MONITOR_INTERVAL_SECS)).await;
 
-        // 1. Capture Screen (Self-hiding)
-        let window = app.get_webview_window("main");
-
-        if let Some(ref w) = window {
-            let _ = w.hide();
-            sleep(Duration::from_millis(150)).await;
-        }
-
+        // 1. Capture Screen (no window hiding - better UX)
         let screenshot_res = tokio::task::spawn_blocking(capture::capture_primary_monitor).await;
-
-        if let Some(ref w) = window {
-            let _ = w.show();
-        }
 
         let base64_image = match screenshot_res {
             Ok(Ok(img)) => img,
