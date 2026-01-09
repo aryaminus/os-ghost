@@ -91,11 +91,20 @@ function warn(...args) {
  * @typedef {Object} UseGhostGameReturn
  * @property {GameState} gameState - Current game state
  * @property {boolean} isLoading - Whether an async operation is in progress
- * @property {string|null} error - Error message if any
+ * @property {boolean} extensionConnected - Whether Chrome extension is connected (WebSocket)
+ * @property {Object} systemStatus - System status from Tauri backend (Chrome, extension, API key)
+ * @property {Object|null} companionBehavior - Current companion behavior suggestion (if any)
  * @property {function(): Promise<string|null>} captureAndAnalyze - Capture screen and analyze with AI
+ * @property {function(): Promise<Object|null>} verifyScreenshotProof - Verify if current screen matches puzzle
+ * @property {function(string, number?, string?): Promise<void>} triggerBrowserEffect - Trigger visual effect in browser
  * @property {function(): Promise<void>} showHint - Show next available hint
  * @property {function(): void} advanceToNextPuzzle - Move to next puzzle
  * @property {function(): Promise<void>} resetGame - Reset game progress
+ * @property {function(): Promise<void>} triggerDynamicPuzzle - Generate puzzle from current context (start_investigation)
+ * @property {function(): Promise<void>} startBackgroundChecks - Start background monitoring
+ * @property {function(): Promise<void>} enableAutonomousMode - Enable autonomous investigation mode
+ * @property {function(): Promise<void>} detectSystemStatus - Detect system status (Chrome, extension, API key)
+ * @property {function(): Promise<void>} generateAdaptivePuzzle - Generate adaptive puzzle from activity history
  */
 
 /** @type {GameState} */

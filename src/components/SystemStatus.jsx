@@ -66,12 +66,15 @@ const getStatusMessage = (status) => {
 
 /**
  * SystemStatusBanner component - Non-blocking status indicator with actions.
+ * Supports controlled accordion state for persistence across parent re-renders.
  *
  * @param {Object} props - Component props
- * @param {Object} props.status - System status from backend
+ * @param {Object} props.status - System status from backend (Tauri IPC)
  * @param {boolean} props.status.chromeInstalled - Whether Chrome is installed
  * @param {boolean} props.status.extensionConnected - Whether extension is connected
- * @param {boolean} props.extensionConnected - Live extension connection state (WebSocket)
+ * @param {boolean} [props.extensionConnected=false] - Live extension connection state (WebSocket)
+ * @param {boolean} [props.isExpanded=false] - Controlled accordion expanded state
+ * @param {function} [props.onToggleExpand] - Callback to toggle expanded state (receives boolean or updater function)
  * @returns {JSX.Element} Status banner component
  */
 const SystemStatusBanner = ({
