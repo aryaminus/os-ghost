@@ -127,11 +127,22 @@ impl LongTermMemory {
     pub fn record_solved(&self, puzzle: SolvedPuzzle) -> Result<()> {
         self.store.set(PUZZLES_TREE, &puzzle.puzzle_id, &puzzle)?;
 
-        // Update stats
-        let mut stats = self.get_stats()?;
-        stats.puzzles_solved += 1;
-        stats.total_hints_used += puzzle.hints_used;
-        self.save_stats(&stats)?;
+        // Update stats atomically
+        let hints_used = puzzle.hints_used;
+        self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
+            let mut stats = old.unwrap_or_else(|| {
+                // Initialize if missing
+                let now = crate::utils::current_timestamp();
+                PlayerStats {
+                    first_played: now,
+                    last_played: now,
+                    ..Default::default()
+                }
+            });
+            stats.puzzles_solved += 1;
+            stats.total_hints_used += hints_used;
+            Some(stats)
+        })?;
 
         Ok(())
     }
@@ -161,10 +172,19 @@ impl LongTermMemory {
         self.store
             .set(DISCOVERIES_TREE, &discovery.id, &discovery)?;
 
-        // Update stats
-        let mut stats = self.get_stats()?;
-        stats.discoveries_made += 1;
-        self.save_stats(&stats)?;
+        // Update stats atomically
+        self.store.update(STATS_TREE, "player", |old: Option<PlayerStats>| {
+            let mut stats = old.unwrap_or_else(|| {
+                let now = crate::utils::current_timestamp();
+                PlayerStats {
+                    first_played: now,
+                    last_played: now,
+                    ..Default::default()
+                }
+            });
+            stats.discoveries_made += 1;
+            Some(stats)
+        })?;
 
         Ok(())
     }
@@ -232,10 +252,20 @@ impl LongTermMemory {
 
     /// Add playtime
     pub fn add_playtime(&self, seconds: u64) -> Result<()> {
-        let mut stats = self.get_stats()?;
-        stats.total_playtime_secs += seconds;
-        stats.last_played = current_timestamp();
-        self.save_stats(&stats)
+        self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
+            let mut stats = old.unwrap_or_else(|| {
+                let now = crate::utils::current_timestamp();
+                PlayerStats {
+                    first_played: now,
+                    last_played: now,
+                    ..Default::default()
+                }
+            });
+            stats.total_playtime_secs += seconds;
+            stats.last_played = crate::utils::current_timestamp();
+            Some(stats)
+        })?;
+        Ok(())
     }
 
     // --- HITL Feedback (Chapter 13) ---
@@ -244,14 +274,24 @@ impl LongTermMemory {
     pub fn record_feedback(&self, feedback: UserFeedback) -> Result<()> {
         self.store.set(FEEDBACK_TREE, &feedback.id, &feedback)?;
 
-        // Update stats
-        let mut stats = self.get_stats()?;
-        if feedback.is_positive {
-            stats.total_positive_feedback += 1;
-        } else {
-            stats.total_negative_feedback += 1;
-        }
-        self.save_stats(&stats)?;
+        // Update stats atomically
+        let is_positive = feedback.is_positive;
+        self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
+            let mut stats = old.unwrap_or_else(|| {
+                let now = crate::utils::current_timestamp();
+                PlayerStats {
+                    first_played: now,
+                    last_played: now,
+                    ..Default::default()
+                }
+            });
+            if is_positive {
+                stats.total_positive_feedback += 1;
+            } else {
+                stats.total_negative_feedback += 1;
+            }
+            Some(stats)
+        })?;
 
         Ok(())
     }
@@ -318,10 +358,19 @@ impl LongTermMemory {
     pub fn record_escalation(&self, escalation: Escalation) -> Result<()> {
         self.store.set(ESCALATIONS_TREE, &escalation.id, &escalation)?;
 
-        // Update stats
-        let mut stats = self.get_stats()?;
-        stats.total_escalations += 1;
-        self.save_stats(&stats)?;
+        // Update stats atomically
+        self.store.update(STATS_TREE, "player", |old: Option<PlayerStats>| {
+            let mut stats = old.unwrap_or_else(|| {
+                let now = crate::utils::current_timestamp();
+                PlayerStats {
+                    first_played: now,
+                    last_played: now,
+                    ..Default::default()
+                }
+            });
+            stats.total_escalations += 1;
+            Some(stats)
+        })?;
 
         Ok(())
     }
@@ -352,11 +401,16 @@ impl LongTermMemory {
 
     /// Mark an escalation as resolved
     pub fn resolve_escalation(&self, escalation_id: &str, resolution: &str) -> Result<()> {
-        if let Some(mut esc) = self.store.get::<Escalation>(ESCALATIONS_TREE, escalation_id)? {
-            esc.resolved = true;
-            esc.resolution = Some(resolution.to_string());
-            self.store.set(ESCALATIONS_TREE, escalation_id, &esc)?;
-        }
+        let res_str = resolution.to_string();
+        self.store.update(ESCALATIONS_TREE, escalation_id, move |old: Option<Escalation>| {
+            if let Some(mut esc) = old {
+                esc.resolved = true;
+                esc.resolution = Some(res_str.clone());
+                Some(esc)
+            } else {
+                None
+            }
+        })?;
         Ok(())
     }
 

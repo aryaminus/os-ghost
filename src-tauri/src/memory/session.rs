@@ -121,57 +121,79 @@ impl SessionMemory {
 
     /// Update last activity timestamp
     pub fn touch(&self) -> Result<()> {
-        let mut state = self.load()?;
-        state.last_activity = current_timestamp();
-        self.save(&state)
+        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            state.last_activity = current_timestamp();
+            Some(state)
+        })?;
+        Ok(())
     }
 
     /// Store latest page content
     pub fn store_content(&self, content: String) -> Result<()> {
-        let mut state = self.load()?;
-        state.current_content = Some(content);
-        self.save(&state)
+        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            state.current_content = Some(content.clone());
+            Some(state)
+        })?;
+        Ok(())
     }
 
     /// Add URL to recent history
     /// Uses VecDeque for O(1) operations at both ends
     pub fn add_url(&self, url: &str) -> Result<()> {
-        let mut state = self.load()?;
-        state.current_url = url.to_string();
-        state.recent_urls.push_back(url.to_string());
-        // Keep only last 10 URLs - O(1) pop from front with VecDeque
-        while state.recent_urls.len() > 10 {
-            state.recent_urls.pop_front();
-        }
-        state.last_activity = current_timestamp();
-        self.save(&state)
+        let url_string = url.to_string();
+        self.store.update(SESSION_TREE, "current", move |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            state.current_url = url_string.clone();
+            state.recent_urls.push_back(url_string.clone());
+            // Keep only last 10 URLs - O(1) pop from front with VecDeque
+            while state.recent_urls.len() > 10 {
+                state.recent_urls.pop_front();
+            }
+            state.last_activity = current_timestamp();
+            Some(state)
+        })?;
+        Ok(())
     }
 
     /// Update proximity score
     pub fn set_proximity(&self, proximity: f32) -> Result<()> {
-        let mut state = self.load()?;
-        state.proximity = proximity;
-        self.save(&state)
+        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            state.proximity = proximity;
+            Some(state)
+        })?;
+        Ok(())
     }
 
     /// Set the current app mode
     pub fn set_mode(&self, mode: AppMode) -> Result<()> {
-        let mut state = self.load()?;
-        if state.current_mode != mode {
-            let now = current_timestamp();
-            state.current_mode = mode.clone();
-            state.last_mode_change = now;
-
-            // Log mode change
-            self.add_activity(ActivityEntry {
-                activity_type: "mode_change".to_string(),
-                description: format!("Switched to {:?} mode", mode),
-                timestamp: now,
-                metadata: None,
-            })?;
-
-            self.save(&state)?;
-        }
+        let mode_clone = mode.clone();
+        
+        // We need to check if mode changed to log it, so we do this in two steps or inside update
+        // Inside update is safer for consistency
+        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            if state.current_mode != mode_clone {
+                state.current_mode = mode_clone.clone();
+                state.last_mode_change = current_timestamp();
+                // Note: We can't easily log activity inside this closure because add_activity 
+                // requires &self and returns Result, which doesn't fit the closure signature.
+                // We'll accept a small race here or move logging outside.
+                // Given logging is append-only, it's safe to do outside.
+            }
+            Some(state)
+        })?;
+        
+        // Log activity (best effort)
+        self.add_activity(ActivityEntry {
+            activity_type: "mode_change".to_string(),
+            description: format!("Switched to {:?} mode", mode),
+            timestamp: current_timestamp(),
+            metadata: None,
+        })?;
+        
         Ok(())
     }
 
@@ -182,17 +204,23 @@ impl SessionMemory {
 
     /// Increment screenshot counter
     pub fn record_screenshot(&self) -> Result<()> {
-        let mut state = self.load()?;
-        state.screenshots_taken += 1;
-        state.last_activity = current_timestamp();
-        self.save(&state)
+        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            state.screenshots_taken += 1;
+            state.last_activity = current_timestamp();
+            Some(state)
+        })?;
+        Ok(())
     }
 
     /// Increment puzzles solved counter
     pub fn record_puzzle_solved(&self) -> Result<()> {
-        let mut state = self.load()?;
-        state.puzzles_solved_session += 1;
-        self.save(&state)
+        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            state.puzzles_solved_session += 1;
+            Some(state)
+        })?;
+        Ok(())
     }
 
     // --- Activity Log ---

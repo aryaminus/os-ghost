@@ -57,8 +57,38 @@ impl MemoryStore {
         let tree = self.db.open_tree(tree)?;
         let bytes = serde_json::to_vec(value)?;
         tree.insert(key.as_bytes(), bytes)?;
-        tree.flush()?;
+        // Performance Fix: Removed automatic flush() on every write.
+        // Callers should call flush() explicitly at checkpoints.
         Ok(())
+    }
+
+    /// Atomically update a value (Read-Modify-Write)
+    /// Prevents race conditions when multiple threads modify the same key
+    pub fn update<T, F>(&self, tree: &str, key: &str, f: F) -> Result<Option<T>>
+    where
+        T: Serialize + DeserializeOwned,
+        F: Fn(Option<T>) -> Option<T>,
+    {
+        let tree = self.db.open_tree(tree)?;
+        
+        let res = tree.fetch_and_update(key.as_bytes(), |old_bytes| {
+            // Deserialize old value (if any)
+            let old_val = old_bytes.and_then(|bytes| {
+                serde_json::from_slice::<T>(bytes).ok()
+            });
+
+            // Apply update function
+            let new_val = f(old_val);
+
+            // Serialize new value
+            new_val.map(|v| serde_json::to_vec(&v).expect("Serialization failed in atomic update"))
+        })?;
+
+        // Return the new value
+        match res {
+            Some(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
+            None => Ok(None),
+        }
     }
 
     /// Delete a key
@@ -102,7 +132,7 @@ impl MemoryStore {
     pub fn clear_tree(&self, tree: &str) -> Result<()> {
         let tree = self.db.open_tree(tree)?;
         tree.clear()?;
-        tree.flush()?;
+        // Removed flush() here as well
         Ok(())
     }
 
