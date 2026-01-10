@@ -191,50 +191,6 @@ impl Workflow for LoopWorkflow {
     }
 }
 
-/// Create a hot/cold feedback loop for autonomous monitoring
-/// Enhanced with self-correction: tracks progress and adapts when stagnating
-pub fn create_hotcold_loop(observer: Arc<dyn Agent>, max_iter: usize, delay: u64) -> LoopWorkflow {
-    LoopWorkflow::new(
-        "HotColdLoop",
-        observer,
-        Box::new(|output| {
-            // Stop when puzzle is solved or very close
-            matches!(output.next_action, Some(NextAction::PuzzleSolved)) || output.confidence > 0.8
-        }),
-    )
-    .max_iterations(max_iter)
-    .delay_ms(delay)
-    .stagnation_threshold(3)
-    .with_context_modifier(Box::new(|ctx, output| {
-        // Self-correction: Modify context based on previous output
-        let mut new_ctx = ctx.clone();
-        
-        // Update proximity from output
-        if let Some(proximity) = output.data.get("proximity") {
-            if let Some(p) = proximity.as_f64() {
-                new_ctx.proximity = p as f32;
-            }
-        }
-        
-        // Track this output for self-reflection
-        new_ctx.previous_outputs.push(output.result.clone());
-        
-        // If confidence is very low, note the failed approach
-        if output.confidence < 0.2 {
-            let failed = format!(
-                "Low confidence ({:.0}%) at: {}",
-                output.confidence * 100.0,
-                crate::privacy::redact_pii(&ctx.current_url)
-            );
-            if !new_ctx.planning.failed_approaches.contains(&failed) {
-                new_ctx.planning.failed_approaches.push(failed);
-            }
-        }
-        
-        new_ctx
-    }))
-}
-
 /// Create an adaptive loop with planner integration
 /// This loop can revise its search strategy based on stagnation
 pub fn create_adaptive_loop(

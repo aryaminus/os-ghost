@@ -55,7 +55,7 @@ pub struct PlayerStats {
 }
 
 /// Type of content being rated
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum FeedbackTarget {
     /// Feedback on a hint the ghost gave
     Hint,
@@ -147,7 +147,8 @@ impl LongTermMemory {
         Ok(())
     }
 
-    /// Check if a puzzle was solved
+    /// Check if a puzzle was solved (currently unused - kept for future puzzle progression)
+    #[allow(dead_code)]
     pub fn is_solved(&self, puzzle_id: &str) -> Result<bool> {
         Ok(self
             .store
@@ -155,19 +156,22 @@ impl LongTermMemory {
             .is_some())
     }
 
-    /// Get all solved puzzles
+    /// Get all solved puzzles (currently unused - kept for leaderboards)
+    #[allow(dead_code)]
     pub fn get_solved_puzzles(&self) -> Result<Vec<SolvedPuzzle>> {
         self.store.get_all(PUZZLES_TREE)
     }
 
-    /// Get count of solved puzzles
+    /// Get count of solved puzzles (currently unused - kept for stats)
+    #[allow(dead_code)]
     pub fn solved_count(&self) -> Result<usize> {
-        Ok(self.store.list_keys(PUZZLES_TREE)?.len())
+        self.store.count(PUZZLES_TREE)
     }
 
     // --- Discoveries ---
 
-    /// Record a discovery
+    /// Record a discovery (currently unused - kept for future features)
+    #[allow(dead_code)]
     pub fn record_discovery(&self, discovery: Discovery) -> Result<()> {
         self.store
             .set(DISCOVERIES_TREE, &discovery.id, &discovery)?;
@@ -189,7 +193,8 @@ impl LongTermMemory {
         Ok(())
     }
 
-    /// Get all discoveries
+    /// Get all discoveries (currently unused - kept for future features)
+    #[allow(dead_code)]
     pub fn get_discoveries(&self) -> Result<Vec<Discovery>> {
         self.store.get_all(DISCOVERIES_TREE)
     }
@@ -245,12 +250,14 @@ impl LongTermMemory {
             .pipe(Ok)
     }
 
-    /// Save player statistics
+    /// Save player statistics (currently unused - use update() instead)
+    #[allow(dead_code)]
     pub fn save_stats(&self, stats: &PlayerStats) -> Result<()> {
         self.store.set(STATS_TREE, "player", stats)
     }
 
-    /// Add playtime
+    /// Add playtime (currently unused - kept for session tracking)
+    #[allow(dead_code)]
     pub fn add_playtime(&self, seconds: u64) -> Result<()> {
         self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
             let mut stats = old.unwrap_or_else(|| {
@@ -322,18 +329,11 @@ impl LongTermMemory {
         self.store.get_all(FEEDBACK_TREE)
     }
 
-    /// Get feedback by type
+    /// Get feedback by type (currently unused - kept for analytics)
+    #[allow(dead_code)]
     pub fn get_feedback_by_target(&self, target: FeedbackTarget) -> Result<Vec<UserFeedback>> {
         let all = self.get_feedback()?;
-        Ok(all
-            .into_iter()
-            .filter(|f| matches!((&f.target, &target), 
-                (FeedbackTarget::Hint, FeedbackTarget::Hint) |
-                (FeedbackTarget::Dialogue, FeedbackTarget::Dialogue) |
-                (FeedbackTarget::PuzzleDifficulty, FeedbackTarget::PuzzleDifficulty) |
-                (FeedbackTarget::Experience, FeedbackTarget::Experience)
-            ))
-            .collect())
+        Ok(all.into_iter().filter(|f| f.target == target).collect())
     }
 
     /// Get negative feedback for learning (what to avoid)
@@ -414,7 +414,8 @@ impl LongTermMemory {
         Ok(())
     }
 
-    /// Get unresolved escalations
+    /// Get unresolved escalations (currently unused - kept for admin dashboard)
+    #[allow(dead_code)]
     pub fn get_pending_escalations(&self) -> Result<Vec<Escalation>> {
         let all: Vec<Escalation> = self.store.get_all(ESCALATIONS_TREE)?;
         Ok(all.into_iter().filter(|e| !e.resolved).collect())
@@ -430,7 +431,8 @@ impl LongTermMemory {
 
     // --- Full Reset ---
 
-    /// Reset all long-term memory
+    /// Reset all long-term memory (currently unused - kept for settings UI)
+    #[allow(dead_code)]
     pub fn reset_all(&self) -> Result<()> {
         self.store.clear_tree(PUZZLES_TREE)?;
         self.store.clear_tree(DISCOVERIES_TREE)?;
@@ -442,13 +444,21 @@ impl LongTermMemory {
 }
 
 /// Generate random suffix for unique IDs
+/// Uses atomic counter + nanoseconds to minimize collision risk
 fn rand_suffix() -> u32 {
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+    
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
-    nanos % 10000
+    
+    // Combine counter and nanos for better uniqueness
+    (counter.wrapping_mul(31) ^ nanos) % 1_000_000
 }
 
 /// Helper trait for pipe syntax

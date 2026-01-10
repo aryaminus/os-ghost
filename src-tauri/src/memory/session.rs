@@ -6,9 +6,13 @@ use crate::utils::current_timestamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 const SESSION_TREE: &str = "session";
 const ACTIVITY_TREE: &str = "activity_log";
+
+/// Atomic counter for unique activity IDs within a session
+static ACTIVITY_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 /// App mode - companion (passive) or game (active puzzle hunting)
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -224,14 +228,16 @@ impl SessionMemory {
     // --- Activity Log ---
 
     /// Add an activity entry to the log with lazy pruning
-    /// Uses probabilistic pruning to amortize cleanup cost
+    /// Uses atomic counter to prevent key collisions for entries in the same second
     pub fn add_activity(&self, entry: ActivityEntry) -> Result<()> {
-        let key = format!("activity_{}", entry.timestamp);
+        // Use timestamp + atomic counter to guarantee unique keys
+        let counter = ACTIVITY_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let key = format!("activity_{}_{:04}", entry.timestamp, counter % 10000);
         self.store.set(ACTIVITY_TREE, &key, &entry)?;
 
         // Probabilistic pruning: only check count occasionally (1 in 10 writes)
         // This reduces the overhead of count() calls while still preventing unbounded growth
-        if entry.timestamp.is_multiple_of(10) {
+        if counter % 10 == 0 {
             let count = self.store.count(ACTIVITY_TREE)?;
             // Use higher threshold to reduce pruning frequency
             if count > 300 {

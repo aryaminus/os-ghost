@@ -4,7 +4,6 @@
 pub mod long_term;
 pub mod session;
 pub mod store;
-pub mod sync;
 
 pub use long_term::LongTermMemory;
 pub use session::{ActivityEntry, AppMode, SessionMemory};

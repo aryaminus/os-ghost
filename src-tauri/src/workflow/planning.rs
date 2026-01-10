@@ -24,10 +24,6 @@ pub struct PlanningWorkflow {
     verifier: Arc<dyn Agent>,
     /// Narrator agent for dialogue (optional for some workflows)
     narrator: Option<Arc<dyn Agent>>,
-    /// Whether to run planning before each cycle
-    dynamic_replanning: bool,
-    /// Minimum proximity improvement before replanning
-    replan_threshold: f32,
 }
 
 impl PlanningWorkflow {
@@ -43,26 +39,12 @@ impl PlanningWorkflow {
             observer,
             verifier,
             narrator: None,
-            dynamic_replanning: true,
-            replan_threshold: 0.1,
         }
     }
 
     /// Add narrator for full pipeline
     pub fn with_narrator(mut self, narrator: Arc<dyn Agent>) -> Self {
         self.narrator = Some(narrator);
-        self
-    }
-
-    /// Enable/disable dynamic replanning
-    pub fn dynamic_replanning(mut self, enabled: bool) -> Self {
-        self.dynamic_replanning = enabled;
-        self
-    }
-
-    /// Set minimum improvement threshold before replanning
-    pub fn replan_threshold(mut self, threshold: f32) -> Self {
-        self.replan_threshold = threshold;
         self
     }
 
@@ -192,18 +174,6 @@ pub fn create_intelligent_pipeline(
 ) -> PlanningWorkflow {
     PlanningWorkflow::new("IntelligentPipeline", planner, observer, verifier)
         .with_narrator(narrator)
-        .dynamic_replanning(true)
-        .replan_threshold(0.15)
-}
-
-/// Create a lightweight planning workflow for quick checks
-pub fn create_quick_planning_workflow(
-    planner: Arc<PlannerAgent>,
-    observer: Arc<dyn Agent>,
-    verifier: Arc<dyn Agent>,
-) -> PlanningWorkflow {
-    PlanningWorkflow::new("QuickPlanning", planner, observer, verifier)
-        .dynamic_replanning(false) // No replanning for quick checks
 }
 
 #[cfg(test)]
