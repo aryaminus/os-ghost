@@ -66,7 +66,7 @@ impl PlanningWorkflow {
         self
     }
 
-    /// Select appropriate agents based on current strategy
+    /// Select appropriate agents based on strategy
     fn select_agents_for_strategy(&self, strategy: &SearchStrategy) -> Vec<Arc<dyn Agent>> {
         match strategy {
             SearchStrategy::Explore => {
@@ -96,27 +96,6 @@ impl PlanningWorkflow {
                 }
             }
         }
-    }
-
-    /// Check if replanning is needed based on progress
-    /// Called by orchestrator to determine if plan should be revised
-    #[allow(dead_code)]
-    fn should_replan(&self, old_proximity: f32, new_proximity: f32, stagnation: usize) -> bool {
-        if !self.dynamic_replanning {
-            return false;
-        }
-
-        // Replan if:
-        // 1. Significant progress made (crossed a threshold)
-        // 2. Stagnation detected (no progress for several cycles)
-        // 3. Regression detected (proximity decreased significantly)
-        
-        let improvement = new_proximity - old_proximity;
-        let crossed_threshold = (new_proximity * 10.0).floor() > (old_proximity * 10.0).floor();
-        let stagnating = stagnation >= 3;
-        let regressed = improvement < -0.1;
-
-        crossed_threshold || stagnating || regressed
     }
 }
 

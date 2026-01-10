@@ -86,7 +86,18 @@ impl Workflow for LoopWorkflow {
 
         for iteration in 0..self.max_iterations {
             // Process with agent
-            let output = self.agent.process(&current_context).await?;
+            let output_result = self.agent.process(&current_context).await;
+
+            let output = match output_result {
+                Ok(out) => out,
+                Err(crate::agents::traits::AgentError::CircuitOpen(msg)) => {
+                    tracing::warn!("Circuit breaker open in loop '{}': {}. Pausing loop.", self.name, msg);
+                    // Wait longer than usual (e.g. 30s) before retrying or exit
+                    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+                    continue; 
+                }
+                Err(e) => return Err(e),
+            };
 
             // Extract proximity for progress tracking
             let new_proximity = output

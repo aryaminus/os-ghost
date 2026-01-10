@@ -55,8 +55,23 @@ impl Workflow for ParallelWorkflow {
         // Run all in parallel
         let results = join_all(futures).await;
 
-        // Collect successful results
-        let outputs: Vec<AgentOutput> = results.into_iter().filter_map(|r| r.ok()).collect();
+        let mut outputs = Vec::new();
+        let mut errors = Vec::new();
+
+        for result in results {
+            match result {
+                Ok(output) => outputs.push(output),
+                Err(e) => {
+                    tracing::error!("Parallel agent execution failed: {}", e);
+                    errors.push(e);
+                }
+            }
+        }
+
+        // If all failed, return the first error
+        if outputs.is_empty() && !errors.is_empty() {
+            return Err(errors.remove(0));
+        }
 
         Ok(outputs)
     }
