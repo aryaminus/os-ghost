@@ -358,9 +358,10 @@ impl Agent for PlannerAgent {
         );
         data.insert(
             "difficulty".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(planning.difficulty as f64).unwrap(),
-            ),
+            // FIX: Use unwrap_or_else to handle NaN/Infinity cases that would cause panic
+            serde_json::Number::from_f64(planning.difficulty as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or_else(|| serde_json::Value::Number(serde_json::Number::from_f64(0.5).unwrap())),
         );
         data.insert(
             "planning_context".to_string(),

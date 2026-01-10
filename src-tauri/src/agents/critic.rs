@@ -211,9 +211,20 @@ Safety and quality scores should be 0.0-1.0."#,
                 })
             }
             Err(e) => {
-                tracing::warn!("Failed to parse critique response: {}. Approving by default.", e);
-                // Default to approved if we can't parse
-                Ok(ReflectionFeedback::default())
+                // SECURITY FIX: Do NOT default to approved on parse failure
+                // This prevents potentially unsafe content from bypassing validation
+                tracing::error!(
+                    "Failed to parse critique response: {}. Rejecting for safety - content must be re-validated.",
+                    e
+                );
+                Ok(ReflectionFeedback {
+                    approved: false,
+                    critique: "Parse failure - manual review required".to_string(),
+                    issues: vec![format!("Failed to parse AI critique: {}", e)],
+                    suggestions: vec!["Regenerate the content".to_string()],
+                    safety_score: 0.0, // Fail-safe: assume unsafe
+                    quality_score: 0.0,
+                })
             }
         }
     }

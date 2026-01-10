@@ -138,21 +138,38 @@ impl GuardrailAgent {
 
     /// Quick local safety check using pattern matching
     /// Context-aware: checks gaming allowlist before flagging content
+    /// 
+    /// SECURITY NOTE: The allowlist only affects toxicity word checks, NOT blocked patterns.
+    /// Blocked patterns (jailbreaks, harmful content) are ALWAYS checked regardless of context.
     pub fn quick_safety_check(&self, content: &str) -> SafetyEvaluation {
         let content_lower = content.to_lowercase();
         let mut triggered = Vec::new();
 
-        // First check if content matches gaming context allowlist (prevents false positives)
-        let is_gaming_context = self.gaming_context_allowlist.iter().any(|allowed| {
-            content_lower.contains(&allowed.to_lowercase())
-        });
-
-        // Check blocked patterns
+        // ALWAYS check blocked patterns first - these are never bypassed by allowlist
+        // This prevents gaming context from being used to smuggle harmful content
         for pattern in &self.blocked_patterns {
             if content_lower.contains(&pattern.to_lowercase()) {
                 triggered.push(format!("Blocked pattern: {}", pattern));
             }
         }
+
+        // If critical blocked patterns were found, return immediately
+        // Do NOT allow gaming context to bypass these
+        if !triggered.is_empty() {
+            return SafetyEvaluation {
+                is_safe: false,
+                safety_score: 0.1, // Very low score for blocked patterns
+                triggered_policies: triggered,
+                reasoning: "Critical blocked pattern detected".to_string(),
+                pii_detected: false,
+                pii_types: Vec::new(),
+            };
+        }
+
+        // Check if content matches gaming context allowlist (only for toxicity check)
+        let is_gaming_context = self.gaming_context_allowlist.iter().any(|allowed| {
+            content_lower.contains(&allowed.to_lowercase())
+        });
 
         // Quick toxicity indicators - only flag if NOT in gaming context
         if !is_gaming_context {
@@ -346,8 +363,20 @@ Respond in JSON format:
                 })
             }
             Err(e) => {
-                tracing::warn!("Failed to parse safety response: {}. Defaulting to safe.", e);
-                Ok(SafetyEvaluation::default())
+                // SECURITY FIX: Do NOT default to safe on parse failure
+                // This is a fail-safe approach - when in doubt, reject
+                tracing::error!(
+                    "Failed to parse safety response: {}. Rejecting for safety - content must be re-validated.",
+                    e
+                );
+                Ok(SafetyEvaluation {
+                    is_safe: false,
+                    safety_score: 0.0, // Fail-safe: assume unsafe
+                    triggered_policies: vec![format!("Safety evaluation parse failure: {}", e)],
+                    reasoning: "Failed to evaluate content safety - blocking as precaution".to_string(),
+                    pii_detected: false,
+                    pii_types: Vec::new(),
+                })
             }
         }
     }
@@ -396,8 +425,22 @@ Respond in JSON format:
                 })
             }
             Err(e) => {
-                tracing::warn!("Failed to parse PII response: {}. Defaulting to no PII.", e);
-                Ok(SafetyEvaluation::default())
+                // SECURITY FIX: For PII detection, we can be slightly more lenient
+                // since PII detection is supplementary to safety checks
+                // However, we should still log this as an error
+                tracing::warn!(
+                    "Failed to parse PII response: {}. Defaulting to no PII detected (supplementary check).",
+                    e
+                );
+                // Return safe but flag that detection was inconclusive
+                Ok(SafetyEvaluation {
+                    is_safe: true,
+                    safety_score: 0.8, // Slightly reduced confidence
+                    triggered_policies: Vec::new(),
+                    reasoning: format!("PII detection inconclusive: {}", e),
+                    pii_detected: false,
+                    pii_types: Vec::new(),
+                })
             }
         }
     }
