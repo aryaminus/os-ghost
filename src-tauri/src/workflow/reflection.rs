@@ -148,9 +148,9 @@ impl Workflow for ReflectionWorkflow {
                     );
                     last.data.insert(
                         "quality_score".to_string(),
-                        serde_json::Value::Number(
-                            serde_json::Number::from_f64(feedback.quality_score as f64).unwrap(),
-                        ),
+                        serde_json::Number::from_f64(feedback.quality_score as f64)
+                            .map(serde_json::Value::Number)
+                            .unwrap_or(serde_json::Value::Number(serde_json::Number::from(0))),
                     );
                 }
 

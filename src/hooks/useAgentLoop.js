@@ -65,6 +65,10 @@ export function useAgentLoop({
 	const triggerPuzzleGenerationRef = useRef(null);
 	const advancePuzzleRef = useRef(advancePuzzle);
 
+	// Refs for timeout cleanup to prevent memory leaks
+	const advanceTimeoutRef = useRef(null);
+	const lockReleaseTimeoutRef = useRef(null);
+
 	// Keep refs in sync
 	advancePuzzleRef.current = advancePuzzle;
 
@@ -178,7 +182,11 @@ export function useAgentLoop({
 			if (result && isMountedRef.current) {
 				const solved = applyOrchestrationResult(result);
 				if (solved) {
-					setTimeout(() => advancePuzzleRef.current?.(), 5000);
+					// Clear any existing timeout before setting a new one
+					if (advanceTimeoutRef.current) {
+						clearTimeout(advanceTimeoutRef.current);
+					}
+					advanceTimeoutRef.current = setTimeout(() => advancePuzzleRef.current?.(), 5000);
 				}
 			}
 		} catch (err) {
@@ -188,8 +196,11 @@ export function useAgentLoop({
 			if (isMountedRef.current) {
 				setIsProcessing(false);
 			}
-			// Release lock after short delay
-			setTimeout(() => {
+			// Release lock after short delay (with cleanup tracking)
+			if (lockReleaseTimeoutRef.current) {
+				clearTimeout(lockReleaseTimeoutRef.current);
+			}
+			lockReleaseTimeoutRef.current = setTimeout(() => {
 				agentCycleInProgressRef.current = false;
 			}, 300);
 		}
@@ -354,7 +365,11 @@ export function useAgentLoop({
 				});
 
 				if (solved) {
-					setTimeout(() => advancePuzzleRef.current?.(), 5000);
+					// Clear any existing timeout before setting a new one
+					if (advanceTimeoutRef.current) {
+						clearTimeout(advanceTimeoutRef.current);
+					}
+					advanceTimeoutRef.current = setTimeout(() => advancePuzzleRef.current?.(), 5000);
 				}
 			});
 
@@ -416,6 +431,13 @@ export function useAgentLoop({
 			unlistenFns.forEach((fn) => fn());
 			if (navigationDebounceRef.current) {
 				clearTimeout(navigationDebounceRef.current);
+			}
+			// Clean up timeout refs to prevent memory leaks and state updates on unmounted component
+			if (advanceTimeoutRef.current) {
+				clearTimeout(advanceTimeoutRef.current);
+			}
+			if (lockReleaseTimeoutRef.current) {
+				clearTimeout(lockReleaseTimeoutRef.current);
 			}
 		};
 	}, [getGameState, updateGameState]);

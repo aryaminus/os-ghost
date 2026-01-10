@@ -542,9 +542,9 @@ impl Agent for GuardrailAgent {
         );
         data.insert(
             "safety_score".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(evaluation.safety_score as f64).unwrap(),
-            ),
+            serde_json::Number::from_f64(evaluation.safety_score as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Number(serde_json::Number::from(0))),
         );
         data.insert(
             "triggered_policies".to_string(),

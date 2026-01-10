@@ -107,11 +107,9 @@ impl SessionMemory {
     }
 
     /// Load current session state
+    /// Returns the saved state if it exists, otherwise returns a new default state
     pub fn load(&self) -> Result<SessionState> {
-        self.store
-            .get(SESSION_TREE, "current")?
-            .ok_or_else(|| anyhow::anyhow!("No session found"))
-            .or_else(|_| Ok(SessionState::default()))
+        Ok(self.store.get(SESSION_TREE, "current")?.unwrap_or_default())
     }
 
     /// Save session state

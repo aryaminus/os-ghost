@@ -334,15 +334,15 @@ impl Agent for CriticAgent {
         );
         data.insert(
             "safety_score".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(feedback.safety_score as f64).unwrap(),
-            ),
+            serde_json::Number::from_f64(feedback.safety_score as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Number(serde_json::Number::from(0))),
         );
         data.insert(
             "quality_score".to_string(),
-            serde_json::Value::Number(
-                serde_json::Number::from_f64(feedback.quality_score as f64).unwrap(),
-            ),
+            serde_json::Number::from_f64(feedback.quality_score as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Number(serde_json::Number::from(0))),
         );
         data.insert(
             "issues".to_string(),
