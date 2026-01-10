@@ -279,4 +279,9 @@ impl SessionMemory {
         self.store.clear_tree(ACTIVITY_TREE)?;
         Ok(())
     }
+
+    /// Flush all pending writes to disk
+    pub fn flush(&self) -> Result<()> {
+        self.store.flush()
+    }
 }

@@ -16,7 +16,7 @@ use super::guardrail::GuardrailAgent;
 use super::narrator::NarratorAgent;
 use super::observer::ObserverAgent;
 use super::planner::PlannerAgent;
-use super::traits::{Agent, AgentContext, AgentMode, AgentOutput, AgentResult, NextAction, PlanningContext};
+use super::traits::{Agent, AgentContext, AgentMode, AgentOutput, AgentResult, NextAction, PlanningContext, AtomicAgentMetrics, AgentMetrics};
 use super::verifier::VerifierAgent;
 use crate::ai_provider::SmartAiRouter;
 use crate::memory::{LongTermMemory, SessionMemory};
@@ -29,8 +29,10 @@ use crate::workflow::{
     sequential::create_puzzle_pipeline,
     PlanningWorkflow, ReflectionWorkflow, SequentialWorkflow, Workflow,
 };
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// Shared memory types for cross-module access
 pub type SharedLongTermMemory = Arc<Mutex<LongTermMemory>>;
@@ -60,6 +62,8 @@ pub struct AgentOrchestrator {
     /// Agent mode - consolidated runtime toggle (thread-safe via AtomicU8)
     /// 0 = Legacy, 1 = Standard, 2 = Full, 3 = Minimal
     mode: AtomicU8,
+    /// Per-agent performance metrics
+    agent_metrics: HashMap<String, AtomicAgentMetrics>,
 }
 
 /// Result of a full orchestration cycle
@@ -120,6 +124,15 @@ impl AgentOrchestrator {
             3,
         );
 
+        // Initialize per-agent metrics
+        let mut agent_metrics = HashMap::new();
+        agent_metrics.insert("Observer".to_string(), AtomicAgentMetrics::new());
+        agent_metrics.insert("Verifier".to_string(), AtomicAgentMetrics::new());
+        agent_metrics.insert("Narrator".to_string(), AtomicAgentMetrics::new());
+        agent_metrics.insert("Planner".to_string(), AtomicAgentMetrics::new());
+        agent_metrics.insert("Critic".to_string(), AtomicAgentMetrics::new());
+        agent_metrics.insert("Guardrail".to_string(), AtomicAgentMetrics::new());
+
         Ok(Self {
             workflow,
             planning_workflow,
@@ -134,6 +147,7 @@ impl AgentOrchestrator {
             session,
             long_term,
             mode: AtomicU8::new(AgentMode::Standard as u8), // Default to Standard mode
+            agent_metrics,
         })
     }
 
@@ -227,6 +241,41 @@ impl AgentOrchestrator {
     /// Reset LLM call counters (e.g., at session start)
     pub fn reset_llm_call_counts(&self) {
         self.ai_router.reset_call_counts()
+    }
+
+    /// Get per-agent performance metrics snapshots
+    /// Returns a map of agent name -> metrics
+    pub fn get_agent_metrics(&self) -> HashMap<String, AgentMetrics> {
+        self.agent_metrics
+            .iter()
+            .map(|(name, metrics)| (name.clone(), metrics.snapshot()))
+            .collect()
+    }
+
+    /// Record a successful agent call (used by workflows)
+    pub fn record_agent_success(&self, agent_name: &str, duration_ms: u64) {
+        if let Some(metrics) = self.agent_metrics.get(agent_name) {
+            metrics.record_success(duration_ms);
+        }
+    }
+
+    /// Record a failed agent call (used by workflows)
+    pub fn record_agent_failure(&self, agent_name: &str) {
+        if let Some(metrics) = self.agent_metrics.get(agent_name) {
+            metrics.record_failure();
+        }
+    }
+
+    /// Reset all agent metrics
+    pub fn reset_agent_metrics(&self) {
+        for metrics in self.agent_metrics.values() {
+            metrics.reset();
+        }
+    }
+
+    /// Get remaining rate limit for LLM calls
+    pub fn remaining_rate_limit(&self) -> u32 {
+        self.ai_router.remaining_rate_limit()
     }
 
     /// Run the full agent pipeline
@@ -676,5 +725,131 @@ impl AgentOrchestrator {
             output.push_str(&format!("Dynamic: {}\n\n", resource.is_dynamic));
         }
         output
+    }
+
+    // =========================================================================
+    // Lifecycle Hooks (Best Practice from Anthropic's Agent Guide)
+    // =========================================================================
+
+    /// Initialize the orchestrator and all agents
+    /// Call this once at application startup to warm up services
+    pub async fn initialize(&self) -> AgentResult<()> {
+        tracing::info!("Initializing AgentOrchestrator...");
+        let start = Instant::now();
+
+        // Initialize AI router (checks provider availability)
+        self.ai_router.initialize().await;
+
+        // Initialize each agent (they have default no-op implementations)
+        // We call them in parallel for efficiency
+        let init_futures = vec![
+            self.observer.initialize(),
+            self.verifier.initialize(),
+            self.narrator.initialize(),
+            self.planner.initialize(),
+            self.critic.initialize(),
+            self.guardrail.initialize(),
+        ];
+
+        // Wait for all initializations
+        let results = futures::future::join_all(init_futures).await;
+        
+        // Check for any failures
+        for (idx, result) in results.into_iter().enumerate() {
+            if let Err(e) = result {
+                let agent_names = ["Observer", "Verifier", "Narrator", "Planner", "Critic", "Guardrail"];
+                tracing::warn!("{} initialization failed: {}", agent_names[idx], e);
+            }
+        }
+
+        tracing::info!("AgentOrchestrator initialized in {:?}", start.elapsed());
+        Ok(())
+    }
+
+    /// Shutdown the orchestrator gracefully
+    /// Call this before application exit to clean up resources
+    pub async fn shutdown(&self) -> AgentResult<()> {
+        tracing::info!("Shutting down AgentOrchestrator...");
+        
+        // Shutdown each agent
+        let shutdown_futures = vec![
+            self.observer.shutdown(),
+            self.verifier.shutdown(),
+            self.narrator.shutdown(),
+            self.planner.shutdown(),
+            self.critic.shutdown(),
+            self.guardrail.shutdown(),
+        ];
+
+        let results = futures::future::join_all(shutdown_futures).await;
+        
+        for (idx, result) in results.into_iter().enumerate() {
+            if let Err(e) = result {
+                let agent_names = ["Observer", "Verifier", "Narrator", "Planner", "Critic", "Guardrail"];
+                tracing::warn!("{} shutdown failed: {}", agent_names[idx], e);
+            }
+        }
+
+        // Flush memory stores
+        if let Ok(session) = self.session.lock() {
+            if let Err(e) = session.flush() {
+                tracing::warn!("Session memory flush failed: {}", e);
+            }
+        }
+
+        if let Ok(ltm) = self.long_term.lock() {
+            if let Err(e) = ltm.flush() {
+                tracing::warn!("Long-term memory flush failed: {}", e);
+            }
+        }
+
+        tracing::info!("AgentOrchestrator shutdown complete");
+        Ok(())
+    }
+
+    /// Check health of all agents and services
+    /// Returns a map of component name -> is_healthy
+    pub fn health_check(&self) -> HashMap<String, bool> {
+        let mut health = HashMap::new();
+
+        // Check each agent's health
+        health.insert("Observer".to_string(), self.observer.health_check());
+        health.insert("Verifier".to_string(), self.verifier.health_check());
+        health.insert("Narrator".to_string(), self.narrator.health_check());
+        health.insert("Planner".to_string(), self.planner.health_check());
+        health.insert("Critic".to_string(), self.critic.health_check());
+        health.insert("Guardrail".to_string(), self.guardrail.health_check());
+
+        // Check AI provider availability
+        health.insert("AI_Provider".to_string(), self.ai_router.is_available());
+        health.insert("Gemini".to_string(), self.ai_router.has_gemini());
+        health.insert("Ollama".to_string(), self.ai_router.has_ollama());
+
+        // Check memory stores
+        let session_ok = self.session.lock().is_ok();
+        let ltm_ok = self.long_term.lock().is_ok();
+        health.insert("SessionMemory".to_string(), session_ok);
+        health.insert("LongTermMemory".to_string(), ltm_ok);
+
+        health
+    }
+
+    /// Check if the orchestrator is healthy overall
+    /// Returns true if critical components are functioning
+    pub fn is_healthy(&self) -> bool {
+        // Critical: at least one AI provider must be available
+        if !self.ai_router.is_available() {
+            return false;
+        }
+
+        // Critical: memory stores must be accessible
+        if self.session.lock().is_err() || self.long_term.lock().is_err() {
+            return false;
+        }
+
+        // Check all agents
+        self.observer.health_check()
+            && self.verifier.health_check()
+            && self.narrator.health_check()
     }
 }

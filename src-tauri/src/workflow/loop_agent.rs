@@ -5,11 +5,13 @@
 //! - Modifies context based on previous outputs
 //! - Tracks failed approaches for plan revision
 //! - Enables adaptive behavior through context mutation
+//! - Supports graceful cancellation via CancellationToken
 
 use super::Workflow;
-use crate::agents::traits::{Agent, AgentContext, AgentOutput, AgentResult, NextAction};
+use crate::agents::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
 use async_trait::async_trait;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 /// Condition to check for loop termination
 pub type LoopCondition = Box<dyn Fn(&AgentOutput) -> bool + Send + Sync>;
@@ -69,6 +71,135 @@ impl LoopWorkflow {
     pub fn stagnation_threshold(mut self, threshold: usize) -> Self {
         self.stagnation_threshold = threshold;
         self
+    }
+
+    /// Execute the loop with cancellation support
+    /// Checks the cancellation token before each iteration
+    pub async fn execute_with_cancellation(
+        &self,
+        context: &AgentContext,
+        cancel_token: CancellationToken,
+    ) -> AgentResult<Vec<AgentOutput>> {
+        let mut outputs = Vec::new();
+        let mut current_context = context.clone();
+        let mut last_proximity: f32 = 0.0;
+        let mut stagnation_count: usize = 0;
+
+        for iteration in 0..self.max_iterations {
+            // Check for cancellation before each iteration
+            if cancel_token.is_cancelled() {
+                tracing::info!(
+                    "Loop '{}' cancelled after {} iterations",
+                    self.name,
+                    iteration
+                );
+                return Err(AgentError::Cancelled);
+            }
+
+            // Process with agent (with cancellation race)
+            let output_result = tokio::select! {
+                result = self.agent.process(&current_context) => result,
+                _ = cancel_token.cancelled() => {
+                    tracing::info!("Loop '{}' cancelled during agent processing", self.name);
+                    return Err(AgentError::Cancelled);
+                }
+            };
+
+            let output = match output_result {
+                Ok(out) => out,
+                Err(AgentError::CircuitOpen(msg)) => {
+                    tracing::warn!("Circuit breaker open in loop '{}': {}. Pausing loop.", self.name, msg);
+                    // Wait with cancellation support
+                    tokio::select! {
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {},
+                        _ = cancel_token.cancelled() => {
+                            return Err(AgentError::Cancelled);
+                        }
+                    }
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+
+            // Extract proximity for progress tracking
+            let new_proximity = output
+                .data
+                .get("proximity")
+                .and_then(|p| p.as_f64())
+                .map(|p| p as f32)
+                .unwrap_or(output.confidence);
+
+            current_context.proximity = new_proximity;
+
+            // Track stagnation
+            if (new_proximity - last_proximity).abs() < 0.05 {
+                stagnation_count += 1;
+            } else {
+                stagnation_count = 0;
+            }
+            last_proximity = new_proximity;
+
+            // Check termination condition
+            let should_stop = (self.condition)(&output);
+            let action_stop = matches!(
+                output.next_action,
+                Some(NextAction::Stop) | Some(NextAction::PuzzleSolved)
+            );
+
+            // Add iteration metadata
+            let mut enriched_output = output.clone();
+            enriched_output.data.insert(
+                "loop_iteration".to_string(),
+                serde_json::Value::Number((iteration + 1).into()),
+            );
+            enriched_output.data.insert(
+                "stagnation_count".to_string(),
+                serde_json::Value::Number(stagnation_count.into()),
+            );
+
+            outputs.push(enriched_output);
+
+            if should_stop || action_stop {
+                tracing::info!(
+                    "Loop '{}' terminated after {} iterations (proximity: {:.2})",
+                    self.name,
+                    iteration + 1,
+                    new_proximity
+                );
+                break;
+            }
+
+            // Self-correction
+            if let Some(ref modifier) = self.context_modifier {
+                current_context = modifier(&current_context, &output);
+            }
+
+            // Adaptive behavior
+            if stagnation_count >= self.stagnation_threshold {
+                let failed_approach = format!(
+                    "Stagnated at proximity {:.0}% after {} checks",
+                    new_proximity * 100.0,
+                    stagnation_count
+                );
+                current_context.planning.failed_approaches.push(failed_approach);
+                stagnation_count = 0;
+            }
+
+            current_context.previous_outputs.push(output.result.clone());
+
+            // Delay with cancellation support
+            if self.delay_ms > 0 {
+                tokio::select! {
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(self.delay_ms)) => {},
+                    _ = cancel_token.cancelled() => {
+                        tracing::info!("Loop '{}' cancelled during delay", self.name);
+                        return Err(AgentError::Cancelled);
+                    }
+                }
+            }
+        }
+
+        Ok(outputs)
     }
 }
 

@@ -13,7 +13,7 @@
 //! 4. **Circuit Breaker**: Track failures with time-based recovery to prevent
 //!    hammering failing services
 
-use crate::agents::traits::AgentError;
+use crate::agents::traits::{AgentError, RateLimiter};
 use crate::gemini_client::{
     ActivityContext, AdaptivePuzzle, DynamicPuzzle, GeminiClient, VerificationResult,
 };
@@ -22,6 +22,9 @@ use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Default rate limit: 60 calls per minute (1 per second on average)
+const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 60;
 
 /// Provider type for logging and status
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +89,8 @@ pub struct SmartAiRouter {
     gemini_call_count: AtomicU64,
     /// LLM call counter for Ollama (for telemetry)
     ollama_call_count: AtomicU64,
+    /// Rate limiter to prevent runaway costs
+    rate_limiter: RateLimiter,
 }
 
 impl SmartAiRouter {
@@ -100,7 +105,46 @@ impl SmartAiRouter {
             ollama_last_check: AtomicU64::new(0),
             gemini_call_count: AtomicU64::new(0),
             ollama_call_count: AtomicU64::new(0),
+            rate_limiter: RateLimiter::new(DEFAULT_RATE_LIMIT_PER_MINUTE),
         }
+    }
+
+    /// Create a new router with a custom rate limit
+    pub fn with_rate_limit(
+        gemini: Option<Arc<GeminiClient>>,
+        ollama: Arc<OllamaClient>,
+        max_calls_per_minute: u32,
+    ) -> Self {
+        Self {
+            gemini,
+            ollama,
+            gemini_failing: AtomicBool::new(false),
+            gemini_fail_time: AtomicU64::new(0),
+            ollama_available: AtomicBool::new(false),
+            ollama_last_check: AtomicU64::new(0),
+            gemini_call_count: AtomicU64::new(0),
+            ollama_call_count: AtomicU64::new(0),
+            rate_limiter: RateLimiter::new(max_calls_per_minute),
+        }
+    }
+
+    /// Check rate limit before making an LLM call
+    /// Returns Err(AgentError::RateLimited) if limit exceeded
+    fn check_rate_limit(&self) -> Result<()> {
+        if self.rate_limiter.try_acquire() {
+            Ok(())
+        } else {
+            let wait_time = self.rate_limiter.time_until_available();
+            Err(anyhow::anyhow!(AgentError::RateLimited(format!(
+                "Rate limit exceeded. Try again in {:.1}s",
+                wait_time.as_secs_f32()
+            ))))
+        }
+    }
+
+    /// Get remaining rate limit tokens
+    pub fn remaining_rate_limit(&self) -> u32 {
+        self.rate_limiter.remaining()
     }
 
     /// Get the current LLM call counts for telemetry
@@ -259,6 +303,9 @@ impl SmartAiRouter {
 
     /// Analyze an image with AI vision
     pub async fn analyze_image(&self, base64_image: &str, prompt: &str) -> Result<String> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+        
         // Try Gemini first if available and not failing
         if let Some(ref gemini) = self.gemini {
             if !self.gemini_failing.load(Ordering::SeqCst) {
@@ -300,6 +347,9 @@ impl SmartAiRouter {
     /// Generate text from a prompt (prefers Gemini for quality)
     /// Use `generate_text_light()` for agent tasks that can use local LLM
     pub async fn generate_text(&self, prompt: &str) -> Result<String> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+        
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
             if !self.gemini_failing.load(Ordering::SeqCst) {
@@ -512,6 +562,9 @@ impl SmartAiRouter {
         page_content: &str,
         history_context: &str,
     ) -> Result<DynamicPuzzle> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+        
         // Try Gemini first (has Google Search grounding)
         if let Some(ref gemini) = self.gemini {
             if !self.gemini_failing.load(Ordering::SeqCst) {

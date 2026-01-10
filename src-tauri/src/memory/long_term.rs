@@ -441,6 +441,11 @@ impl LongTermMemory {
         self.store.clear_tree(ESCALATIONS_TREE)?;
         Ok(())
     }
+
+    /// Flush all pending writes to disk
+    pub fn flush(&self) -> Result<()> {
+        self.store.flush()
+    }
 }
 
 /// Generate random suffix for unique IDs

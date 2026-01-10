@@ -64,6 +64,11 @@ impl MemoryStore {
 
     /// Atomically update a value (Read-Modify-Write)
     /// Prevents race conditions when multiple threads modify the same key
+    ///
+    /// # Note
+    /// If serialization fails during the update, the value is silently deleted.
+    /// This is a sled API limitation - the closure cannot return errors.
+    /// Callers should ensure their types are always serializable.
     pub fn update<T, F>(&self, tree: &str, key: &str, f: F) -> Result<Option<T>>
     where
         T: Serialize + DeserializeOwned,
@@ -80,8 +85,9 @@ impl MemoryStore {
             // Apply update function
             let new_val = f(old_val);
 
-            // Serialize new value
-            new_val.map(|v| serde_json::to_vec(&v).expect("Serialization failed in atomic update"))
+            // Serialize new value - if serialization fails, treat as deletion
+            // This is safer than panicking inside the atomic operation
+            new_val.and_then(|v| serde_json::to_vec(&v).ok())
         })?;
 
         // Return the new value
