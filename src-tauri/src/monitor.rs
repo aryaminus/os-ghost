@@ -9,7 +9,7 @@ use crate::utils::{clean_json_response, current_timestamp};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
-use tokio::time::{sleep, Duration};
+use tokio::time::Duration;
 
 const MONITOR_INTERVAL_SECS: u64 = 60;
 
@@ -78,8 +78,14 @@ pub async fn start_monitor_loop(
     let mut recent_categories: Vec<AppCategory> = Vec::new();
     let mut consecutive_idle_count = 0;
 
+    // Use interval for consistent timing (prevents drift)
+    let mut interval = tokio::time::interval(Duration::from_secs(MONITOR_INTERVAL_SECS));
+    // Skip missed ticks if the computer was sleeping or busy
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     loop {
-        sleep(Duration::from_secs(MONITOR_INTERVAL_SECS)).await;
+        // Wait for next tick
+        interval.tick().await;
 
         // 1. Capture Screen (no window hiding - better UX)
         let screenshot_res = tokio::task::spawn_blocking(capture::capture_primary_monitor).await;

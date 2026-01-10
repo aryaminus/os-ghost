@@ -25,12 +25,13 @@ pub fn capture_primary_monitor() -> Result<String> {
     // Capture screenshot - returns an ImageBuffer<Rgba<u8>, Vec<u8>>
     let image = primary.capture()?;
 
-    // Write to PNG using the screenshots crate's image types
-    let mut png_buffer = Vec::new();
-    image.write_to(&mut Cursor::new(&mut png_buffer), ImageFormat::Png)?;
+    // Write to JPEG instead of PNG for performance (10x faster encoding)
+    // AI models handle JPEG compression artifacts well
+    let mut jpeg_buffer = Vec::new();
+    image.write_to(&mut Cursor::new(&mut jpeg_buffer), ImageFormat::Jpeg)?;
 
     // Base64 encode
-    let base64_image = general_purpose::STANDARD.encode(&png_buffer);
+    let base64_image = general_purpose::STANDARD.encode(&jpeg_buffer);
 
     Ok(base64_image)
 }
@@ -42,11 +43,11 @@ pub fn capture_region(x: i32, y: i32, width: u32, height: u32) -> Result<String>
     // Capture the region
     let image = primary.capture_area(x, y, width, height)?;
 
-    // Write to PNG
-    let mut png_buffer = Vec::new();
-    image.write_to(&mut Cursor::new(&mut png_buffer), ImageFormat::Png)?;
+    // Write to JPEG
+    let mut jpeg_buffer = Vec::new();
+    image.write_to(&mut Cursor::new(&mut jpeg_buffer), ImageFormat::Jpeg)?;
 
-    let base64_image = general_purpose::STANDARD.encode(&png_buffer);
+    let base64_image = general_purpose::STANDARD.encode(&jpeg_buffer);
 
     Ok(base64_image)
 }

@@ -13,6 +13,7 @@
 //! 4. **Circuit Breaker**: Track failures with time-based recovery to prevent
 //!    hammering failing services
 
+use crate::agents::traits::AgentError;
 use crate::gemini_client::{
     ActivityContext, AdaptivePuzzle, DynamicPuzzle, GeminiClient, VerificationResult,
 };
@@ -278,16 +279,22 @@ impl SmartAiRouter {
         // Fallback to Ollama
         if self.ollama_available.load(Ordering::SeqCst) {
             self.count_ollama_call();
-            return self.ollama.analyze_image(base64_image, prompt).await;
+            match self.ollama.analyze_image(base64_image, prompt).await {
+                Ok(res) => return Ok(res),
+                Err(e) => return Err(e),
+            }
         }
 
         // Last resort: try Gemini even if marked as failing
         if let Some(ref gemini) = self.gemini {
             self.count_gemini_call();
-            return gemini.analyze_image(base64_image, prompt).await;
+            match gemini.analyze_image(base64_image, prompt).await {
+                Ok(res) => return Ok(res),
+                Err(e) => return Err(anyhow::anyhow!(AgentError::CircuitOpen(format!("All providers failed. Gemini error: {}", e)))),
+            }
         }
 
-        Err(anyhow::anyhow!("No AI provider available"))
+        Err(anyhow::anyhow!(AgentError::CircuitOpen("No AI provider available".to_string())))
     }
 
     /// Generate text from a prompt (prefers Gemini for quality)
@@ -313,16 +320,22 @@ impl SmartAiRouter {
         // Fallback to Ollama
         if self.ollama_available.load(Ordering::SeqCst) {
             self.count_ollama_call();
-            return self.ollama.generate_text(prompt).await;
+            match self.ollama.generate_text(prompt).await {
+                Ok(res) => return Ok(res),
+                Err(e) => return Err(e),
+            }
         }
 
         // Last resort
         if let Some(ref gemini) = self.gemini {
             self.count_gemini_call();
-            return gemini.generate_text(prompt).await;
+            match gemini.generate_text(prompt).await {
+                Ok(res) => return Ok(res),
+                Err(e) => return Err(anyhow::anyhow!(AgentError::CircuitOpen(format!("All providers failed. Gemini error: {}", e)))),
+            }
         }
 
-        Err(anyhow::anyhow!("No AI provider available"))
+        Err(anyhow::anyhow!(AgentError::CircuitOpen("No AI provider available".to_string())))
     }
 
     /// Generate text from a prompt (prefers Ollama for cost optimization)

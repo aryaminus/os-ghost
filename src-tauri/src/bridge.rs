@@ -10,11 +10,11 @@ use crate::game_state::EffectQueue;
 use crate::mcp::browser::{BrowserMcpServer, BrowserState};
 use crate::mcp::{McpServer, ToolRequest};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -65,8 +65,8 @@ pub struct McpBridgeContext {
     pub effect_receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<serde_json::Value>>>,
 }
 
-/// Handle a single client connection
-fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeContext) {
+/// Handle a single client connection (Async)
+async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBridgeContext>) {
     // Create guard to ensure connection count is decremented on exit
     let _guard = ConnectionGuard;
 
@@ -98,28 +98,37 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeCont
         manifest.prompts.len()
     );
 
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(30)))
-        .ok();
+    // No set_read_timeout in tokio TcpStream, use tokio::time::timeout if needed logic
 
     loop {
         // Read length prefix (4 bytes, little-endian)
         let mut len_buf = [0u8; 4];
-        match stream.read_exact(&mut len_buf) {
-            Ok(_) => {}
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
-            Err(_) => break, // Connection closed
+        
+        // Use timeout for reads to detect dead connections
+        let read_result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            stream.read_exact(&mut len_buf)
+        ).await;
+
+        match read_result {
+            Ok(Ok(_)) => {} // Success
+            Ok(Err(_)) => break, // Connection closed or error
+            Err(_) => {
+                // Timeout
+                tracing::debug!("Connection timed out waiting for message header");
+                break; 
+            }, 
         }
 
         let msg_len = u32::from_le_bytes(len_buf) as usize;
         if msg_len == 0 || msg_len > 1024 * 1024 {
+            tracing::warn!("Invalid message length: {}", msg_len);
             continue;
         }
 
         // Read message
         let mut msg_buf = vec![0u8; msg_len];
-        if stream.read_exact(&mut msg_buf).is_err() {
+        if stream.read_exact(&mut msg_buf).await.is_err() {
             break;
         }
 
@@ -136,13 +145,10 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeCont
                     let title = message.title.clone().unwrap_or_default();
                     let timestamp = message.timestamp.unwrap_or(0);
 
-                    // Update MCP Resource state (async in background)
-                    let state_clone = mcp_state.clone();
-                    tauri::async_runtime::spawn(async move {
-                        state_clone
-                            .update_page(url.clone(), title.clone(), String::new(), timestamp)
-                            .await;
-                    });
+                    // Update MCP Resource state
+                    mcp_state
+                        .update_page(url.clone(), title.clone(), String::new(), timestamp)
+                        .await;
 
                     // Emit to frontend (legacy event for backward compatibility)
                     let _ = app.emit(
@@ -167,15 +173,9 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeCont
                     );
 
                     // Update MCP Resource state with full content
-                    let state_clone = mcp_state.clone();
-                    let url_clone = url.clone();
-                    let title_clone = title.clone();
-                    let body_clone = body_text.clone();
-                    tauri::async_runtime::spawn(async move {
-                        state_clone
-                            .update_page(url_clone, title_clone, body_clone, timestamp)
-                            .await;
-                    });
+                    mcp_state
+                        .update_page(url.clone(), title.clone(), body_text.clone(), timestamp)
+                        .await;
 
                     // 1. Store in memory (legacy path)
                     use crate::memory::SessionMemory;
@@ -205,12 +205,7 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeCont
                     );
 
                     // Update MCP Resource state
-                    let state_clone = mcp_state.clone();
-                    let history_clone = history.clone();
-                    let sites_clone = top_sites.clone();
-                    tauri::async_runtime::spawn(async move {
-                        state_clone.update_context(history_clone, sites_clone).await;
-                    });
+                    mcp_state.update_context(history.clone(), top_sites.clone()).await;
 
                     // Emit to frontend (legacy event)
                     let _ = app.emit(
@@ -235,9 +230,10 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeCont
 
             if let Ok(json) = serde_json::to_vec(&response) {
                 let len = (json.len() as u32).to_le_bytes();
-                let _ = stream.write_all(&len);
-                let _ = stream.write_all(&json);
-                let _ = stream.flush();
+                if stream.write_all(&len).await.is_ok() {
+                    let _ = stream.write_all(&json).await;
+                    let _ = stream.flush().await;
+                }
             }
 
             // Check for pending effects to send (from MCP tools or legacy EffectQueue)
@@ -251,25 +247,24 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeCont
                 match serde_json::to_vec(&effect) {
                     Ok(json) => {
                         let len = (json.len() as u32).to_le_bytes();
-                        let _ = stream.write_all(&len);
-                        let _ = stream.write_all(&json);
-                        let _ = stream.flush();
+                        let _ = stream.write_all(&len).await;
+                        let _ = stream.write_all(&json).await;
+                        let _ = stream.flush().await;
                     }
                     Err(e) => tracing::error!("Failed to serialize effect: {}", e),
                 }
             }
 
             // Second: Check MCP effect channel (non-blocking)
-            // Note: We try_lock here to avoid blocking the main message loop
             if let Ok(mut receiver) = mcp_ctx.effect_receiver.try_lock() {
                 while let Ok(effect) = receiver.try_recv() {
                     tracing::info!("Sending MCP tool effect to extension: {:?}", effect);
                     match serde_json::to_vec(&effect) {
                         Ok(json) => {
                             let len = (json.len() as u32).to_le_bytes();
-                            let _ = stream.write_all(&len);
-                            let _ = stream.write_all(&json);
-                            let _ = stream.flush();
+                            let _ = stream.write_all(&len).await;
+                            let _ = stream.write_all(&json).await;
+                            let _ = stream.flush().await;
                         }
                         Err(e) => tracing::error!("Failed to serialize MCP effect: {}", e),
                     }
@@ -293,16 +288,16 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeCont
     tracing::info!("Native bridge disconnected");
 }
 
-/// Start the TCP server for native messaging bridge (runs in background thread)
+/// Start the TCP server for native messaging bridge (runs in background tokio task)
 /// Now creates and manages the MCP Browser Server for standardized agent access
 pub fn start_native_messaging_server(app: AppHandle) {
-    std::thread::spawn(move || {
+    tauri::async_runtime::spawn(async move {
         tracing::info!(
             "Starting native messaging TCP server on port {}",
             BRIDGE_PORT
         );
 
-        let listener = match TcpListener::bind(format!("127.0.0.1:{}", BRIDGE_PORT)) {
+        let listener = match TcpListener::bind(format!("127.0.0.1:{}", BRIDGE_PORT)).await {
             Ok(l) => l,
             Err(e) => {
                 tracing::error!("Failed to bind TCP server: {}", e);
@@ -331,9 +326,9 @@ pub fn start_native_messaging_server(app: AppHandle) {
 
         tracing::info!("MCP Browser Server initialized");
 
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
+        loop {
+            match listener.accept().await {
+                Ok((stream, _addr)) => {
                     // Check connection limit before accepting
                     let current = ACTIVE_CONNECTIONS.load(Ordering::SeqCst);
                     if current >= MAX_CONNECTIONS {
@@ -342,8 +337,7 @@ pub fn start_native_messaging_server(app: AppHandle) {
                             current,
                             MAX_CONNECTIONS
                         );
-                        // Drop the stream to close connection
-                        drop(stream);
+                        // Stream dropped immediately
                         continue;
                     }
 
@@ -352,8 +346,10 @@ pub fn start_native_messaging_server(app: AppHandle) {
 
                     let app_clone = app.clone();
                     let mcp_ctx_clone = mcp_ctx.clone();
-                    std::thread::spawn(move || {
-                        handle_client(stream, &app_clone, &mcp_ctx_clone);
+                    
+                    // Spawn per-connection task
+                    tauri::async_runtime::spawn(async move {
+                        handle_client(stream, app_clone, mcp_ctx_clone).await;
                     });
                 }
                 Err(e) => {
