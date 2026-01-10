@@ -16,8 +16,10 @@
 
 pub mod browser;
 pub mod traits;
+pub mod transport;
 pub mod types;
 
 pub use browser::BrowserMcpServer;
 pub use traits::{McpClient, McpPrompt, McpResource, McpServer, McpTool};
+pub use transport::{JsonRpcRequest, JsonRpcResponse, McpTransport};
 pub use types::*;

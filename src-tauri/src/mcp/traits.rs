@@ -96,26 +96,37 @@ pub trait McpServer: Send + Sync {
 /// Trait for MCP Clients - consumers of MCP servers
 #[async_trait]
 pub trait McpClient: Send + Sync {
-    /// Connect to an MCP server
-    async fn connect(&mut self, server_uri: &str) -> Result<McpManifest, McpError>;
-
-    /// Disconnect from current server
-    async fn disconnect(&mut self) -> Result<(), McpError>;
+    /// Initialize connection with the server
+    /// Returns the server manifest (capabilities)
+    async fn initialize(&mut self) -> Result<McpManifest, McpError>;
 
     /// Check if connected
     fn is_connected(&self) -> bool;
 
+    /// List available tools on the connected server
+    async fn list_tools(&self, category: Option<&str>) -> Result<Vec<ToolDescriptor>, McpError>;
+
+    /// List available resources on the connected server
+    async fn list_resources(&self) -> Result<Vec<ResourceDescriptor>, McpError>;
+
     /// Invoke a tool on the connected server
-    async fn invoke_tool(
+    async fn call_tool(
         &self,
         tool_name: &str,
         arguments: serde_json::Value,
-    ) -> Result<serde_json::Value, McpError>;
+    ) -> Result<ToolResponse, McpError>;
 
     /// Read a resource from the connected server
     async fn read_resource(
         &self,
         uri: &str,
         query: Option<std::collections::HashMap<String, String>>,
-    ) -> Result<serde_json::Value, McpError>;
+    ) -> Result<ResourceResponse, McpError>;
+
+    /// Send a notification (no response expected)
+    async fn send_notification(
+        &self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<(), McpError>;
 }
