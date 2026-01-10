@@ -35,6 +35,42 @@ function warn(...args) {
 	if (DEBUG_MODE) console.warn("[OS Ghost]", ...args);
 }
 
+// ============================================================================
+// PII Sanitization (Defense in Depth - matches backend privacy.rs)
+// ============================================================================
+
+/**
+ * Regex patterns for PII detection (compiled once for performance)
+ * @type {Object.<string, RegExp>}
+ */
+const PII_PATTERNS = {
+	email: /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi,
+	phone: /(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
+	creditCard: /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,
+	ssn: /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/g,
+	// Common API key patterns
+	apiKey: /\b(?:sk_live_|ghp_|gho_|glpat-|xoxb-|xoxp-|AKIA|AIza)[a-zA-Z0-9_\-]{20,}\b/gi,
+};
+
+/**
+ * Sanitize text by redacting PII patterns.
+ * This provides defense-in-depth before data leaves the browser.
+ * @param {string} text - Text to sanitize
+ * @returns {string} Sanitized text with PII replaced
+ */
+function sanitizePII(text) {
+	if (!text) return text;
+	
+	let sanitized = text;
+	sanitized = sanitized.replace(PII_PATTERNS.email, "[REDACTED_EMAIL]");
+	sanitized = sanitized.replace(PII_PATTERNS.phone, "[REDACTED_PHONE]");
+	sanitized = sanitized.replace(PII_PATTERNS.creditCard, "[REDACTED_CARD]");
+	sanitized = sanitized.replace(PII_PATTERNS.ssn, "[REDACTED_SSN]");
+	sanitized = sanitized.replace(PII_PATTERNS.apiKey, "[REDACTED_API_KEY]");
+	
+	return sanitized;
+}
+
 /** @type {Set<string>} Track active effects to prevent duplicates */
 const activeEffects = new Set();
 
@@ -493,20 +529,45 @@ function applyPortalFlash(duration) {
 /**
  * Get page content for analysis.
  * Extracts visible text content, title, and URL.
- * @returns {PageContent} Page content object
+ * Applies PII sanitization before returning.
+ * @returns {PageContent} Page content object with sanitized text
  */
 function getPageContent() {
 	// Get visible text content (first 5000 chars)
-	const bodyText = document.body.innerText
+	const rawText = document.body.innerText
 		.replace(/\s+/g, " ")
 		.trim()
 		.substring(0, 5000);
+
+	// Sanitize PII before sending to native app (defense in depth)
+	const bodyText = sanitizePII(rawText);
 
 	return {
 		bodyText,
 		title: document.title,
 		url: window.location.href,
 	};
+}
+
+/**
+ * Cached page content for deferred extraction
+ * @type {PageContent|null}
+ */
+let cachedContent = null;
+
+/**
+ * Extract page content using requestIdleCallback for performance.
+ * Defers heavy DOM operations to idle periods to avoid blocking page load.
+ * @param {Function} callback - Called with extracted content
+ */
+function extractContentWhenIdle(callback) {
+	// If requestIdleCallback not supported, fall back to setTimeout
+	const scheduleIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 50));
+	
+	scheduleIdle(() => {
+		cachedContent = getPageContent();
+		callback(cachedContent);
+	}, { timeout: 2000 }); // Max 2s wait
 }
 
 // Listen for messages from background script
@@ -538,14 +599,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			break;
 
 		case "get_content":
-			const content = getPageContent();
+			// Return cached content if available, otherwise extract synchronously
+			// (background needs immediate response for native messaging)
+			const content = cachedContent || getPageContent();
 			sendResponse(content);
 			break;
+
+		case "get_content_idle":
+			// Async version - extracts content when browser is idle
+			// Useful for proactive content gathering without blocking
+			extractContentWhenIdle((content) => {
+				sendResponse(content);
+			});
+			return true; // Keep channel open for async response
 
 		default:
 			sendResponse({ error: "Unknown message type" });
 	}
 	return false; // Synchronous response
 });
+
+// Proactively extract content when idle after page load
+// This pre-populates the cache for faster get_content responses
+if (document.readyState === "complete") {
+	extractContentWhenIdle(() => log("Content cached on load"));
+} else {
+	window.addEventListener("load", () => {
+		extractContentWhenIdle(() => log("Content cached after load"));
+	}, { once: true });
+}
 
 log("Content script loaded on:", window.location.href);
