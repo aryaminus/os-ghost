@@ -146,6 +146,7 @@ pub fn redact_pii(text: &str) -> String {
     static CREDIT_CARD_REGEX: OnceLock<Regex> = OnceLock::new();
     static SSN_REGEX: OnceLock<Regex> = OnceLock::new();
     static IP_REGEX: OnceLock<Regex> = OnceLock::new();
+    static API_KEY_REGEX: OnceLock<Regex> = OnceLock::new();
 
     let email_re = EMAIL_REGEX
         .get_or_init(|| Regex::new(r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}").unwrap());
@@ -170,11 +171,18 @@ pub fn redact_pii(text: &str) -> String {
         Regex::new(r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b").unwrap()
     });
 
+    let api_key_re = API_KEY_REGEX.get_or_init(|| {
+        // Common API key patterns (Stripe, GitHub, AWS, etc.)
+        // Matches sk_live_..., ghp_..., AKIA..., etc.
+        Regex::new(r"(?i)\b(?:sk_live_|ghp_|gho_|glpat-|xoxb-|xoxp-|AKIA|AIza)[a-zA-Z0-9_\-]{20,}\b").unwrap()
+    });
+
     let redacted = email_re.replace_all(text, "[REDACTED_EMAIL]");
     let redacted = phone_re.replace_all(&redacted, "[REDACTED_PHONE]");
     let redacted = credit_card_re.replace_all(&redacted, "[REDACTED_CARD]");
     let redacted = ssn_re.replace_all(&redacted, "[REDACTED_SSN]");
     let redacted = ip_re.replace_all(&redacted, "[REDACTED_IP]");
+    let redacted = api_key_re.replace_all(&redacted, "[REDACTED_API_KEY]");
 
     redacted.to_string()
 }

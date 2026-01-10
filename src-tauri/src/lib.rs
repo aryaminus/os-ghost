@@ -20,6 +20,9 @@ pub mod agents;
 pub mod memory;
 pub mod workflow;
 
+// MCP-compatible abstractions (Chapter 10: Model Context Protocol)
+pub mod mcp;
+
 use gemini_client::GeminiClient;
 use ai_provider::SmartAiRouter;
 use game_state::EffectQueue;
@@ -191,8 +194,12 @@ pub fn run() {
 
             // Register session memory as managed state for IPC commands
             // Create a separate Arc for SessionMemory to be used directly by bridge
-            let session_for_ipc = Arc::new(memory::SessionMemory::new(store));
+            let session_for_ipc = Arc::new(memory::SessionMemory::new(store.clone()));
             app.manage(session_for_ipc);
+
+            // Register LongTermMemory as managed state for IPC commands (HITL feedback)
+            let ltm_for_ipc = Arc::new(memory::LongTermMemory::new(store));
+            app.manage(ltm_for_ipc);
 
             // Create Orchestrator with shared memory (uses AI router)
             match crate::agents::AgentOrchestrator::new(
@@ -318,6 +325,19 @@ pub fn run() {
             ipc::set_ollama_config,
             ipc::reset_ollama_config,
             ipc::get_ollama_status,
+            // HITL Feedback commands (Chapter 13)
+            ipc::submit_feedback,
+            ipc::submit_escalation,
+            ipc::resolve_escalation,
+            ipc::get_player_stats,
+            ipc::get_feedback_ratio,
+            ipc::get_learning_patterns,
+            // Intelligent mode commands
+            ipc::get_intelligent_mode,
+            ipc::set_intelligent_mode,
+            ipc::set_reflection_mode,
+            ipc::set_guardrails_mode,
+            // Game state commands
             game_state::get_game_state,
             game_state::reset_game,
             game_state::check_hint_available,

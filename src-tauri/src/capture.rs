@@ -5,7 +5,6 @@ use anyhow::Result;
 use base64::{engine::general_purpose, Engine as _};
 use screenshots::Screen;
 use std::io::Cursor;
-use tauri::Manager;
 
 // Use the image types from screenshots crate to avoid version conflicts
 use screenshots::image::ImageFormat;

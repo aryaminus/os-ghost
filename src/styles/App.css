@@ -17,6 +17,11 @@
 	--warm: #ffaa00;
 	--hot: #ff4444;
 
+	/* Agent/Intelligent mode colors */
+	--agent-purple: #aa88ff;
+	--agent-purple-dim: rgba(136, 68, 255, 0.3);
+	--agent-purple-glow: rgba(136, 68, 255, 0.5);
+
 	/* Spacing */
 	--spacing-sm: 8px;
 	--spacing-md: 16px;
@@ -1641,3 +1646,292 @@ body {
 	font-size: 8px;
 	color: #aaccff;
 }
+
+/* ============================================================================
+   HITL Feedback Buttons (Chapter 13)
+   ============================================================================ */
+
+.feedback-buttons {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 8px;
+	padding-top: 6px;
+	border-top: 1px dashed rgba(0, 255, 136, 0.2);
+}
+
+.feedback-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid var(--text-dim);
+	border-radius: 50%;
+	cursor: pointer;
+	font-size: 14px;
+	transition: all 0.2s ease;
+	opacity: 0.7;
+}
+
+.feedback-btn:hover:not(:disabled) {
+	opacity: 1;
+	transform: scale(1.1);
+}
+
+.feedback-btn.positive:hover:not(:disabled) {
+	border-color: var(--ghost-green);
+	background: rgba(0, 255, 136, 0.15);
+	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+
+.feedback-btn.negative:hover:not(:disabled) {
+	border-color: var(--hot);
+	background: rgba(255, 68, 68, 0.15);
+	box-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
+}
+
+.feedback-btn.selected {
+	opacity: 1;
+}
+
+.feedback-btn.positive.selected {
+	border-color: var(--ghost-green);
+	background: rgba(0, 255, 136, 0.25);
+	box-shadow: 0 0 10px rgba(0, 255, 136, 0.4);
+}
+
+.feedback-btn.negative.selected {
+	border-color: var(--hot);
+	background: rgba(255, 68, 68, 0.25);
+	box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);
+}
+
+.feedback-btn:disabled {
+	cursor: default;
+	opacity: 0.4;
+}
+
+.feedback-thanks {
+	font-size: 9px;
+	color: var(--ghost-green);
+	animation: fadeIn 0.3s ease;
+}
+
+/* ============================================================================
+   Stuck Button (HITL Escalation)
+   ============================================================================ */
+
+.stuck-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	width: 100%;
+	padding: 8px;
+	margin-top: 8px;
+	background: rgba(255, 170, 0, 0.1);
+	border: 1px dashed rgba(255, 170, 0, 0.4);
+	border-radius: 6px;
+	color: var(--warm);
+	font-family: inherit;
+	font-size: 10px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.stuck-btn:hover:not(:disabled) {
+	background: rgba(255, 170, 0, 0.2);
+	border-color: var(--warm);
+	box-shadow: 0 0 10px rgba(255, 170, 0, 0.3);
+}
+
+.stuck-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.stuck-submitted {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	width: 100%;
+	padding: 8px;
+	margin-top: 8px;
+	background: rgba(0, 255, 136, 0.1);
+	border: 1px solid rgba(0, 255, 136, 0.3);
+	border-radius: 6px;
+	color: var(--ghost-green);
+	font-size: 10px;
+	animation: fadeIn 0.3s ease;
+}
+
+.stuck-input-wrapper {
+	width: 100%;
+	margin-top: 8px;
+	padding: 8px;
+	background: rgba(0, 0, 0, 0.5);
+	border: 1px solid var(--warm);
+	border-radius: 6px;
+	animation: fadeIn 0.3s ease;
+}
+
+.stuck-description {
+	width: 100%;
+	padding: 6px;
+	font-family: inherit;
+	font-size: 10px;
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	color: var(--text-primary);
+	resize: none;
+	outline: none;
+}
+
+.stuck-description:focus {
+	border-color: var(--ghost-green);
+	box-shadow: 0 0 6px rgba(0, 255, 136, 0.3);
+}
+
+.stuck-description::placeholder {
+	color: var(--text-dim);
+}
+
+.stuck-input-actions {
+	display: flex;
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.stuck-submit-btn,
+.stuck-cancel-btn {
+	flex: 1;
+	padding: 5px 8px;
+	font-family: inherit;
+	font-size: 9px;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.stuck-submit-btn {
+	background: rgba(0, 255, 136, 0.15);
+	border: 1px solid var(--ghost-green);
+	color: var(--ghost-green);
+}
+
+.stuck-submit-btn:hover {
+	background: rgba(0, 255, 136, 0.25);
+	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+
+.stuck-cancel-btn {
+	background: transparent;
+	border: 1px solid var(--text-dim);
+	color: var(--text-dim);
+}
+
+.stuck-cancel-btn:hover {
+	border-color: var(--text-secondary);
+	color: var(--text-secondary);
+}
+
+/* ============================================================================
+   Intelligent Mode Settings
+   ============================================================================ */
+
+.intelligent-settings {
+	width: 100%;
+	margin-top: 8px;
+}
+
+.settings-toggle-btn {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	padding: 6px 10px;
+	background: rgba(136, 68, 255, 0.08);
+	border: 1px solid var(--agent-purple-dim);
+	border-radius: 6px;
+	color: var(--agent-purple);
+	font-family: inherit;
+	font-size: 10px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.settings-toggle-btn:hover {
+	background: rgba(136, 68, 255, 0.15);
+	border-color: var(--agent-purple-glow);
+}
+
+.settings-toggle-btn.expanded {
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+	border-bottom-color: transparent;
+}
+
+.settings-badge {
+	margin-left: auto;
+	padding: 2px 6px;
+	background: rgba(136, 68, 255, 0.2);
+	border-radius: 10px;
+	font-size: 8px;
+	font-weight: bold;
+}
+
+.settings-panel {
+	padding: 10px;
+	background: rgba(136, 68, 255, 0.05);
+	border: 1px solid var(--agent-purple-dim);
+	border-top: none;
+	border-radius: 0 0 6px 6px;
+	animation: fadeIn 0.2s ease;
+}
+
+.setting-toggle {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 0;
+	cursor: pointer;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.setting-toggle:last-child {
+	border-bottom: none;
+	padding-bottom: 0;
+}
+
+.setting-toggle input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	accent-color: var(--ghost-green);
+	cursor: pointer;
+}
+
+.toggle-label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 10px;
+	color: var(--text-secondary);
+}
+
+.toggle-icon {
+	font-size: 12px;
+}
+
+.toggle-desc {
+	flex-basis: 100%;
+	margin-left: 24px;
+	font-size: 8px;
+	color: var(--text-dim);
+}
+

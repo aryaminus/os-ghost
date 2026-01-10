@@ -63,6 +63,8 @@ const CIRCUIT_BREAKER_RECOVERY_SECS: u64 = 30;
 /// |------------------|-----------|-----------|
 /// | Dialogue         | Ollama*   | Gemini    |
 /// | URL Similarity   | Ollama*   | Gemini    |
+/// | Text (Light)     | Ollama*   | Gemini    |
+/// | Text (Heavy)     | Gemini    | Ollama    |
 /// | Image Analysis   | Gemini    | Ollama    |
 /// | Puzzle Gen       | Gemini    | Ollama    |
 /// | Verification     | Gemini    | Ollama    |
@@ -79,6 +81,10 @@ pub struct SmartAiRouter {
     ollama_available: AtomicBool,
     /// Timestamp of last Ollama check
     ollama_last_check: AtomicU64,
+    /// LLM call counter for Gemini (for telemetry/cost tracking)
+    gemini_call_count: AtomicU64,
+    /// LLM call counter for Ollama (for telemetry)
+    ollama_call_count: AtomicU64,
 }
 
 impl SmartAiRouter {
@@ -91,7 +97,34 @@ impl SmartAiRouter {
             gemini_fail_time: AtomicU64::new(0),
             ollama_available: AtomicBool::new(false),
             ollama_last_check: AtomicU64::new(0),
+            gemini_call_count: AtomicU64::new(0),
+            ollama_call_count: AtomicU64::new(0),
         }
+    }
+
+    /// Get the current LLM call counts for telemetry
+    /// Returns (gemini_calls, ollama_calls)
+    pub fn get_call_counts(&self) -> (u64, u64) {
+        (
+            self.gemini_call_count.load(Ordering::Relaxed),
+            self.ollama_call_count.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Reset call counters (e.g., at session start)
+    pub fn reset_call_counts(&self) {
+        self.gemini_call_count.store(0, Ordering::Relaxed);
+        self.ollama_call_count.store(0, Ordering::Relaxed);
+    }
+
+    /// Increment Gemini call counter
+    fn count_gemini_call(&self) {
+        self.gemini_call_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Increment Ollama call counter
+    fn count_ollama_call(&self) {
+        self.ollama_call_count.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Get current timestamp in seconds
@@ -231,6 +264,7 @@ impl SmartAiRouter {
                 match gemini.analyze_image(base64_image, prompt).await {
                     Ok(result) => {
                         self.mark_gemini_ok();
+                        self.count_gemini_call();
                         return Ok(result);
                     }
                     Err(e) => {
@@ -243,18 +277,21 @@ impl SmartAiRouter {
 
         // Fallback to Ollama
         if self.ollama_available.load(Ordering::SeqCst) {
+            self.count_ollama_call();
             return self.ollama.analyze_image(base64_image, prompt).await;
         }
 
         // Last resort: try Gemini even if marked as failing
         if let Some(ref gemini) = self.gemini {
+            self.count_gemini_call();
             return gemini.analyze_image(base64_image, prompt).await;
         }
 
         Err(anyhow::anyhow!("No AI provider available"))
     }
 
-    /// Generate text from a prompt
+    /// Generate text from a prompt (prefers Gemini for quality)
+    /// Use `generate_text_light()` for agent tasks that can use local LLM
     pub async fn generate_text(&self, prompt: &str) -> Result<String> {
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
@@ -262,6 +299,7 @@ impl SmartAiRouter {
                 match gemini.generate_text(prompt).await {
                     Ok(result) => {
                         self.mark_gemini_ok();
+                        self.count_gemini_call();
                         return Ok(result);
                     }
                     Err(e) => {
@@ -274,12 +312,70 @@ impl SmartAiRouter {
 
         // Fallback to Ollama
         if self.ollama_available.load(Ordering::SeqCst) {
+            self.count_ollama_call();
             return self.ollama.generate_text(prompt).await;
         }
 
         // Last resort
         if let Some(ref gemini) = self.gemini {
+            self.count_gemini_call();
             return gemini.generate_text(prompt).await;
+        }
+
+        Err(anyhow::anyhow!("No AI provider available"))
+    }
+
+    /// Generate text from a prompt (prefers Ollama for cost optimization)
+    /// Use this for agent tasks (planning, critique, guardrails) that don't need
+    /// the highest quality model. Routes to Ollama when available to reduce API costs.
+    pub async fn generate_text_light(&self, prompt: &str) -> Result<String> {
+        let (primary, has_fallback) = self.choose_provider(TaskComplexity::Light);
+
+        match primary {
+            ProviderType::Ollama => {
+                match self.ollama.generate_text(prompt).await {
+                    Ok(result) => {
+                        self.count_ollama_call();
+                        return Ok(result);
+                    }
+                    Err(e) if has_fallback => {
+                        tracing::warn!("Ollama generate_text_light failed, trying Gemini: {}", e);
+                    }
+                    Err(e) => return Err(e),
+                }
+
+                // Fallback to Gemini
+                if let Some(ref gemini) = self.gemini {
+                    self.count_gemini_call();
+                    return gemini.generate_text(prompt).await;
+                }
+            }
+            ProviderType::Gemini => {
+                if let Some(ref gemini) = self.gemini {
+                    match gemini.generate_text(prompt).await {
+                        Ok(result) => {
+                            self.mark_gemini_ok();
+                            self.count_gemini_call();
+                            return Ok(result);
+                        }
+                        Err(e) if has_fallback => {
+                            tracing::warn!("Gemini generate_text_light failed, trying Ollama: {}", e);
+                            self.mark_gemini_failing();
+                        }
+                        Err(e) => {
+                            self.mark_gemini_failing();
+                            return Err(e);
+                        }
+                    }
+                }
+
+                // Fallback to Ollama
+                if self.ollama_available.load(Ordering::SeqCst) {
+                    self.count_ollama_call();
+                    return self.ollama.generate_text(prompt).await;
+                }
+            }
+            ProviderType::None => {}
         }
 
         Err(anyhow::anyhow!("No AI provider available"))
@@ -293,7 +389,10 @@ impl SmartAiRouter {
         match primary {
             ProviderType::Ollama => {
                 match self.ollama.calculate_url_similarity(url1, url2).await {
-                    Ok(result) => return Ok(result),
+                    Ok(result) => {
+                        self.count_ollama_call();
+                        return Ok(result);
+                    }
                     Err(e) if has_fallback => {
                         tracing::warn!("Ollama similarity failed, trying Gemini: {}", e);
                     }
@@ -302,6 +401,7 @@ impl SmartAiRouter {
 
                 // Fallback to Gemini
                 if let Some(ref gemini) = self.gemini {
+                    self.count_gemini_call();
                     return gemini.calculate_url_similarity(url1, url2).await;
                 }
             }
@@ -310,6 +410,7 @@ impl SmartAiRouter {
                     match gemini.calculate_url_similarity(url1, url2).await {
                         Ok(result) => {
                             self.mark_gemini_ok();
+                            self.count_gemini_call();
                             return Ok(result);
                         }
                         Err(e) if has_fallback => {
@@ -325,6 +426,7 @@ impl SmartAiRouter {
 
                 // Fallback to Ollama
                 if self.ollama_available.load(Ordering::SeqCst) {
+                    self.count_ollama_call();
                     return self.ollama.calculate_url_similarity(url1, url2).await;
                 }
             }
@@ -342,7 +444,10 @@ impl SmartAiRouter {
         match primary {
             ProviderType::Ollama => {
                 match self.ollama.generate_dialogue(context, personality).await {
-                    Ok(result) => return Ok(result),
+                    Ok(result) => {
+                        self.count_ollama_call();
+                        return Ok(result);
+                    }
                     Err(e) if has_fallback => {
                         tracing::warn!("Ollama dialogue failed, trying Gemini: {}", e);
                     }
@@ -351,6 +456,7 @@ impl SmartAiRouter {
 
                 // Fallback to Gemini
                 if let Some(ref gemini) = self.gemini {
+                    self.count_gemini_call();
                     return gemini.generate_dialogue(context, personality).await;
                 }
             }
@@ -359,6 +465,7 @@ impl SmartAiRouter {
                     match gemini.generate_dialogue(context, personality).await {
                         Ok(result) => {
                             self.mark_gemini_ok();
+                            self.count_gemini_call();
                             return Ok(result);
                         }
                         Err(e) if has_fallback => {
@@ -374,6 +481,7 @@ impl SmartAiRouter {
 
                 // Fallback to Ollama
                 if self.ollama_available.load(Ordering::SeqCst) {
+                    self.count_ollama_call();
                     return self.ollama.generate_dialogue(context, personality).await;
                 }
             }
@@ -400,6 +508,7 @@ impl SmartAiRouter {
                 {
                     Ok(result) => {
                         self.mark_gemini_ok();
+                        self.count_gemini_call();
                         return Ok(result);
                     }
                     Err(e) => {
@@ -412,6 +521,7 @@ impl SmartAiRouter {
 
         // Fallback to Ollama
         if self.ollama_available.load(Ordering::SeqCst) {
+            self.count_ollama_call();
             return self
                 .ollama
                 .generate_dynamic_puzzle(url, page_title, page_content, history_context)
@@ -420,6 +530,7 @@ impl SmartAiRouter {
 
         // Last resort
         if let Some(ref gemini) = self.gemini {
+            self.count_gemini_call();
             return gemini
                 .generate_dynamic_puzzle(url, page_title, page_content, history_context)
                 .await;
@@ -445,6 +556,7 @@ impl SmartAiRouter {
                 {
                     Ok(result) => {
                         self.mark_gemini_ok();
+                        self.count_gemini_call();
                         return Ok(result);
                     }
                     Err(e) => {
@@ -457,6 +569,7 @@ impl SmartAiRouter {
 
         // Fallback to Ollama
         if self.ollama_available.load(Ordering::SeqCst) {
+            self.count_ollama_call();
             return self
                 .ollama
                 .verify_screenshot_clue(base64_image, clue_description)
@@ -465,6 +578,7 @@ impl SmartAiRouter {
 
         // Last resort
         if let Some(ref gemini) = self.gemini {
+            self.count_gemini_call();
             return gemini
                 .verify_screenshot_clue(base64_image, clue_description)
                 .await;
@@ -489,6 +603,7 @@ impl SmartAiRouter {
                 {
                     Ok(result) => {
                         self.mark_gemini_ok();
+                        self.count_gemini_call();
                         return Ok(result);
                     }
                     Err(e) => {
@@ -501,6 +616,7 @@ impl SmartAiRouter {
 
         // Fallback to Ollama
         if self.ollama_available.load(Ordering::SeqCst) {
+            self.count_ollama_call();
             return self
                 .ollama
                 .generate_adaptive_puzzle(activities, current_app, current_content)
@@ -509,6 +625,7 @@ impl SmartAiRouter {
 
         // Last resort
         if let Some(ref gemini) = self.gemini {
+            self.count_gemini_call();
             return gemini
                 .generate_adaptive_puzzle(activities, current_app, current_content)
                 .await;
@@ -535,6 +652,7 @@ impl SmartAiRouter {
                 {
                     Ok(result) => {
                         self.mark_gemini_ok();
+                        self.count_gemini_call();
                         return Ok(result);
                     }
                     Err(e) => {
@@ -547,6 +665,7 @@ impl SmartAiRouter {
 
         // Fallback to Ollama with activity context
         if self.ollama_available.load(Ordering::SeqCst) {
+            self.count_ollama_call();
             return self
                 .ollama
                 .generate_contextual_dialogue(recent_activities, current_context, ghost_mood)
@@ -555,6 +674,7 @@ impl SmartAiRouter {
 
         // Last resort
         if let Some(ref gemini) = self.gemini {
+            self.count_gemini_call();
             return gemini
                 .generate_contextual_dialogue(recent_activities, current_context, ghost_mood)
                 .await;

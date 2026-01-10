@@ -913,12 +913,18 @@ pub async fn process_agent_cycle(
     context: PageContext,
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
+    app_handle: tauri::AppHandle,
 ) -> Result<crate::agents::orchestrator::OrchestrationResult, String> {
     tracing::info!(
         "Starting agent cycle for puzzle '{}' at URL: {}",
         context.puzzle_id,
         context.url
     );
+
+    // Get MCP server (if available)
+    use tauri::Manager;
+    let mcp_server = app_handle.try_state::<Arc<crate::mcp::BrowserMcpServer>>();
+    let mcp_ref = mcp_server.as_ref().map(|arc| arc.as_ref());
 
     // Lookup puzzle to get target_pattern
     let target_url_pattern = {
@@ -962,11 +968,16 @@ pub async fn process_agent_cycle(
         proximity: 0.0,                       // start fresh
         ghost_mood: "mysterious".to_string(), // default
         metadata,
+        // New planning/reflection fields (use defaults)
+        planning: Default::default(),
+        last_reflection: None,
+        reflection_iterations: 0,
+        previous_outputs: Vec::new(),
     };
 
     // Run pipeline
     tracing::debug!("Running orchestrator pipeline...");
-    let result = orchestrator.process(&agent_context).await.map_err(|e| {
+    let result = orchestrator.process(&agent_context, mcp_ref).await.map_err(|e| {
         tracing::error!("Agent cycle failed: {}", e);
         format!("Agent cycle failed: {}", e)
     })?;
@@ -1010,6 +1021,11 @@ pub async fn start_background_checks(
         proximity: 0.0,
         ghost_mood: "analytical".to_string(), // Different mood for background tasks
         metadata: std::collections::HashMap::new(),
+        // New planning/reflection fields (use defaults)
+        planning: Default::default(),
+        last_reflection: None,
+        reflection_iterations: 0,
+        previous_outputs: Vec::new(),
     };
 
     let results = orchestrator
@@ -1029,6 +1045,157 @@ pub struct AutonomousProgress {
     pub solved: bool,
     pub finished: bool,
 }
+
+// ============================================================================
+// HITL Feedback Commands (Chapter 13)
+// ============================================================================
+
+/// Submit user feedback on hints or dialogue
+#[tauri::command]
+pub async fn submit_feedback(
+    target: String,
+    content: String,
+    is_positive: bool,
+    puzzle_id: Option<String>,
+    comment: Option<String>,
+    ltm: State<'_, Arc<crate::memory::LongTermMemory>>,
+) -> Result<(), String> {
+    let feedback_target = match target.as_str() {
+        "hint" => crate::memory::long_term::FeedbackTarget::Hint,
+        "dialogue" => crate::memory::long_term::FeedbackTarget::Dialogue,
+        "puzzle" => crate::memory::long_term::FeedbackTarget::PuzzleDifficulty,
+        "experience" => crate::memory::long_term::FeedbackTarget::Experience,
+        _ => crate::memory::long_term::FeedbackTarget::Dialogue,
+    };
+
+    let feedback = crate::memory::long_term::UserFeedback {
+        id: format!(
+            "feedback_{}_{}",
+            current_timestamp_millis(),
+            rand::thread_rng().gen_range(1000..9999)
+        ),
+        target: feedback_target,
+        content,
+        is_positive,
+        comment,
+        puzzle_id,
+        url: None,
+        timestamp: crate::utils::current_timestamp(),
+    };
+
+    ltm.record_feedback(feedback)
+        .map_err(|e| format!("Failed to record feedback: {}", e))
+}
+
+/// Submit an escalation when user is stuck
+#[tauri::command]
+pub async fn submit_escalation(
+    puzzle_id: String,
+    time_stuck_secs: u64,
+    hints_revealed: usize,
+    current_url: String,
+    description: Option<String>,
+    ltm: State<'_, Arc<crate::memory::LongTermMemory>>,
+) -> Result<crate::memory::long_term::Escalation, String> {
+    ltm.create_escalation(&puzzle_id, time_stuck_secs, hints_revealed, &current_url, description)
+        .map_err(|e| format!("Failed to create escalation: {}", e))
+}
+
+/// Resolve an existing escalation
+#[tauri::command]
+pub async fn resolve_escalation(
+    escalation_id: String,
+    resolution: String,
+    ltm: State<'_, Arc<crate::memory::LongTermMemory>>,
+) -> Result<(), String> {
+    ltm.resolve_escalation(&escalation_id, &resolution)
+        .map_err(|e| format!("Failed to resolve escalation: {}", e))
+}
+
+/// Get player statistics including feedback counts
+#[tauri::command]
+pub async fn get_player_stats(
+    ltm: State<'_, Arc<crate::memory::LongTermMemory>>,
+) -> Result<crate::memory::long_term::PlayerStats, String> {
+    ltm.get_stats()
+        .map_err(|e| format!("Failed to get stats: {}", e))
+}
+
+/// Get feedback ratio (positive feedback / total)
+#[tauri::command]
+pub async fn get_feedback_ratio(
+    ltm: State<'_, Arc<crate::memory::LongTermMemory>>,
+) -> Result<f32, String> {
+    ltm.get_feedback_ratio()
+        .map_err(|e| format!("Failed to get feedback ratio: {}", e))
+}
+
+/// Get patterns from negative feedback (for learning)
+#[tauri::command]
+pub async fn get_learning_patterns(
+    ltm: State<'_, Arc<crate::memory::LongTermMemory>>,
+) -> Result<Vec<String>, String> {
+    ltm.get_learning_patterns()
+        .map_err(|e| format!("Failed to get learning patterns: {}", e))
+}
+
+// ============================================================================
+// Intelligent Mode Commands
+// ============================================================================
+
+/// Response for intelligent mode status
+#[derive(Debug, Serialize, Clone)]
+pub struct IntelligentModeStatus {
+    pub intelligent_mode: bool,
+    pub reflection: bool,
+    pub guardrails: bool,
+}
+
+/// Get current intelligent mode settings
+#[tauri::command]
+pub async fn get_intelligent_mode(
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+) -> Result<IntelligentModeStatus, String> {
+    Ok(IntelligentModeStatus {
+        intelligent_mode: orchestrator.use_intelligent_mode(),
+        reflection: orchestrator.use_reflection(),
+        guardrails: orchestrator.use_guardrails(),
+    })
+}
+
+/// Toggle intelligent mode (planning + reflection)
+#[tauri::command]
+pub async fn set_intelligent_mode(
+    enabled: bool,
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+) -> Result<IntelligentModeStatus, String> {
+    orchestrator.set_intelligent_mode(enabled);
+    get_intelligent_mode(orchestrator).await
+}
+
+/// Toggle reflection (generator-critic loop)
+#[tauri::command]
+pub async fn set_reflection_mode(
+    enabled: bool,
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+) -> Result<IntelligentModeStatus, String> {
+    orchestrator.set_reflection(enabled);
+    get_intelligent_mode(orchestrator).await
+}
+
+/// Toggle guardrails (input/output safety checks)
+#[tauri::command]
+pub async fn set_guardrails_mode(
+    enabled: bool,
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+) -> Result<IntelligentModeStatus, String> {
+    orchestrator.set_guardrails(enabled);
+    get_intelligent_mode(orchestrator).await
+}
+
+// ============================================================================
+// Autonomous Mode Commands
+// ============================================================================
 
 /// Start autonomous monitoring (Loop Workflow) - runs in background with events
 #[tauri::command]
@@ -1070,6 +1237,11 @@ pub async fn enable_autonomous_mode(
         proximity: 0.0,
         ghost_mood: "observant".to_string(),
         metadata: std::collections::HashMap::new(),
+        // New planning/reflection fields (use defaults)
+        planning: Default::default(),
+        last_reflection: None,
+        reflection_iterations: 0,
+        previous_outputs: Vec::new(),
     };
 
     // Clone orchestrator for the spawned task

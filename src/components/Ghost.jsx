@@ -16,6 +16,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useGhostGame } from "../hooks/useTauriCommands";
 import ApiKeyInput from "./ApiKeyInput";
 import SystemStatusBanner from "./SystemStatus";
+import {
+	DialogueFeedback,
+	StuckButton,
+	IntelligentModeSettings,
+} from "./FeedbackButtons";
 
 /**
  * ASCII Art sprites for Ghost in different states.
@@ -288,11 +293,62 @@ const Ghost = () => {
 		verifyScreenshotProof,
 		resetGame,
 		generateAdaptivePuzzle,
+		// HITL Feedback (Chapter 13)
+		submitFeedback,
+		reportStuck,
+		// Intelligent Mode Settings
+		getIntelligentMode,
+		setIntelligentMode,
+		setReflectionMode,
+		setGuardrailsMode,
 	} = useGhostGame();
 
 	const [showingKeyInput, setShowingKeyInput] = useState(false);
 	const [showingResetConfirm, setShowingResetConfirm] = useState(false);
 	const [extensionAccordionOpen, setExtensionAccordionOpen] = useState(false);
+	const [intelligentSettings, setIntelligentSettings] = useState(null);
+	const [puzzleStartTime, setPuzzleStartTime] = useState(null);
+
+	// Fetch intelligent mode settings on mount
+	useEffect(() => {
+		if (gameState.apiKeyConfigured) {
+			getIntelligentMode?.().then(setIntelligentSettings);
+		}
+	}, [gameState.apiKeyConfigured, getIntelligentMode]);
+
+	// Track puzzle start time
+	useEffect(() => {
+		if (gameState.puzzleId && !puzzleStartTime) {
+			setPuzzleStartTime(Date.now());
+		} else if (!gameState.puzzleId) {
+			setPuzzleStartTime(null);
+		}
+	}, [gameState.puzzleId, puzzleStartTime]);
+
+	// Handlers for intelligent mode toggles
+	const handleToggleIntelligent = useCallback(
+		async (enabled) => {
+			const result = await setIntelligentMode?.(enabled);
+			if (result) setIntelligentSettings(result);
+		},
+		[setIntelligentMode]
+	);
+
+	const handleToggleReflection = useCallback(
+		async (enabled) => {
+			const result = await setReflectionMode?.(enabled);
+			if (result) setIntelligentSettings(result);
+		},
+		[setReflectionMode]
+	);
+
+	const handleToggleGuardrails = useCallback(
+		async (enabled) => {
+			const result = await setGuardrailsMode?.(enabled);
+			if (result) setIntelligentSettings(result);
+		},
+		[setGuardrailsMode]
+	);
 
 	// Memoize sprite lookup to avoid object reference on every render
 	const sprite = useMemo(
@@ -527,30 +583,37 @@ const Ghost = () => {
 							</div>
 
 							{/* Dialogue Box */}
-							{gameState.dialogue && (
-								<div
-									className={`dialogue-box state-${gameState.state}`}
-									role="status"
-									aria-live="polite"
-								>
-									{gameState.state === "searching" && (
-										<div className="mode-indicator">
-											<span aria-hidden="true">🔍</span>{" "}
-											Background Scan
-										</div>
-									)}
-									{gameState.state === "thinking" && (
-										<div className="mode-indicator">
-											<span aria-hidden="true">🔮</span>{" "}
-											Consulting Oracle...
-										</div>
-									)}
-									<TypewriterText
-										text={gameState.dialogue}
-										speed={TYPEWRITER_SPEED}
-									/>
+					{gameState.dialogue && (
+						<div
+							className={`dialogue-box state-${gameState.state}`}
+							role="status"
+							aria-live="polite"
+						>
+							{gameState.state === "searching" && (
+								<div className="mode-indicator">
+									<span aria-hidden="true">🔍</span>{" "}
+									Background Scan
 								</div>
 							)}
+							{gameState.state === "thinking" && (
+								<div className="mode-indicator">
+									<span aria-hidden="true">🔮</span>{" "}
+									Consulting Oracle...
+								</div>
+							)}
+							<TypewriterText
+								text={gameState.dialogue}
+								speed={TYPEWRITER_SPEED}
+							/>
+							{/* HITL Feedback Buttons */}
+							{gameState.state === "idle" && (
+								<DialogueFeedback
+									content={gameState.dialogue}
+									onFeedback={submitFeedback}
+								/>
+							)}
+						</div>
+					)}
 
 							{/* Companion Behavior Suggestion */}
 							{companionBehavior && (
@@ -615,21 +678,30 @@ const Ghost = () => {
 							{/* Prove Finding Button */}
 							{gameState.puzzleId &&
 								gameState.state !== "celebrate" && (
-									<div className="action-wrapper">
-										<button
-											type="button"
-											className="action-btn verify-btn"
-											onMouseDown={stopPropagation}
-											onClick={withStopPropagation(
-												verifyScreenshotProof
-											)}
-											style={VERIFY_BUTTON_STYLE}
-										>
-											<span aria-hidden="true">📸</span>{" "}
-											Prove Finding
-										</button>
-									</div>
-								)}
+							<div className="action-wrapper">
+								<button
+									type="button"
+									className="action-btn verify-btn"
+									onMouseDown={stopPropagation}
+									onClick={withStopPropagation(
+										verifyScreenshotProof
+									)}
+									style={VERIFY_BUTTON_STYLE}
+								>
+									<span aria-hidden="true">📸</span>{" "}
+									Prove Finding
+								</button>
+							</div>
+						)}
+
+					{/* I'm Stuck Button - HITL Escalation */}
+					{gameState.puzzleId &&
+						gameState.state === "idle" && (
+							<StuckButton
+								onStuck={reportStuck}
+								puzzleStartTime={puzzleStartTime}
+							/>
+						)}
 						</>
 					) : (
 						/* Reset Game Confirmation - Replaces Main UI */
@@ -671,6 +743,15 @@ const Ghost = () => {
 					aria-label="System controls"
 				>
 					<div className="system-header">SYSTEM CONTROLS</div>
+
+					{/* Intelligent Mode Settings */}
+					<IntelligentModeSettings
+						settings={intelligentSettings}
+						onToggleIntelligent={handleToggleIntelligent}
+						onToggleReflection={handleToggleReflection}
+						onToggleGuardrails={handleToggleGuardrails}
+					/>
+
 					<div className="system-controls-grid">
 						{/* Top Row: Core Actions */}
 						<button

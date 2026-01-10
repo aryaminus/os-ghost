@@ -1046,6 +1046,157 @@ export function useGhostGame() {
 		}
 	}, []);
 
+	// ============================================================================
+	// HITL Feedback Functions (Chapter 13)
+	// ============================================================================
+
+	/**
+	 * Submit user feedback on hints or dialogue (thumbs up/down).
+	 * @param {"hint" | "dialogue" | "puzzle" | "experience"} target - Type of content
+	 * @param {string} content - The content being rated
+	 * @param {boolean} isPositive - Thumbs up (true) or thumbs down (false)
+	 * @param {string|null} [comment] - Optional user comment
+	 * @returns {Promise<void>}
+	 */
+	const submitFeedback = useCallback(
+		async (target, content, isPositive, comment = null) => {
+			const currentState = gameStateRef.current;
+			try {
+				await invoke("submit_feedback", {
+					target,
+					content,
+					isPositive,
+					puzzleId: currentState.puzzleId || null,
+					comment,
+				});
+				log(`[+] Feedback submitted: ${target} = ${isPositive ? "positive" : "negative"}`);
+			} catch (err) {
+				console.error("[Ghost] Failed to submit feedback:", err);
+			}
+		},
+		[]
+	);
+
+	/**
+	 * Report that user is stuck on current puzzle.
+	 * Triggers additional help and tracks escalation for learning.
+	 * @param {number} timeStuckSecs - How long user has been trying
+	 * @param {string|null} [description] - User's description of why they're stuck
+	 * @returns {Promise<Object|null>} Escalation record or null if failed
+	 */
+	const reportStuck = useCallback(async (timeStuckSecs, description = null) => {
+		const currentState = gameStateRef.current;
+		if (!currentState.puzzleId) {
+			warn("[Ghost] Cannot report stuck: No active puzzle");
+			return null;
+		}
+
+		try {
+			const escalation = await invoke("submit_escalation", {
+				puzzleId: currentState.puzzleId,
+				timeStuckSecs,
+				hintsRevealed: currentState.hints?.length || 0,
+				currentUrl: currentState.currentUrl || "",
+				description,
+			});
+
+			log("[HITL] Escalation created:", escalation);
+
+			// Update dialogue to provide extra help
+			setGameState((prev) => ({
+				...prev,
+				dialogue:
+					"I hear you. Let me think of another approach... Here's a bigger hint.",
+				state: "thinking",
+			}));
+
+			return escalation;
+		} catch (err) {
+			console.error("[Ghost] Failed to create escalation:", err);
+			return null;
+		}
+	}, []);
+
+	/**
+	 * Get player statistics including feedback counts.
+	 * @returns {Promise<Object|null>} Player stats or null if failed
+	 */
+	const getPlayerStats = useCallback(async () => {
+		try {
+			const stats = await invoke("get_player_stats");
+			log("[Stats] Player stats:", stats);
+			return stats;
+		} catch (err) {
+			console.error("[Ghost] Failed to get player stats:", err);
+			return null;
+		}
+	}, []);
+
+	// ============================================================================
+	// Intelligent Mode Settings
+	// ============================================================================
+
+	/**
+	 * Get current intelligent mode settings.
+	 * @returns {Promise<Object|null>} { intelligent_mode, reflection, guardrails }
+	 */
+	const getIntelligentMode = useCallback(async () => {
+		try {
+			return await invoke("get_intelligent_mode");
+		} catch (err) {
+			console.error("[Ghost] Failed to get intelligent mode:", err);
+			return null;
+		}
+	}, []);
+
+	/**
+	 * Toggle intelligent planning mode (uses PlannerAgent for sub-goals).
+	 * @param {boolean} enabled - Enable or disable
+	 * @returns {Promise<Object|null>} Updated settings or null if failed
+	 */
+	const setIntelligentMode = useCallback(async (enabled) => {
+		try {
+			const result = await invoke("set_intelligent_mode", { enabled });
+			log(`[Settings] Intelligent mode set to: ${enabled}`);
+			return result;
+		} catch (err) {
+			console.error("[Ghost] Failed to set intelligent mode:", err);
+			return null;
+		}
+	}, []);
+
+	/**
+	 * Toggle reflection mode (uses CriticAgent for quality control).
+	 * @param {boolean} enabled - Enable or disable
+	 * @returns {Promise<Object|null>} Updated settings or null if failed
+	 */
+	const setReflectionMode = useCallback(async (enabled) => {
+		try {
+			const result = await invoke("set_reflection_mode", { enabled });
+			log(`[Settings] Reflection mode set to: ${enabled}`);
+			return result;
+		} catch (err) {
+			console.error("[Ghost] Failed to set reflection mode:", err);
+			return null;
+		}
+	}, []);
+
+	/**
+	 * Toggle guardrails mode (input/output safety filtering).
+	 * @param {boolean} enabled - Enable or disable
+	 * @returns {Promise<Object|null>} Updated settings or null if failed
+	 */
+	const setGuardrailsMode = useCallback(async (enabled) => {
+		try {
+			const result = await invoke("set_guardrails_mode", { enabled });
+			log(`[Settings] Guardrails mode set to: ${enabled}`);
+			return result;
+		} catch (err) {
+			console.error("[Ghost] Failed to set guardrails mode:", err);
+			return null;
+		}
+	}, []);
+
 	return {
 		gameState,
 		isLoading,
@@ -1063,5 +1214,14 @@ export function useGhostGame() {
 		enableAutonomousMode,
 		detectSystemStatus,
 		generateAdaptivePuzzle,
+		// HITL Feedback (Chapter 13)
+		submitFeedback,
+		reportStuck,
+		getPlayerStats,
+		// Intelligent Mode Settings
+		getIntelligentMode,
+		setIntelligentMode,
+		setReflectionMode,
+		setGuardrailsMode,
 	};
 }

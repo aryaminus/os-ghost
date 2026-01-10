@@ -32,24 +32,49 @@ impl ObserverAgent {
         Ok(similarity)
     }
 
-    /// Extract key topics from page
+    /// Extract key topics from page using Chain-of-Thought reasoning
     async fn extract_topics(&self, context: &AgentContext) -> AgentResult<Vec<String>> {
         let redacted_content = crate::privacy::redact_pii(&context.page_content);
-        let prompt = format!(
-            "Extract 3-5 key topics from this page content. Return as comma-separated list, nothing else:\n{}",
-            &redacted_content.chars().take(2000).collect::<String>()
+        
+        // CoT prompt for topic extraction
+        let cot_prompt = format!(
+            r#"Analyze this webpage content and extract key topics.
+
+PAGE CONTENT (truncated):
+{}
+
+PUZZLE CONTEXT:
+- Current puzzle clue: "{}"
+- Target keywords to look for: {:?}
+
+CHAIN OF THOUGHT:
+1. SCAN: What is this page about at a high level?
+2. IDENTIFY: What are the main subjects, concepts, or entities mentioned?
+3. RELATE: Which topics might be relevant to the puzzle clue?
+4. EXTRACT: List 3-5 key topics
+
+OUTPUT: Return ONLY a comma-separated list of 3-5 key topics, nothing else.
+Example output: artificial intelligence, machine learning, neural networks"#,
+            &redacted_content.chars().take(1500).collect::<String>(),
+            context.puzzle_clue,
+            context.planning.primary_keywords
         );
 
         let response = self
             .ai_router
-            .generate_text(&prompt)
+            .generate_text(&cot_prompt)
             .await
             .map_err(|e| AgentError::ServiceError(e.to_string()))?;
 
+        // Parse the comma-separated response
         let topics: Vec<String> = response
+            .lines()
+            .last()
+            .unwrap_or(&response)
             .split(',')
             .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.is_empty() && s.len() < 50)
+            .take(5)
             .collect();
 
         Ok(topics)

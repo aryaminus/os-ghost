@@ -1,13 +1,22 @@
 //! Native Messaging bridge for Chrome extension communication
 //! Handles real-time browser events from the extension via TCP
+//!
+//! MCP Integration:
+//! This bridge now exposes the browser as an MCP-compatible server, allowing
+//! agents to discover and invoke browser capabilities through a standardized
+//! interface. See `mcp::browser` for the full MCP implementation.
 
 use crate::game_state::EffectQueue;
+use crate::mcp::browser::{BrowserMcpServer, BrowserState};
+use crate::mcp::{McpServer, ToolRequest};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::mpsc;
+use uuid::Uuid;
 
 const BRIDGE_PORT: u16 = 9876;
 /// Maximum concurrent connections to prevent DoS
@@ -50,8 +59,14 @@ impl Drop for ConnectionGuard {
     }
 }
 
+/// MCP-aware bridge context passed to handlers
+pub struct McpBridgeContext {
+    pub mcp_server: Arc<BrowserMcpServer>,
+    pub effect_receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<serde_json::Value>>>,
+}
+
 /// Handle a single client connection
-fn handle_client(mut stream: TcpStream, app: &AppHandle) {
+fn handle_client(mut stream: TcpStream, app: &AppHandle, mcp_ctx: &McpBridgeContext) {
     // Create guard to ensure connection count is decremented on exit
     let _guard = ConnectionGuard;
 
@@ -61,10 +76,26 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
         ACTIVE_CONNECTIONS.load(Ordering::SeqCst)
     );
 
+    // Mark browser as connected in MCP state
+    mcp_ctx
+        .mcp_server
+        .state()
+        .is_connected
+        .store(true, Ordering::SeqCst);
+
     // Emit connection event to frontend
     let _ = app.emit(
         "extension_connected",
         serde_json::json!({ "connected": true }),
+    );
+
+    // Log MCP manifest for debugging/discovery
+    let manifest = mcp_ctx.mcp_server.manifest();
+    tracing::info!(
+        "MCP Browser Server ready: {} tools, {} resources, {} prompts",
+        manifest.tools.len(),
+        manifest.resources.len(),
+        manifest.prompts.len()
     );
 
     stream
@@ -96,27 +127,57 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
         if let Ok(message) = serde_json::from_slice::<BrowserMessage>(&msg_buf) {
             tracing::debug!("Received from Chrome: {:?}", message);
 
+            // Update MCP state based on message type
+            let mcp_state = mcp_ctx.mcp_server.state();
+
             match message.msg_type.as_str() {
                 "page_load" | "tab_changed" => {
+                    let url = message.url.clone().unwrap_or_default();
+                    let title = message.title.clone().unwrap_or_default();
+                    let timestamp = message.timestamp.unwrap_or(0);
+
+                    // Update MCP Resource state (async in background)
+                    let state_clone = mcp_state.clone();
+                    tauri::async_runtime::spawn(async move {
+                        state_clone
+                            .update_page(url.clone(), title.clone(), String::new(), timestamp)
+                            .await;
+                    });
+
+                    // Emit to frontend (legacy event for backward compatibility)
                     let _ = app.emit(
                         "browser_navigation",
                         serde_json::json!({
                             "url": message.url.unwrap_or_default(),
                             "title": message.title.unwrap_or_default(),
-                            "timestamp": message.timestamp.unwrap_or(0)
+                            "timestamp": timestamp
                         }),
                     );
                 }
                 "page_content" => {
-                    let url = message.url.unwrap_or_default();
-                    let body_text = message.body_text.unwrap_or_default();
+                    let url = message.url.clone().unwrap_or_default();
+                    let title = message.title.clone().unwrap_or_default();
+                    let body_text = message.body_text.clone().unwrap_or_default();
+                    let timestamp = message.timestamp.unwrap_or(chrono::Utc::now().timestamp());
+
                     tracing::info!(
                         "Received page_content: url={} ({} bytes)",
                         url,
                         body_text.len()
                     );
 
-                    // 1. Store in memory
+                    // Update MCP Resource state with full content
+                    let state_clone = mcp_state.clone();
+                    let url_clone = url.clone();
+                    let title_clone = title.clone();
+                    let body_clone = body_text.clone();
+                    tauri::async_runtime::spawn(async move {
+                        state_clone
+                            .update_page(url_clone, title_clone, body_clone, timestamp)
+                            .await;
+                    });
+
+                    // 1. Store in memory (legacy path)
                     use crate::memory::SessionMemory;
                     if let Some(session_mem) = app.try_state::<Arc<SessionMemory>>() {
                         if let Err(e) = session_mem.store_content(body_text.clone()) {
@@ -129,13 +190,13 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                         "page_content",
                         serde_json::json!({
                             "url": url,
-                            "body_text": body_text // Frontend might need this for rendering analysis
+                            "body_text": body_text
                         }),
                     );
                 }
                 "browsing_context" => {
-                    let history = message.recent_history.unwrap_or_default();
-                    let top_sites = message.top_sites.unwrap_or_default();
+                    let history = message.recent_history.clone().unwrap_or_default();
+                    let top_sites = message.top_sites.clone().unwrap_or_default();
 
                     tracing::info!(
                         "Received browsing context: {} history items, {} top sites",
@@ -143,6 +204,15 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                         top_sites.len()
                     );
 
+                    // Update MCP Resource state
+                    let state_clone = mcp_state.clone();
+                    let history_clone = history.clone();
+                    let sites_clone = top_sites.clone();
+                    tauri::async_runtime::spawn(async move {
+                        state_clone.update_context(history_clone, sites_clone).await;
+                    });
+
+                    // Emit to frontend (legacy event)
                     let _ = app.emit(
                         "browsing_context",
                         serde_json::json!({
@@ -170,11 +240,10 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                 let _ = stream.flush();
             }
 
-            // Check for pending effects to send (piggyback on active connection)
+            // Check for pending effects to send (from MCP tools or legacy EffectQueue)
+            // First: Check legacy EffectQueue (backward compatibility)
             let effect_queue = app.state::<Arc<EffectQueue>>();
-            let hidden_queue = effect_queue.clone(); // Clone Arc to use
-
-            // Pop all pending effects
+            let hidden_queue = effect_queue.clone();
             let pending = hidden_queue.pop_all();
 
             for effect in pending {
@@ -182,8 +251,6 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                 match serde_json::to_vec(&effect) {
                     Ok(json) => {
                         let len = (json.len() as u32).to_le_bytes();
-                        // We ignore write errors here as we might have lost connection,
-                        // but that's fine for ephemeral effects
                         let _ = stream.write_all(&len);
                         let _ = stream.write_all(&json);
                         let _ = stream.flush();
@@ -191,8 +258,32 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
                     Err(e) => tracing::error!("Failed to serialize effect: {}", e),
                 }
             }
+
+            // Second: Check MCP effect channel (non-blocking)
+            // Note: We try_lock here to avoid blocking the main message loop
+            if let Ok(mut receiver) = mcp_ctx.effect_receiver.try_lock() {
+                while let Ok(effect) = receiver.try_recv() {
+                    tracing::info!("Sending MCP tool effect to extension: {:?}", effect);
+                    match serde_json::to_vec(&effect) {
+                        Ok(json) => {
+                            let len = (json.len() as u32).to_le_bytes();
+                            let _ = stream.write_all(&len);
+                            let _ = stream.write_all(&json);
+                            let _ = stream.flush();
+                        }
+                        Err(e) => tracing::error!("Failed to serialize MCP effect: {}", e),
+                    }
+                }
+            }
         }
     }
+
+    // Mark browser as disconnected in MCP state
+    mcp_ctx
+        .mcp_server
+        .state()
+        .is_connected
+        .store(false, Ordering::SeqCst);
 
     // Emit disconnection event to frontend
     let _ = app.emit(
@@ -203,6 +294,7 @@ fn handle_client(mut stream: TcpStream, app: &AppHandle) {
 }
 
 /// Start the TCP server for native messaging bridge (runs in background thread)
+/// Now creates and manages the MCP Browser Server for standardized agent access
 pub fn start_native_messaging_server(app: AppHandle) {
     std::thread::spawn(move || {
         tracing::info!(
@@ -222,6 +314,22 @@ pub fn start_native_messaging_server(app: AppHandle) {
             "Native messaging server listening on 127.0.0.1:{}",
             BRIDGE_PORT
         );
+
+        // Create MCP Browser Server with effect channel
+        let (effect_tx, effect_rx) = mpsc::channel::<serde_json::Value>(64);
+        let browser_state = Arc::new(BrowserState::new());
+        let mcp_server = Arc::new(BrowserMcpServer::new(browser_state.clone(), effect_tx));
+
+        // Register MCP server as managed state for orchestrator access
+        app.manage(mcp_server.clone());
+
+        // Create shared MCP context for connection handlers
+        let mcp_ctx = Arc::new(McpBridgeContext {
+            mcp_server: mcp_server.clone(),
+            effect_receiver: Arc::new(tokio::sync::Mutex::new(effect_rx)),
+        });
+
+        tracing::info!("MCP Browser Server initialized");
 
         for stream in listener.incoming() {
             match stream {
@@ -243,8 +351,9 @@ pub fn start_native_messaging_server(app: AppHandle) {
                     ACTIVE_CONNECTIONS.fetch_add(1, Ordering::SeqCst);
 
                     let app_clone = app.clone();
+                    let mcp_ctx_clone = mcp_ctx.clone();
                     std::thread::spawn(move || {
-                        handle_client(stream, &app_clone);
+                        handle_client(stream, &app_clone, &mcp_ctx_clone);
                     });
                 }
                 Err(e) => {
@@ -253,4 +362,75 @@ pub fn start_native_messaging_server(app: AppHandle) {
             }
         }
     });
+}
+
+// ============================================================================
+// MCP Integration Helpers
+// ============================================================================
+
+/// Invoke an MCP tool by name with arguments (convenience function for orchestrator)
+pub async fn invoke_mcp_tool(
+    mcp_server: &BrowserMcpServer,
+    tool_name: &str,
+    arguments: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let request = ToolRequest {
+        tool_name: tool_name.to_string(),
+        arguments,
+        request_id: Uuid::new_v4().to_string(),
+    };
+
+    let response = mcp_server.invoke_tool(request).await;
+
+    if response.success {
+        Ok(response.data)
+    } else {
+        Err(response.error.unwrap_or_else(|| "Unknown error".to_string()))
+    }
+}
+
+/// Read current page content from MCP resource (convenience function)
+pub async fn read_current_page(mcp_server: &BrowserMcpServer) -> Option<serde_json::Value> {
+    use crate::mcp::ResourceRequest;
+
+    let request = ResourceRequest {
+        uri: "browser://current-page".to_string(),
+        request_id: Uuid::new_v4().to_string(),
+        query: None,
+    };
+
+    let response = mcp_server.read_resource(request).await;
+    if response.success {
+        Some(response.content)
+    } else {
+        None
+    }
+}
+
+/// Read browsing history from MCP resource (convenience function)
+pub async fn read_browsing_history(
+    mcp_server: &BrowserMcpServer,
+    limit: Option<usize>,
+) -> Option<serde_json::Value> {
+    use crate::mcp::ResourceRequest;
+    use std::collections::HashMap;
+
+    let query = limit.map(|l| {
+        let mut q = HashMap::new();
+        q.insert("limit".to_string(), l.to_string());
+        q
+    });
+
+    let request = ResourceRequest {
+        uri: "browser://history".to_string(),
+        request_id: Uuid::new_v4().to_string(),
+        query,
+    };
+
+    let response = mcp_server.read_resource(request).await;
+    if response.success {
+        Some(response.content)
+    } else {
+        None
+    }
 }
