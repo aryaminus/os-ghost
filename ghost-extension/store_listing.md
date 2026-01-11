@@ -6,8 +6,6 @@ Use this content when submitting the extension to the Chrome Web Store.
 
 **Name**: OS Ghost Bridge
 
-**Short Name**: OS Ghost
-
 **Summary** (up to 132 characters):
 
 ```
@@ -117,7 +115,7 @@ Create screenshots at **1280x800** or **640x400** resolution:
 - [ ] Authentication information
 - [ ] Personal communications
 - [ ] Location
-- [ ] Web history - Only current session, not stored persistently
+- [x] Web history - Used to generate puzzle context (not stored persistently)
 - [ ] User activity
 
 **How is the data used?**

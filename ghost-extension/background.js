@@ -52,6 +52,12 @@ let isConnected = false;
 /** @type {number} */
 let reconnectAttempts = 0;
 
+/** @type {number|null} */
+let reconnectTimerId = null;
+
+/** @type {number|null} */
+let browsingContextTimerId = null;
+
 /** Max reconnect attempts before giving up */
 const MAX_RECONNECT_ATTEMPTS = 5;
 
@@ -213,15 +219,25 @@ function connectToNative() {
 			}
 		});
 
-		// Send browsing context (history + top sites) for immediate puzzle generation
-		// This eliminates the "waiting for signal" state
-		// Added delay to prevent race condition with connection establishment
-		setTimeout(() => sendBrowsingContext(), 1000);
+		// Send browsing context (history + top sites) for immediate puzzle generation.
+		// Added delay to prevent race condition with connection establishment.
+		if (browsingContextTimerId) {
+			clearTimeout(browsingContextTimerId);
+		}
+		browsingContextTimerId = setTimeout(() => {
+			browsingContextTimerId = null;
+			sendBrowsingContext();
+		}, 1000);
 
 		port.onMessage.addListener(handleNativeMessage);
 
 		port.onDisconnect.addListener(() => {
 			updateConnectionStatus(false);
+			port = null;
+			if (browsingContextTimerId) {
+				clearTimeout(browsingContextTimerId);
+				browsingContextTimerId = null;
+			}
 			const error = chrome.runtime.lastError;
 			if (error) {
 				console.error(
@@ -236,7 +252,13 @@ function connectToNative() {
 			if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
 				reconnectAttempts++;
 				log("Attempting to reconnect...");
-				setTimeout(connectToNative, 5000);
+				if (reconnectTimerId) {
+					clearTimeout(reconnectTimerId);
+				}
+				reconnectTimerId = setTimeout(() => {
+					reconnectTimerId = null;
+					connectToNative();
+				}, 5000);
 			}
 		});
 	} catch (error) {
@@ -394,18 +416,6 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 	});
 });
 
-// Listen for messages from content scripts
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-	if (message.type === "page_content_response") {
-		sendToNative({
-			type: "page_content",
-			url: sender.tab?.url || "",
-			body_text: message.bodyText,
-			timestamp: Date.now(),
-		});
-	}
-	return false;
-});
 
 // Initialize connection on startup
 updateConnectionStatus(false); // Start as disconnected

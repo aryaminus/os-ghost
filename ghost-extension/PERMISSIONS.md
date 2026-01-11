@@ -11,7 +11,7 @@ This document explains why each permission is required for the OS Ghost Bridge C
 **How it's used**:
 
 - Send page navigation events to the desktop app
-- Receive commands to inject visual effects
+- Receive commands to trigger cosmetic visual effects
 - Establish connection status monitoring
 
 ### `storage`
@@ -23,6 +23,25 @@ This document explains why each permission is required for the OS Ghost Bridge C
 - Store boolean `appConnected` status
 - Popup reads this to show connection indicator
 - No sensitive data is stored
+
+### `history`
+
+**Justification**: Used to provide a lightweight summary of the user's recent browsing context to the desktop app so puzzles can be generated immediately (instead of waiting for multiple page visits).
+
+**How it's used**:
+
+- Fetch a small, recent window of history entries (max ~50)
+- Only URL/title/visit metadata is included
+- Data is sent only to the local desktop app via native messaging
+
+### `topSites`
+
+**Justification**: Used to provide a small list of most visited sites as additional context for puzzle generation.
+
+**How it's used**:
+
+- Fetch top sites via `chrome.topSites.get()`
+- Send the top ~10 to the local desktop app
 
 ## Host Permissions
 

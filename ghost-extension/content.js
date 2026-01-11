@@ -71,8 +71,6 @@ function sanitizePII(text) {
 	return sanitized;
 }
 
-/** @type {Set<string>} Track active effects to prevent duplicates */
-const activeEffects = new Set();
 
 /**
  * Apply visual effect to the page.
@@ -81,8 +79,7 @@ const activeEffects = new Set();
  * @returns {void}
  */
 function applyEffect(effect, duration) {
-	const effectId = effect + "_" + Date.now();
-	activeEffects.add(effectId);
+	if (!effect) return;
 
 	switch (effect) {
 		case "glitch":
@@ -104,9 +101,6 @@ function applyEffect(effect, duration) {
 			warn("Unknown effect:", effect);
 	}
 
-	setTimeout(() => {
-		activeEffects.delete(effectId);
-	}, duration);
 }
 
 /**
@@ -116,6 +110,9 @@ function applyEffect(effect, duration) {
  * @returns {void}
  */
 function applyGlitchEffect(duration) {
+	document.getElementById("ghost-glitch-style")?.remove();
+	document.body.classList.remove("ghost-glitch-active");
+
 	const style = document.createElement("style");
 	style.id = "ghost-glitch-style";
 	style.textContent = `
@@ -160,6 +157,9 @@ function applyGlitchEffect(duration) {
  * @returns {void}
  */
 function applyScanlines(duration) {
+	document.getElementById("ghost-scanlines")?.remove();
+	document.getElementById("ghost-scanlines-style")?.remove();
+
 	const overlay = document.createElement("div");
 	overlay.id = "ghost-scanlines";
 	overlay.style.cssText = `
@@ -204,6 +204,8 @@ function applyScanlines(duration) {
  * @returns {void}
  */
 function applyStaticNoise(duration) {
+	document.getElementById("ghost-static")?.remove();
+
 	const canvas = document.createElement("canvas");
 	canvas.id = "ghost-static";
 	canvas.style.cssText = `
@@ -219,6 +221,11 @@ function applyStaticNoise(duration) {
 	document.body.appendChild(canvas);
 
 	const ctx = canvas.getContext("2d");
+	if (!ctx) {
+		canvas.remove();
+		return;
+	}
+
 	canvas.width = window.innerWidth;
 	canvas.height = window.innerHeight;
 
@@ -254,6 +261,9 @@ function applyStaticNoise(duration) {
  * @returns {void}
  */
 function applyPulseGlow(duration) {
+	document.getElementById("ghost-pulse-style")?.remove();
+	document.body.classList.remove("ghost-pulse-active");
+
 	const style = document.createElement("style");
 	style.id = "ghost-pulse-style";
 	style.textContent = `
@@ -280,6 +290,9 @@ function applyPulseGlow(duration) {
  * @returns {void}
  */
 function applyFlicker(duration) {
+	document.getElementById("ghost-flicker-style")?.remove();
+	document.body.classList.remove("ghost-flicker-active");
+
 	const style = document.createElement("style");
 	style.id = "ghost-flicker-style";
 	style.textContent = `
@@ -605,13 +618,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			sendResponse(content);
 			break;
 
-		case "get_content_idle":
-			// Async version - extracts content when browser is idle
-			// Useful for proactive content gathering without blocking
-			extractContentWhenIdle((content) => {
-				sendResponse(content);
-			});
-			return true; // Keep channel open for async response
 
 		default:
 			sendResponse({ error: "Unknown message type" });

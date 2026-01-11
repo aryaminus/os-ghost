@@ -15,6 +15,8 @@ The Extension collects the following data from your browser:
 | **Page URLs** | URLs of websites you visit | Detect puzzle solutions in the game |
 | **Page Titles** | Titles of visited pages | Provide context for game puzzles |
 | **Page Content** | Visible text on pages (first 5,000 characters) | Enable AI-powered puzzle generation |
+| **Browser History (Recent)** | A limited set of recent URLs/titles/visit metadata | Provide immediate context for puzzle generation |
+| **Top Sites** | A short list of most visited sites | Provide additional context for puzzle generation |
 
 ## How Data Is Used
 
@@ -43,11 +45,10 @@ When using AI-powered features in the desktop app:
 | Permission | Why We Need It |
 |------------|----------------|
 | `nativeMessaging` | Core functionality - communicate with OS Ghost desktop app |
-| `activeTab` | Read current tab URL/title for game puzzle context |
-| `tabs` | Monitor tab changes to detect when puzzles are solved |
-| `scripting` | Inject visual effects (glitch, scanlines) as game feedback |
-| `storage` | Store connection status locally |
-| `host_permissions: <all_urls>` | Game puzzles can involve any website; you browse freely |
+| `storage` | Store connection status locally (connected/disconnected) |
+| `history` | Read recent browsing history for puzzle context |
+| `topSites` | Read top visited sites for puzzle context |
+| `host_permissions: <all_urls>` | Allow content script to read visible text on any site you visit while playing |
 
 ## User Control
 
