@@ -143,19 +143,23 @@ impl GameState {
 
     /// Mark a puzzle as solved
     pub async fn solve_puzzle(&mut self, puzzle_id: &str, url: &str, title: &str) {
-        if !self.solved_puzzles.contains(&puzzle_id.to_string()) {
-            self.solved_puzzles.push(puzzle_id.to_string());
-            self.discoveries.push(Discovery {
-                puzzle_id: puzzle_id.to_string(),
-                url: url.to_string(),
-                title: title.to_string(),
-                timestamp: current_timestamp(),
-            });
-            self.current_puzzle_index += 1;
-            self.hints_revealed = 0;
-            self.puzzle_start_time = Some(current_timestamp());
+        if self.solved_puzzles.iter().any(|id| id == puzzle_id) {
+            return;
+        }
 
-            let _ = self.save().await;
+        self.solved_puzzles.push(puzzle_id.to_string());
+        self.discoveries.push(Discovery {
+            puzzle_id: puzzle_id.to_string(),
+            url: url.to_string(),
+            title: title.to_string(),
+            timestamp: current_timestamp(),
+        });
+        self.current_puzzle_index += 1;
+        self.hints_revealed = 0;
+        self.puzzle_start_time = Some(current_timestamp());
+
+        if let Err(e) = self.save().await {
+            tracing::warn!("Failed to save game state after solve: {}", e);
         }
     }
 
@@ -163,7 +167,9 @@ impl GameState {
     pub async fn start_puzzle_timer(&mut self) {
         self.puzzle_start_time = Some(current_timestamp());
         self.hints_revealed = 0;
-        let _ = self.save().await;
+        if let Err(e) = self.save().await {
+            tracing::warn!("Failed to save game state after starting timer: {}", e);
+        }
     }
 
     /// Check if a hint should be revealed
@@ -185,7 +191,9 @@ impl GameState {
     pub async fn reveal_hint(&mut self) -> Option<usize> {
         if self.hints_revealed < MAX_HINTS {
             self.hints_revealed += 1;
-            let _ = self.save().await;
+            if let Err(e) = self.save().await {
+                tracing::warn!("Failed to save game state after revealing hint: {}", e);
+            }
             Some(self.hints_revealed - 1)
         } else {
             None
@@ -213,7 +221,9 @@ impl GameState {
     /// Reset game to start
     pub async fn reset(&mut self) {
         *self = Self::default();
-        let _ = self.save().await;
+        if let Err(e) = self.save().await {
+            tracing::warn!("Failed to save game state after reset: {}", e);
+        }
     }
 
     /// Check if game is complete
@@ -249,9 +259,14 @@ pub async fn check_hint_available() -> bool {
 #[tauri::command]
 pub async fn get_next_hint(hints: Vec<String>) -> Option<String> {
     let mut state = GameState::load().await;
-    if let Some(hint_index) = state.reveal_hint().await {
-        hints.get(hint_index).cloned()
-    } else {
-        None
+
+    // Don't consume a hint slot if there is no corresponding hint text.
+    // This matters for puzzles that only supply 1-2 hints.
+    let available_hints = hints.len().min(MAX_HINTS);
+    if state.hints_revealed >= available_hints {
+        return None;
     }
+
+    let hint_index = state.reveal_hint().await?;
+    hints.get(hint_index).cloned()
 }

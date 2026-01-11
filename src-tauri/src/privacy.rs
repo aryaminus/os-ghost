@@ -137,54 +137,54 @@ pub fn get_privacy_notice() -> String {
 /// Redact PII from text before sending to AI
 pub fn redact_pii(text: &str) -> String {
     use regex::Regex;
+    use std::borrow::Cow;
     use std::sync::OnceLock;
 
-    // Use static OnceLocks to compile regexes only once per program run
-    // This is thread-safe and efficient
-    static EMAIL_REGEX: OnceLock<Regex> = OnceLock::new();
-    static PHONE_REGEX: OnceLock<Regex> = OnceLock::new();
-    static CREDIT_CARD_REGEX: OnceLock<Regex> = OnceLock::new();
-    static SSN_REGEX: OnceLock<Regex> = OnceLock::new();
-    static IP_REGEX: OnceLock<Regex> = OnceLock::new();
-    static API_KEY_REGEX: OnceLock<Regex> = OnceLock::new();
+    // Compile regexes once. If compilation ever fails (shouldn't), skip that redaction.
+    static EMAIL_REGEX: OnceLock<Option<Regex>> = OnceLock::new();
+    static PHONE_REGEX: OnceLock<Option<Regex>> = OnceLock::new();
+    static CREDIT_CARD_REGEX: OnceLock<Option<Regex>> = OnceLock::new();
+    static SSN_REGEX: OnceLock<Option<Regex>> = OnceLock::new();
+    static IP_REGEX: OnceLock<Option<Regex>> = OnceLock::new();
+    static API_KEY_REGEX: OnceLock<Option<Regex>> = OnceLock::new();
 
-    let email_re = EMAIL_REGEX
-        .get_or_init(|| Regex::new(r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}").unwrap());
-
+    let email_re = EMAIL_REGEX.get_or_init(|| Regex::new(r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}").ok());
     let phone_re = PHONE_REGEX.get_or_init(|| {
-        // Basic phone pattern: (123) 456-7890, 123-456-7890, +1-123-456-7890, etc.
-        Regex::new(r"(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}").unwrap()
+        Regex::new(r"(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}").ok()
     });
-
     let credit_card_re = CREDIT_CARD_REGEX.get_or_init(|| {
-        // Credit card patterns: 4 groups of 4 digits with optional spaces/dashes
-        Regex::new(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b").unwrap()
+        Regex::new(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b").ok()
     });
-
-    let ssn_re = SSN_REGEX.get_or_init(|| {
-        // SSN pattern: 123-45-6789
-        Regex::new(r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b").unwrap()
-    });
-
+    let ssn_re = SSN_REGEX.get_or_init(|| Regex::new(r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b").ok());
     let ip_re = IP_REGEX.get_or_init(|| {
-        // IPv4 addresses (excluding common local addresses like 127.0.0.1, 192.168.x.x)
-        Regex::new(r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b").unwrap()
+        Regex::new(r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b").ok()
     });
-
     let api_key_re = API_KEY_REGEX.get_or_init(|| {
-        // Common API key patterns (Stripe, GitHub, AWS, etc.)
-        // Matches sk_live_..., ghp_..., AKIA..., etc.
-        Regex::new(r"(?i)\b(?:sk_live_|ghp_|gho_|glpat-|xoxb-|xoxp-|AKIA|AIza)[a-zA-Z0-9_\-]{20,}\b").unwrap()
+        Regex::new(r"(?i)\b(?:sk_live_|ghp_|gho_|glpat-|xoxb-|xoxp-|AKIA|AIza)[a-zA-Z0-9_\-]{20,}\b").ok()
     });
 
-    let redacted = email_re.replace_all(text, "[REDACTED_EMAIL]");
-    let redacted = phone_re.replace_all(&redacted, "[REDACTED_PHONE]");
-    let redacted = credit_card_re.replace_all(&redacted, "[REDACTED_CARD]");
-    let redacted = ssn_re.replace_all(&redacted, "[REDACTED_SSN]");
-    let redacted = ip_re.replace_all(&redacted, "[REDACTED_IP]");
-    let redacted = api_key_re.replace_all(&redacted, "[REDACTED_API_KEY]");
+    let mut out: Cow<'_, str> = Cow::Borrowed(text);
 
-    redacted.to_string()
+    if let Some(re) = email_re.as_ref() {
+        out = Cow::Owned(re.replace_all(&out, "[REDACTED_EMAIL]").into_owned());
+    }
+    if let Some(re) = phone_re.as_ref() {
+        out = Cow::Owned(re.replace_all(&out, "[REDACTED_PHONE]").into_owned());
+    }
+    if let Some(re) = credit_card_re.as_ref() {
+        out = Cow::Owned(re.replace_all(&out, "[REDACTED_CARD]").into_owned());
+    }
+    if let Some(re) = ssn_re.as_ref() {
+        out = Cow::Owned(re.replace_all(&out, "[REDACTED_SSN]").into_owned());
+    }
+    if let Some(re) = ip_re.as_ref() {
+        out = Cow::Owned(re.replace_all(&out, "[REDACTED_IP]").into_owned());
+    }
+    if let Some(re) = api_key_re.as_ref() {
+        out = Cow::Owned(re.replace_all(&out, "[REDACTED_API_KEY]").into_owned());
+    }
+
+    out.into_owned()
 }
 
 #[cfg(test)]

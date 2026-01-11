@@ -77,11 +77,6 @@ impl GhostWindow {
         Ok(())
     }
 
-    /// Toggle click-through based on whether user is hovering Ghost
-    pub fn set_ignore_cursor_events(&self, ignore: bool) -> Result<()> {
-        self.window.set_ignore_cursor_events(ignore)?;
-        Ok(())
-    }
 
     /// Position window in bottom-right corner of primary monitor
     pub fn position_bottom_right(&self) -> Result<()> {
@@ -107,15 +102,6 @@ impl GhostWindow {
         }
         Ok(())
     }
-}
-
-/// Tauri command to toggle click-through
-#[tauri::command]
-pub fn set_window_clickable(window: Window, clickable: bool) -> Result<(), String> {
-    let ghost_window = GhostWindow::new(window);
-    ghost_window
-        .set_ignore_cursor_events(!clickable)
-        .map_err(|e| e.to_string())
 }
 
 /// Tauri command to start dragging the window

@@ -18,7 +18,7 @@ fn get_primary_screen() -> Result<Screen> {
         .ok_or_else(|| anyhow::anyhow!("No screens found"))
 }
 
-/// Capture the primary monitor's screen and return as base64-encoded PNG
+/// Capture the primary monitor's screen and return as base64-encoded JPEG
 pub fn capture_primary_monitor() -> Result<String> {
     let primary = get_primary_screen()?;
 

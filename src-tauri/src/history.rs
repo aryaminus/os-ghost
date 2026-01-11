@@ -5,6 +5,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 use serde::Serialize;
 use std::path::PathBuf;
+use tempfile::TempDir;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct HistoryEntry {
@@ -14,35 +15,72 @@ pub struct HistoryEntry {
     pub last_visit_time: i64,
 }
 
-/// Get Chrome history database path for current OS
+/// Get a Chromium-family history database path for current OS
+///
+/// Tries a few common browser locations (Chrome, Chromium, Brave, Edge, Arc) and
+/// returns the first existing path.
 fn get_chrome_history_path() -> Result<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        let home = std::env::var("HOME")?;
-        let path = PathBuf::from(format!(
-            "{}/Library/Application Support/Google/Chrome/Default/History",
-            home
-        ));
-        tracing::info!("Looking for Chrome history at: {:?}", path);
-        Ok(path)
+        let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("No home directory found"))?;
+        let candidates = [
+            "Library/Application Support/Google/Chrome/Default/History",
+            "Library/Application Support/Chromium/Default/History",
+            "Library/Application Support/BraveSoftware/Brave-Browser/Default/History",
+            "Library/Application Support/Microsoft Edge/Default/History",
+            "Library/Application Support/Arc/User Data/Default/History",
+        ];
+
+        for rel in candidates {
+            let path = home.join(rel);
+            if path.exists() {
+                tracing::debug!("Using browser history at: {:?}", path);
+                return Ok(path);
+            }
+        }
+
+        // Default Chrome path (even if it doesn't exist)
+        Ok(home.join("Library/Application Support/Google/Chrome/Default/History"))
     }
 
     #[cfg(target_os = "windows")]
     {
-        let local_app_data = std::env::var("LOCALAPPDATA")?;
-        Ok(PathBuf::from(format!(
-            "{}\\Google\\Chrome\\User Data\\Default\\History",
-            local_app_data
-        )))
+        let local_app_data = std::env::var("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .map_err(|e| anyhow::anyhow!("LOCALAPPDATA not set: {}", e))?;
+
+        let candidates = [
+            local_app_data.join("Google/Chrome/User Data/Default/History"),
+            local_app_data.join("Chromium/User Data/Default/History"),
+            local_app_data.join("BraveSoftware/Brave-Browser/User Data/Default/History"),
+            local_app_data.join("Microsoft/Edge/User Data/Default/History"),
+        ];
+
+        for path in candidates {
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+
+        Ok(local_app_data.join("Google/Chrome/User Data/Default/History"))
     }
 
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME")?;
-        Ok(PathBuf::from(format!(
-            "{}/.config/google-chrome/Default/History",
-            home
-        )))
+        let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("No home directory found"))?;
+        let candidates = [
+            home.join(".config/google-chrome/Default/History"),
+            home.join(".config/chromium/Default/History"),
+            home.join(".config/BraveSoftware/Brave-Browser/Default/History"),
+        ];
+
+        for path in candidates {
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+
+        Ok(home.join(".config/google-chrome/Default/History"))
     }
 }
 
@@ -57,9 +95,12 @@ pub fn get_recent_urls(limit: usize) -> Result<Vec<HistoryEntry>> {
         ));
     }
 
-    // Create temp copy to avoid database locking issues
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("ghost_history_{}.db", uuid::Uuid::new_v4()));
+    // Create temp copy to avoid database locking issues.
+    // Use a temp directory so cleanup happens even on early returns.
+    let temp_dir = TempDir::new()?;
+    let temp_path = temp_dir
+        .path()
+        .join(format!("ghost_history_{}.db", uuid::Uuid::new_v4()));
 
     // Copy the database file
     std::fs::copy(&history_path, &temp_path)?;
@@ -86,9 +127,7 @@ pub fn get_recent_urls(limit: usize) -> Result<Vec<HistoryEntry>> {
         .filter_map(|r| r.ok())
         .collect();
 
-    // Clean up temp file
-    let _ = std::fs::remove_file(&temp_path);
-
+    // temp_dir is dropped here, cleaning up the copied DB
     Ok(entries)
 }
 

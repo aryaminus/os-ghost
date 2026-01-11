@@ -5,26 +5,11 @@ use crate::utils::clean_json_response;
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Rate limiting configuration
-const MAX_REQUESTS_PER_MINUTE: u64 = 10;
-const RATE_LIMIT_WINDOW_SECS: u64 = 60;
-
-/// Thread-safe rate limiter state
-struct RateLimitState {
-    /// Timestamp of window start (seconds since epoch)
-    window_start: u64,
-    /// Request count in current window
-    request_count: u64,
-}
 
 pub struct GeminiClient {
     client: Client,
     api_key: String,
-    /// Rate limiter state protected by mutex
-    rate_limit: Mutex<RateLimitState>,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,110 +83,9 @@ struct GeminiError {
 
 impl GeminiClient {
     pub fn new(api_key: String) -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
         Self {
             client: Client::new(),
             api_key,
-            rate_limit: Mutex::new(RateLimitState {
-                window_start: now,
-                request_count: 0,
-            }),
-        }
-    }
-
-    /// Check and update rate limit, returns true if request is allowed
-    /// Thread-safe: uses mutex to ensure atomic check-and-update
-    #[must_use]
-    fn check_rate_limit(&self) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        // Lock the rate limit state - handle poisoning gracefully
-        let mut state = match self.rate_limit.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                tracing::warn!("Rate limit mutex was poisoned, recovering");
-                poisoned.into_inner()
-            }
-        };
-
-        // If window has expired, reset it
-        if now.saturating_sub(state.window_start) >= RATE_LIMIT_WINDOW_SECS {
-            state.window_start = now;
-            state.request_count = 1;
-            return true;
-        }
-
-        // Check if we're within limits
-        if state.request_count >= MAX_REQUESTS_PER_MINUTE {
-            return false;
-        }
-
-        // Increment and allow
-        state.request_count += 1;
-        true
-    }
-
-    /// Wait for rate limit availability with smart backoff
-    /// Returns false if max attempts exceeded
-    async fn wait_for_rate_limit(&self) -> bool {
-        const MAX_WAIT_ATTEMPTS: u32 = 6; // Max ~60s of waiting (covers full window)
-        let mut attempts = 0;
-
-        loop {
-            if self.check_rate_limit() {
-                return true;
-            }
-
-            attempts += 1;
-            if attempts > MAX_WAIT_ATTEMPTS {
-                tracing::warn!(
-                    "Rate limit: max wait attempts exceeded ({}), dropping request",
-                    MAX_WAIT_ATTEMPTS
-                );
-                return false;
-            }
-
-            // Calculate time until window reset
-            let wait_secs = {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-
-                let window_start = match self.rate_limit.lock() {
-                    Ok(state) => state.window_start,
-                    Err(poisoned) => poisoned.into_inner().window_start,
-                };
-
-                let elapsed = now.saturating_sub(window_start);
-                if elapsed < RATE_LIMIT_WINDOW_SECS {
-                    RATE_LIMIT_WINDOW_SECS - elapsed
-                } else {
-                    1
-                }
-            };
-
-            // Wait longer between checks to avoid busy-looping
-            // Cap at 10s to allow periodic re-checks
-            let wait_secs = wait_secs.clamp(2, 10);
-
-            // Only log on first attempt to avoid spam
-            if attempts == 1 {
-                tracing::warn!(
-                    "Rate limit hit, waiting ~{}s (attempt {}/{})",
-                    wait_secs,
-                    attempts,
-                    MAX_WAIT_ATTEMPTS
-                );
-            }
-
-            tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
         }
     }
 
@@ -218,9 +102,6 @@ impl GeminiClient {
             return Ok("AI Analysis unavailable (No API Key)".to_string());
         }
 
-        if !self.wait_for_rate_limit().await {
-            return Err(anyhow::anyhow!("Rate limit exceeded, request dropped"));
-        }
 
         let request = GeminiRequest {
             contents: vec![Content {
@@ -274,9 +155,6 @@ impl GeminiClient {
             return Ok(String::new());
         }
 
-        if !self.wait_for_rate_limit().await {
-            return Err(anyhow::anyhow!("Rate limit exceeded"));
-        }
 
         let request = GeminiRequest {
             contents: vec![Content {
@@ -322,9 +200,6 @@ impl GeminiClient {
             return Ok(0.0);
         }
 
-        if !self.wait_for_rate_limit().await {
-            return Ok(0.0); // Return no similarity if rate limited
-        }
 
         let prompt = format!(
             "Compare these two URLs semantically. Consider the topic, domain, and content they represent.
@@ -384,9 +259,6 @@ impl GeminiClient {
             return Ok("...".to_string());
         }
 
-        if !self.wait_for_rate_limit().await {
-            return Ok("...".to_string()); // Return placeholder if rate limited
-        }
 
         let prompt = format!(
             "You are a desktop companion. Your personality is: {}
@@ -450,11 +322,6 @@ impl GeminiClient {
             page_title
         );
 
-        if !self.wait_for_rate_limit().await {
-            return Err(anyhow::anyhow!(
-                "Rate limit exceeded, puzzle generation dropped"
-            ));
-        }
 
         let prompt = format!(
             r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
@@ -549,9 +416,6 @@ Make the puzzle interesting and educational. The target should be related but no
             return Err(anyhow::anyhow!("No API Key configured"));
         }
 
-        if !self.wait_for_rate_limit().await {
-            return Err(anyhow::anyhow!("Rate limit exceeded, verification dropped"));
-        }
 
         let prompt = format!(
             "Analyze this screenshot. Does it contain content matching this description: '{}'?
@@ -668,9 +532,6 @@ impl GeminiClient {
             return Err(anyhow::anyhow!("No API Key configured"));
         }
 
-        if !self.wait_for_rate_limit().await {
-            return Err(anyhow::anyhow!("Rate limit exceeded"));
-        }
 
         // Build activity context string
         let activity_summary = activities
@@ -774,9 +635,7 @@ Respond with ONLY valid JSON (no markdown):
             return Ok("...".to_string());
         }
 
-        if !self.wait_for_rate_limit().await {
-            return Ok("...".to_string());
-        }
+
 
         let activity_summary = recent_activities
             .iter()

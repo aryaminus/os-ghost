@@ -44,17 +44,6 @@ impl std::fmt::Display for ProviderType {
     }
 }
 
-/// Task complexity for routing decisions
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Medium and Heavy are intentionally reserved for future routing
-enum TaskComplexity {
-    /// Simple tasks - dialogue, similarity (prefer local when both available)
-    Light,
-    /// Medium tasks - text generation, verification (prefer cloud)
-    Medium,
-    /// Complex tasks - puzzle generation, image analysis (prefer cloud)
-    Heavy,
-}
 
 /// Circuit breaker recovery time (30 seconds)
 const CIRCUIT_BREAKER_RECOVERY_SECS: u64 = 30;
@@ -272,24 +261,20 @@ impl SmartAiRouter {
         self.gemini_fail_time.store(Self::now_secs(), Ordering::SeqCst);
     }
 
-    /// Determine which provider to use for a given task complexity
-    /// Returns (primary, has_fallback)
-    fn choose_provider(&self, complexity: TaskComplexity) -> (ProviderType, bool) {
+    /// Choose provider for "light" tasks where cost matters.
+    /// Returns (primary, has_fallback).
+    fn choose_provider(&self) -> (ProviderType, bool) {
         let has_gemini = self.gemini.is_some() && !self.is_gemini_circuit_open();
         let has_ollama = self.ollama_available.load(Ordering::SeqCst);
 
-        match (has_gemini, has_ollama, complexity) {
-            // Both available - route based on task complexity
-            (true, true, TaskComplexity::Light) => (ProviderType::Ollama, true),
-            (true, true, TaskComplexity::Medium) => (ProviderType::Gemini, true),
-            (true, true, TaskComplexity::Heavy) => (ProviderType::Gemini, true),
-
+        match (has_gemini, has_ollama) {
+            // Both available: prefer local for cost
+            (true, true) => (ProviderType::Ollama, true),
             // Only one available
-            (true, false, _) => (ProviderType::Gemini, false),
-            (false, true, _) => (ProviderType::Ollama, false),
-
+            (true, false) => (ProviderType::Gemini, false),
+            (false, true) => (ProviderType::Ollama, false),
             // Neither available
-            (false, false, _) => (ProviderType::None, false),
+            (false, false) => (ProviderType::None, false),
         }
     }
 
@@ -391,7 +376,7 @@ impl SmartAiRouter {
         // Check rate limit first
         self.check_rate_limit()?;
 
-        let (primary, has_fallback) = self.choose_provider(TaskComplexity::Light);
+        let (primary, has_fallback) = self.choose_provider();
 
         match primary {
             ProviderType::Ollama => {
@@ -449,7 +434,7 @@ impl SmartAiRouter {
         // Check rate limit first
         self.check_rate_limit()?;
 
-        let (primary, has_fallback) = self.choose_provider(TaskComplexity::Light);
+        let (primary, has_fallback) = self.choose_provider();
 
         match primary {
             ProviderType::Ollama => {
@@ -507,7 +492,7 @@ impl SmartAiRouter {
         // Check rate limit first
         self.check_rate_limit()?;
 
-        let (primary, has_fallback) = self.choose_provider(TaskComplexity::Light);
+        let (primary, has_fallback) = self.choose_provider();
 
         match primary {
             ProviderType::Ollama => {

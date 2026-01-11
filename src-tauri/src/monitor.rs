@@ -87,6 +87,13 @@ pub async fn start_monitor_loop(
         // Wait for next tick
         interval.tick().await;
 
+        // Respect privacy consent (no capture / no AI without user opt-in)
+        let privacy = crate::privacy::PrivacySettings::load();
+        if !privacy.capture_consent {
+            tracing::debug!("Monitor: capture consent not granted; skipping");
+            continue;
+        }
+
         // 1. Capture Screen (no window hiding - better UX)
         let screenshot_res = tokio::task::spawn_blocking(capture::capture_primary_monitor).await;
 
@@ -153,6 +160,11 @@ pub async fn start_monitor_loop(
         };
 
         // 3. Enhanced AI Analysis with app detection
+        if !privacy.ai_analysis_consent {
+            tracing::debug!("Monitor: AI analysis consent not granted; skipping");
+            continue;
+        }
+
         let prompt = format!(
             r#"You are an AI companion observing the user's desktop to provide helpful context-aware assistance.
 
@@ -273,10 +285,11 @@ Categories:
                     }
                     Err(e) => {
                         // Log at warn level for better visibility of parsing issues
+                        let snippet: String = clean_json.chars().take(200).collect();
                         tracing::warn!(
                             "Failed to parse observation JSON: {} - Raw: {}",
                             e,
-                            &clean_json[..clean_json.len().min(200)] // Truncate for logging
+                            snippet
                         );
                         // Continue monitoring loop - don't let parse errors stop observation
                     }

@@ -72,13 +72,11 @@ fn default_puzzles() -> Vec<Puzzle> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("os_ghost=debug".parse().unwrap())
-                .add_directive("tauri=info".parse().unwrap()),
-        )
-        .init();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new("os_ghost=debug,tauri=info")
+    });
+
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     tracing::info!("Starting The OS Ghost...");
 
@@ -93,40 +91,49 @@ pub fn run() {
     if let Some(config_dir) = dirs::config_dir() {
         let config_path = config_dir.join("os-ghost").join("config.json");
         if config_path.exists() {
-            if let Ok(contents) = std::fs::read_to_string(&config_path) {
-                if let Ok(config) = serde_json::from_str::<serde_json::Value>(&contents) {
-                    let runtime = utils::runtime_config();
+            match std::fs::read_to_string(&config_path) {
+                Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents) {
+                    Ok(config) => {
+                        let runtime = utils::runtime_config();
 
-                    // Load Gemini API key if not in environment
-                    if std::env::var("GEMINI_API_KEY").is_err() {
-                        if let Some(key) = config.get("gemini_api_key").and_then(|k| k.as_str()) {
-                            if !key.is_empty() {
-                                runtime.set_api_key(key.to_string());
-                                tracing::info!("Loaded Gemini API key from config file");
+                        // Load Gemini API key if not in environment
+                        if std::env::var("GEMINI_API_KEY").is_err() {
+                            if let Some(key) = config.get("gemini_api_key").and_then(|k| k.as_str()) {
+                                if !key.is_empty() {
+                                    runtime.set_api_key(key.to_string());
+                                    tracing::info!("Loaded Gemini API key from config file");
+                                }
+                            }
+                        }
+
+                        // Load Ollama configuration (always from config, env is fallback)
+                        if let Some(url) = config.get("ollama_url").and_then(|v| v.as_str()) {
+                            if !url.is_empty() {
+                                runtime.set_ollama_url(url.to_string());
+                                tracing::debug!("Loaded Ollama URL from config: {}", url);
+                            }
+                        }
+
+                        if let Some(model) = config.get("ollama_vision_model").and_then(|v| v.as_str()) {
+                            if !model.is_empty() {
+                                runtime.set_ollama_vision_model(model.to_string());
+                                tracing::debug!("Loaded Ollama vision model from config: {}", model);
+                            }
+                        }
+
+                        if let Some(model) = config.get("ollama_text_model").and_then(|v| v.as_str()) {
+                            if !model.is_empty() {
+                                runtime.set_ollama_text_model(model.to_string());
+                                tracing::debug!("Loaded Ollama text model from config: {}", model);
                             }
                         }
                     }
-
-                    // Load Ollama configuration (always from config, env is fallback)
-                    if let Some(url) = config.get("ollama_url").and_then(|v| v.as_str()) {
-                        if !url.is_empty() {
-                            runtime.set_ollama_url(url.to_string());
-                            tracing::debug!("Loaded Ollama URL from config: {}", url);
-                        }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse config file {:?}: {}", config_path, e);
                     }
-                    if let Some(model) = config.get("ollama_vision_model").and_then(|v| v.as_str())
-                    {
-                        if !model.is_empty() {
-                            runtime.set_ollama_vision_model(model.to_string());
-                            tracing::debug!("Loaded Ollama vision model from config: {}", model);
-                        }
-                    }
-                    if let Some(model) = config.get("ollama_text_model").and_then(|v| v.as_str()) {
-                        if !model.is_empty() {
-                            runtime.set_ollama_text_model(model.to_string());
-                            tracing::debug!("Loaded Ollama text model from config: {}", model);
-                        }
-                    }
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to read config file {:?}: {}", config_path, e);
                 }
             }
         }
@@ -332,6 +339,12 @@ pub fn run() {
             ipc::get_player_stats,
             ipc::get_feedback_ratio,
             ipc::get_learning_patterns,
+            // Privacy commands
+            privacy::get_privacy_settings,
+            privacy::update_privacy_settings,
+            privacy::can_capture_screen,
+            privacy::can_analyze_with_ai,
+            privacy::get_privacy_notice,
             // Intelligent mode commands
             ipc::get_intelligent_mode,
             ipc::set_intelligent_mode,

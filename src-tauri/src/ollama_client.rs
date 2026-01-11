@@ -40,9 +40,6 @@ struct OllamaOptions {
 #[derive(Debug, Deserialize)]
 struct OllamaGenerateResponse {
     response: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    done: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +63,11 @@ impl OllamaClient {
         let client = Client::builder()
             .timeout(Duration::from_secs(180)) // Longer timeout for local inference
             .build()
-            .expect("Failed to create HTTP client");
+            .unwrap_or_else(|e| {
+                // Extremely unlikely, but avoid panicking in production.
+                tracing::error!("Failed to build HTTP client, using default client: {}", e);
+                Client::new()
+            });
 
         Self { client }
     }
