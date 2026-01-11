@@ -304,6 +304,7 @@ Generate a revised plan that takes a different angle on the puzzle."#,
 }
 
 /// Simple stop word filter for keyword extraction
+#[inline]
 fn is_stop_word(word: &str) -> bool {
     const STOP_WORDS: &[&str] = &[
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",

@@ -370,7 +370,7 @@ impl RateLimiter {
 
         // Try to consume a token
         loop {
-            let current = self.tokens.load(Ordering::Relaxed);
+            let current = self.tokens.load(Ordering::SeqCst);
             if current == 0 {
                 return false;
             }
@@ -378,7 +378,7 @@ impl RateLimiter {
                 current,
                 current - 1,
                 Ordering::SeqCst,
-                Ordering::Relaxed,
+                Ordering::SeqCst,
             ).is_ok() {
                 return true;
             }

@@ -17,6 +17,7 @@ pub enum GhostMood {
 }
 
 impl GhostMood {
+    /// Convert mood to AI prompt description
     pub fn as_prompt(&self) -> &str {
         match self {
             GhostMood::Mysterious => "cryptic and enigmatic, speaking in riddles",
@@ -27,6 +28,7 @@ impl GhostMood {
         }
     }
 
+    /// Create mood from proximity score (0.0-1.0)
     pub fn from_proximity(proximity: f32) -> Self {
         match proximity {
             p if p > 0.8 => GhostMood::Excited,

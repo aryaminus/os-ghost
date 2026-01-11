@@ -435,21 +435,19 @@ Respond in JSON format:
                 })
             }
             Err(e) => {
-                // SECURITY FIX: For PII detection, we can be slightly more lenient
-                // since PII detection is supplementary to safety checks
-                // However, we should still log this as an error
-                tracing::warn!(
-                    "Failed to parse PII response: {}. Defaulting to no PII detected (supplementary check).",
+                // SECURITY FIX: Fail-safe approach - default to rejecting PII detection on parse failure
+                // Better to be conservative than potentially leak user data
+                tracing::error!(
+                    "Failed to parse PII response: {}. Rejecting for safety - content must be re-validated.",
                     e
                 );
-                // Return safe but flag that detection was inconclusive
                 Ok(SafetyEvaluation {
-                    is_safe: true,
-                    safety_score: 0.8, // Slightly reduced confidence
-                    triggered_policies: Vec::new(),
-                    reasoning: format!("PII detection inconclusive: {}", e),
-                    pii_detected: false,
-                    pii_types: Vec::new(),
+                    is_safe: false,
+                    safety_score: 0.0, // Fail-safe: assume unsafe
+                    triggered_policies: vec!["PII detection parse failure".to_string()],
+                    reasoning: "Failed to evaluate content safety - blocking as precaution".to_string(),
+                    pii_detected: true, // Assume PII present when we can't verify
+                    pii_types: vec!["unknown".to_string()],
                 })
             }
         }
@@ -472,21 +470,27 @@ Respond in JSON format:
     ) -> AgentResult<SafetyEvaluation> {
         // Check safety
         let safety = self.evaluate_safety(output, ContentType::AiOutput, context).await?;
-        
-        if !safety.is_safe {
-            return Ok(safety);
-        }
 
-        // Also check for PII in output
+        // Also check for PII in output (check even if safety passed)
         let pii = self.detect_semantic_pii(output).await?;
-        
-        if pii.pii_detected {
+
+        if !safety.is_safe || pii.pii_detected {
             return Ok(SafetyEvaluation {
-                is_safe: false,
-                safety_score: 0.4,
-                triggered_policies: vec!["PII in output".to_string()],
-                reasoning: format!("Output contains PII: {:?}", pii.pii_types),
-                pii_detected: true,
+                is_safe: safety.is_safe && !pii.pii_detected,
+                safety_score: if pii.pii_detected { safety.safety_score * 0.5 } else { safety.safety_score },
+                triggered_policies: if pii.pii_detected {
+                    let mut policies = safety.triggered_policies;
+                    policies.push("PII in output".to_string());
+                    policies
+                } else {
+                    safety.triggered_policies
+                },
+                reasoning: if pii.pii_detected {
+                    format!("Output contains PII: {:?}{}", pii.pii_types, if !safety.is_safe { " and safety issues" } else { "" })
+                } else {
+                    safety.reasoning
+                },
+                pii_detected: pii.pii_detected,
                 pii_types: pii.pii_types,
             });
         }
