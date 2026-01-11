@@ -171,31 +171,30 @@ impl SessionMemory {
 
     /// Set the current app mode
     pub fn set_mode(&self, mode: AppMode) -> Result<()> {
+        // Avoid redundant writes/logs if mode is unchanged
+        if self.get_mode()? == mode {
+            return Ok(());
+        }
+
         let mode_clone = mode.clone();
-        
-        // We need to check if mode changed to log it, so we do this in two steps or inside update
-        // Inside update is safer for consistency
+
+        // Update state (atomic at the key level)
         self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
             let mut state = old.unwrap_or_default();
-            if state.current_mode != mode_clone {
-                state.current_mode = mode_clone.clone();
-                state.last_mode_change = current_timestamp();
-                // Note: We can't easily log activity inside this closure because add_activity 
-                // requires &self and returns Result, which doesn't fit the closure signature.
-                // We'll accept a small race here or move logging outside.
-                // Given logging is append-only, it's safe to do outside.
-            }
+            state.current_mode = mode_clone.clone();
+            state.last_mode_change = current_timestamp();
             Some(state)
         })?;
-        
-        // Log activity (best effort)
+
+        // Log activity (best effort). This is intentionally outside the atomic update
+        // because sled's update closure cannot return Result.
         self.add_activity(ActivityEntry {
             activity_type: "mode_change".to_string(),
             description: format!("Switched to {:?} mode", mode),
             timestamp: current_timestamp(),
             metadata: None,
         })?;
-        
+
         Ok(())
     }
 
@@ -237,7 +236,7 @@ impl SessionMemory {
 
         // Probabilistic pruning: only check count occasionally (1 in 10 writes)
         // This reduces the overhead of count() calls while still preventing unbounded growth
-        if counter % 10 == 0 {
+        if counter.is_multiple_of(10) {
             let count = self.store.count(ACTIVITY_TREE)?;
             // Use higher threshold to reduce pruning frequency
             if count > 300 {
@@ -258,18 +257,31 @@ impl SessionMemory {
 
     /// Clear activity log (keeps last N entries)
     pub fn prune_activity(&self, keep_count: usize) -> Result<()> {
-        let mut entries: Vec<ActivityEntry> = self.store.get_all(ACTIVITY_TREE)?;
-        if entries.len() <= keep_count {
+        let mut keys = self.store.list_keys(ACTIVITY_TREE)?;
+        if keys.len() <= keep_count {
             return Ok(());
         }
 
-        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        let to_delete: Vec<_> = entries.into_iter().skip(keep_count).collect();
+        fn parse_key(key: &str) -> (u64, u32) {
+            // Expected: activity_<timestamp>_<counter>
+            let rest = key.strip_prefix("activity_").unwrap_or(key);
+            let mut parts = rest.split('_');
+            let ts = parts.next().and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
+            let counter = parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
+            (ts, counter)
+        }
 
-        for entry in to_delete {
-            let key = format!("activity_{}", entry.timestamp);
+        // Sort newest-first by (timestamp, counter)
+        keys.sort_by(|a, b| {
+            let (a_ts, a_ctr) = parse_key(a);
+            let (b_ts, b_ctr) = parse_key(b);
+            b_ts.cmp(&a_ts).then_with(|| b_ctr.cmp(&a_ctr)).then_with(|| b.cmp(a))
+        });
+
+        for key in keys.into_iter().skip(keep_count) {
             let _ = self.store.delete(ACTIVITY_TREE, &key);
         }
+
         Ok(())
     }
 

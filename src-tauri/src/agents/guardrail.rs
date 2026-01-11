@@ -173,10 +173,13 @@ impl GuardrailAgent {
             };
         }
 
-        // Check if content matches gaming context allowlist (O(1) lookup with HashSet)
-        let is_gaming_context = self.gaming_allowlist_set.iter().any(|allowed| {
-            content_lower.contains(allowed)
-        });
+        // Check if content matches gaming context allowlist
+        // Note: this is substring matching, so it's O(N) over the allowlist.
+        // The allowlist is small, and we keep it pre-lowercased to avoid repeated allocations.
+        let is_gaming_context = self
+            .gaming_allowlist_set
+            .iter()
+            .any(|allowed| content_lower.contains(allowed));
 
         // Quick toxicity indicators - only flag if NOT in gaming context
         if !is_gaming_context {

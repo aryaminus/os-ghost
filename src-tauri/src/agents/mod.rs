@@ -16,7 +16,6 @@
 //! - **Circuit Breaker**: SmartAiRouter implements circuit breaker pattern to prevent
 //!   hammering failing LLM services
 //! - **Rate Limiting**: RateLimiter utility for protecting against runaway API costs
-//! - **Agent Metrics**: AtomicAgentMetrics for observability and performance tracking
 //! - **Lifecycle Hooks**: Agent trait includes initialize(), shutdown(), health_check()
 //! - **Security**: Blocked patterns in GuardrailAgent are NEVER bypassed by gaming allowlist
 
@@ -34,7 +33,6 @@ pub use guardrail::{GuardrailAgent, SafetyEvaluation, ContentType};
 pub use orchestrator::AgentOrchestrator;
 pub use planner::PlannerAgent;
 pub use traits::{
-    Agent, AgentContext, AgentError, AgentMetrics, AgentMode, AgentOutput, AgentPriority,
-    AgentResult, AtomicAgentMetrics, NextAction, PlanningContext, RateLimiter,
-    ReflectionFeedback, SearchStrategy, SubGoal,
+    Agent, AgentContext, AgentError, AgentMode, AgentOutput, AgentPriority, AgentResult, NextAction,
+    PlanningContext, RateLimiter, ReflectionFeedback, SearchStrategy, SubGoal,
 };

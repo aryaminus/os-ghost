@@ -171,7 +171,7 @@ impl Agent for NarratorAgent {
         let mut data = HashMap::new();
         data.insert(
             "mood".to_string(),
-            serde_json::Value::String(format!("{:?}", mood.as_prompt())),
+            serde_json::Value::String(mood.as_prompt().to_string()),
         );
         data.insert(
             "dialogue".to_string(),

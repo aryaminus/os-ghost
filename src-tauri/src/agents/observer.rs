@@ -124,7 +124,9 @@ impl Agent for ObserverAgent {
         let mut data = HashMap::new();
         data.insert(
             "proximity".to_string(),
-            serde_json::Value::Number(serde_json::Number::from_f64(proximity as f64).unwrap()),
+            serde_json::Number::from_f64(proximity as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
         );
         data.insert(
             "url".to_string(),

@@ -77,10 +77,11 @@ impl VerifierAgent {
             return false;
         }
 
-        // Create a cache key from sorted keywords for consistent lookup
+        // Sort keywords for consistent cache key and regex pattern
         let mut sorted_keywords = filtered_keywords.clone();
         sorted_keywords.sort();
-        let cache_key = format!("content_(?i)\\b({})\\b", sorted_keywords.join("|"));
+        let keyword_pattern = sorted_keywords.join("|");
+        let cache_key = format!("content_(?i)\\b({})\\b", keyword_pattern);
 
         // Check cache first
         {
@@ -94,7 +95,7 @@ impl VerifierAgent {
         }
 
         // Build and cache the pattern
-        let pattern = format!("(?i)\\b({})\\b", filtered_keywords.join("|"));
+        let pattern = format!("(?i)\\b({})\\b", keyword_pattern);
         match Regex::new(&pattern) {
             Ok(re) => {
                 let matches = re.is_match(content);
@@ -236,7 +237,9 @@ impl Agent for VerifierAgent {
 
         data.insert(
             "partial_confidence".to_string(),
-            serde_json::Value::Number(serde_json::Number::from_f64(confidence as f64).unwrap()),
+            serde_json::Number::from_f64(confidence as f64)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
         );
 
         Ok(AgentOutput {

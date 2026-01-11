@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 /// Result type for agent operations
@@ -326,124 +326,6 @@ pub enum AgentPriority {
 }
 
 // =============================================================================
-// Agent Metrics and Observability (Best Practice: Telemetry)
-// =============================================================================
-
-/// Metrics collected for each agent for observability and debugging
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AgentMetrics {
-    /// Total number of process() calls
-    pub total_calls: u64,
-    /// Number of successful calls
-    pub successful_calls: u64,
-    /// Number of failed calls
-    pub failed_calls: u64,
-    /// Total processing time in milliseconds
-    pub total_processing_time_ms: u64,
-    /// Average processing time in milliseconds
-    pub avg_processing_time_ms: f64,
-    /// Last call timestamp (Unix epoch seconds)
-    pub last_call_timestamp: u64,
-    /// Last error message (if any)
-    pub last_error: Option<String>,
-}
-
-impl AgentMetrics {
-    /// Record a successful call with duration
-    pub fn record_success(&mut self, duration_ms: u64) {
-        self.total_calls += 1;
-        self.successful_calls += 1;
-        self.total_processing_time_ms += duration_ms;
-        self.avg_processing_time_ms = self.total_processing_time_ms as f64 / self.total_calls as f64;
-        self.last_call_timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-    }
-
-    /// Record a failed call
-    pub fn record_failure(&mut self, error: &str) {
-        self.total_calls += 1;
-        self.failed_calls += 1;
-        self.last_error = Some(error.to_string());
-        self.last_call_timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-    }
-
-    /// Get success rate as a percentage
-    pub fn success_rate(&self) -> f64 {
-        if self.total_calls == 0 {
-            100.0
-        } else {
-            (self.successful_calls as f64 / self.total_calls as f64) * 100.0
-        }
-    }
-}
-
-/// Thread-safe atomic metrics counter for high-frequency updates
-pub struct AtomicAgentMetrics {
-    total_calls: AtomicU64,
-    successful_calls: AtomicU64,
-    failed_calls: AtomicU64,
-    total_processing_time_ms: AtomicU64,
-}
-
-impl Default for AtomicAgentMetrics {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AtomicAgentMetrics {
-    pub fn new() -> Self {
-        Self {
-            total_calls: AtomicU64::new(0),
-            successful_calls: AtomicU64::new(0),
-            failed_calls: AtomicU64::new(0),
-            total_processing_time_ms: AtomicU64::new(0),
-        }
-    }
-
-    pub fn record_success(&self, duration_ms: u64) {
-        self.total_calls.fetch_add(1, Ordering::Relaxed);
-        self.successful_calls.fetch_add(1, Ordering::Relaxed);
-        self.total_processing_time_ms.fetch_add(duration_ms, Ordering::Relaxed);
-    }
-
-    pub fn record_failure(&self) {
-        self.total_calls.fetch_add(1, Ordering::Relaxed);
-        self.failed_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Convert to serializable AgentMetrics snapshot
-    pub fn snapshot(&self) -> AgentMetrics {
-        let total = self.total_calls.load(Ordering::Relaxed);
-        let successful = self.successful_calls.load(Ordering::Relaxed);
-        let failed = self.failed_calls.load(Ordering::Relaxed);
-        let total_time = self.total_processing_time_ms.load(Ordering::Relaxed);
-
-        AgentMetrics {
-            total_calls: total,
-            successful_calls: successful,
-            failed_calls: failed,
-            total_processing_time_ms: total_time,
-            avg_processing_time_ms: if total > 0 { total_time as f64 / total as f64 } else { 0.0 },
-            last_call_timestamp: 0,
-            last_error: None,
-        }
-    }
-
-    pub fn reset(&self) {
-        self.total_calls.store(0, Ordering::Relaxed);
-        self.successful_calls.store(0, Ordering::Relaxed);
-        self.failed_calls.store(0, Ordering::Relaxed);
-        self.total_processing_time_ms.store(0, Ordering::Relaxed);
-    }
-}
-
-// =============================================================================
 // Rate Limiter (Best Practice: Protect against runaway costs)
 // =============================================================================
 
@@ -521,51 +403,6 @@ impl RateLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_agent_metrics_success_rate() {
-        let mut metrics = AgentMetrics::default();
-        assert_eq!(metrics.success_rate(), 100.0); // No calls = 100%
-
-        metrics.record_success(100);
-        metrics.record_success(200);
-        metrics.record_failure("test error");
-
-        assert_eq!(metrics.total_calls, 3);
-        assert_eq!(metrics.successful_calls, 2);
-        assert_eq!(metrics.failed_calls, 1);
-        assert!((metrics.success_rate() - 66.66).abs() < 1.0);
-        // avg_processing_time = total_time / total_calls = 300 / 2 (only success calls add time)
-        // But record_failure doesn't add to total_processing_time, so it's 300/3 = 100 after fix
-        // Wait, the avg is calculated as total_processing_time / total_calls
-        // After 2 successes: 300ms / 2 = 150ms
-        // After 1 failure: 300ms / 3 = 100ms (failure doesn't update avg since it only adds to call count)
-        // But our implementation doesn't recalculate avg on failure, so let's check the actual logic
-        assert_eq!(metrics.total_processing_time_ms, 300);
-        // The actual avg depends on when it was last calculated (on success)
-        // Last success was when total_calls=2, so avg = 300/2 = 150
-        assert_eq!(metrics.avg_processing_time_ms, 150.0);
-    }
-
-    #[test]
-    fn test_atomic_agent_metrics() {
-        let metrics = AtomicAgentMetrics::new();
-        
-        metrics.record_success(50);
-        metrics.record_success(100);
-        metrics.record_failure();
-
-        let snapshot = metrics.snapshot();
-        assert_eq!(snapshot.total_calls, 3);
-        assert_eq!(snapshot.successful_calls, 2);
-        assert_eq!(snapshot.failed_calls, 1);
-        assert_eq!(snapshot.total_processing_time_ms, 150);
-        assert_eq!(snapshot.avg_processing_time_ms, 50.0);
-
-        metrics.reset();
-        let snapshot = metrics.snapshot();
-        assert_eq!(snapshot.total_calls, 0);
-    }
 
     #[test]
     fn test_rate_limiter_basic() {

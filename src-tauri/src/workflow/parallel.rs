@@ -117,17 +117,6 @@ pub fn create_parallel_checks(agents: Vec<Arc<dyn Agent>>) -> ParallelWorkflow {
     workflow
 }
 
-/// Create a parallel workflow with a specific concurrency limit
-pub fn create_parallel_checks_limited(
-    agents: Vec<Arc<dyn Agent>>,
-    max_concurrency: usize,
-) -> ParallelWorkflow {
-    let mut workflow = ParallelWorkflow::with_concurrency("BackgroundChecks", max_concurrency);
-    for agent in agents {
-        workflow = workflow.add_agent(agent);
-    }
-    workflow
-}
 
 #[cfg(test)]
 mod tests {

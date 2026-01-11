@@ -210,115 +210,16 @@ impl Workflow for LoopWorkflow {
     }
 
     async fn execute(&self, context: &AgentContext) -> AgentResult<Vec<AgentOutput>> {
-        let mut outputs = Vec::new();
-        let mut current_context = context.clone();
-        let mut last_proximity: f32 = 0.0;
-        let mut stagnation_count: usize = 0;
+        self.execute_with_cancellation(context, CancellationToken::new())
+            .await
+    }
 
-        for iteration in 0..self.max_iterations {
-            // Process with agent
-            let output_result = self.agent.process(&current_context).await;
-
-            let output = match output_result {
-                Ok(out) => out,
-                Err(crate::agents::traits::AgentError::CircuitOpen(msg)) => {
-                    tracing::warn!("Circuit breaker open in loop '{}': {}. Pausing loop.", self.name, msg);
-                    // Wait longer than usual (e.g. 30s) before retrying or exit
-                    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-                    continue; 
-                }
-                Err(e) => return Err(e),
-            };
-
-            // Extract proximity for progress tracking
-            let new_proximity = output
-                .data
-                .get("proximity")
-                .and_then(|p| p.as_f64())
-                .map(|p| p as f32)
-                .unwrap_or(output.confidence);
-
-            // Update context with output
-            current_context.proximity = new_proximity;
-
-            // Track stagnation (no meaningful progress)
-            if (new_proximity - last_proximity).abs() < 0.05 {
-                stagnation_count += 1;
-            } else {
-                stagnation_count = 0;
-            }
-            last_proximity = new_proximity;
-
-            // Check termination condition
-            let should_stop = (self.condition)(&output);
-
-            // Check for explicit stop actions
-            let action_stop = matches!(
-                output.next_action,
-                Some(NextAction::Stop) | Some(NextAction::PuzzleSolved)
-            );
-
-            // Add iteration metadata to output
-            let mut enriched_output = output.clone();
-            enriched_output.data.insert(
-                "loop_iteration".to_string(),
-                serde_json::Value::Number((iteration + 1).into()),
-            );
-            enriched_output.data.insert(
-                "stagnation_count".to_string(),
-                serde_json::Value::Number(stagnation_count.into()),
-            );
-
-            outputs.push(enriched_output);
-
-            if should_stop || action_stop {
-                tracing::info!(
-                    "Loop '{}' terminated after {} iterations (proximity: {:.2})",
-                    self.name,
-                    iteration + 1,
-                    new_proximity
-                );
-                break;
-            }
-
-            // Self-correction: Apply context modifier if provided
-            if let Some(ref modifier) = self.context_modifier {
-                current_context = modifier(&current_context, &output);
-            }
-
-            // Adaptive behavior: Record stagnation as failed approach
-            if stagnation_count >= self.stagnation_threshold {
-                tracing::debug!(
-                    "Loop '{}' detected stagnation ({} iterations without progress)",
-                    self.name,
-                    stagnation_count
-                );
-
-                // Record the current approach as "failed" for self-correction
-                let failed_approach = format!(
-                    "Stagnated at proximity {:.0}% after {} checks",
-                    new_proximity * 100.0,
-                    stagnation_count
-                );
-                current_context
-                    .planning
-                    .failed_approaches
-                    .push(failed_approach);
-
-                // Reset stagnation counter
-                stagnation_count = 0;
-            }
-
-            // Store output for reflection/self-correction
-            current_context.previous_outputs.push(output.result.clone());
-
-            // Delay before next iteration
-            if self.delay_ms > 0 {
-                tokio::time::sleep(tokio::time::Duration::from_millis(self.delay_ms)).await;
-            }
-        }
-
-        Ok(outputs)
+    async fn execute_cancellable(
+        &self,
+        context: &AgentContext,
+        cancel_token: CancellationToken,
+    ) -> AgentResult<Vec<AgentOutput>> {
+        self.execute_with_cancellation(context, cancel_token).await
     }
 }
 

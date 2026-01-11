@@ -16,7 +16,7 @@ use super::guardrail::GuardrailAgent;
 use super::narrator::NarratorAgent;
 use super::observer::ObserverAgent;
 use super::planner::PlannerAgent;
-use super::traits::{Agent, AgentContext, AgentMode, AgentOutput, AgentResult, NextAction, PlanningContext, AtomicAgentMetrics, AgentMetrics};
+use super::traits::{Agent, AgentContext, AgentMode, AgentOutput, AgentResult, NextAction, PlanningContext};
 use super::verifier::VerifierAgent;
 use crate::ai_provider::SmartAiRouter;
 use crate::memory::{LongTermMemory, SessionMemory};
@@ -62,8 +62,6 @@ pub struct AgentOrchestrator {
     /// Agent mode - consolidated runtime toggle (thread-safe via AtomicU8)
     /// 0 = Legacy, 1 = Standard, 2 = Full, 3 = Minimal
     mode: AtomicU8,
-    /// Per-agent performance metrics
-    agent_metrics: HashMap<String, AtomicAgentMetrics>,
 }
 
 /// Result of a full orchestration cycle
@@ -124,15 +122,6 @@ impl AgentOrchestrator {
             3,
         );
 
-        // Initialize per-agent metrics
-        let mut agent_metrics = HashMap::new();
-        agent_metrics.insert("Observer".to_string(), AtomicAgentMetrics::new());
-        agent_metrics.insert("Verifier".to_string(), AtomicAgentMetrics::new());
-        agent_metrics.insert("Narrator".to_string(), AtomicAgentMetrics::new());
-        agent_metrics.insert("Planner".to_string(), AtomicAgentMetrics::new());
-        agent_metrics.insert("Critic".to_string(), AtomicAgentMetrics::new());
-        agent_metrics.insert("Guardrail".to_string(), AtomicAgentMetrics::new());
-
         Ok(Self {
             workflow,
             planning_workflow,
@@ -147,7 +136,6 @@ impl AgentOrchestrator {
             session,
             long_term,
             mode: AtomicU8::new(AgentMode::Standard as u8), // Default to Standard mode
-            agent_metrics,
         })
     }
 
@@ -243,40 +231,6 @@ impl AgentOrchestrator {
         self.ai_router.reset_call_counts()
     }
 
-    /// Get per-agent performance metrics snapshots
-    /// Returns a map of agent name -> metrics
-    pub fn get_agent_metrics(&self) -> HashMap<String, AgentMetrics> {
-        self.agent_metrics
-            .iter()
-            .map(|(name, metrics)| (name.clone(), metrics.snapshot()))
-            .collect()
-    }
-
-    /// Record a successful agent call (used by workflows)
-    pub fn record_agent_success(&self, agent_name: &str, duration_ms: u64) {
-        if let Some(metrics) = self.agent_metrics.get(agent_name) {
-            metrics.record_success(duration_ms);
-        }
-    }
-
-    /// Record a failed agent call (used by workflows)
-    pub fn record_agent_failure(&self, agent_name: &str) {
-        if let Some(metrics) = self.agent_metrics.get(agent_name) {
-            metrics.record_failure();
-        }
-    }
-
-    /// Reset all agent metrics
-    pub fn reset_agent_metrics(&self) {
-        for metrics in self.agent_metrics.values() {
-            metrics.reset();
-        }
-    }
-
-    /// Get remaining rate limit for LLM calls
-    pub fn remaining_rate_limit(&self) -> u32 {
-        self.ai_router.remaining_rate_limit()
-    }
 
     /// Run the full agent pipeline
     /// Uses intelligent planning workflow if enabled, otherwise legacy sequential

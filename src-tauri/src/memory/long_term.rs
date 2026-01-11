@@ -12,7 +12,6 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 const PUZZLES_TREE: &str = "solved_puzzles";
-const DISCOVERIES_TREE: &str = "discoveries";
 const STATS_TREE: &str = "stats";
 const FEEDBACK_TREE: &str = "user_feedback";
 const ESCALATIONS_TREE: &str = "escalations";
@@ -27,25 +26,12 @@ pub struct SolvedPuzzle {
     pub solution_url: String,
 }
 
-/// A discovery made during gameplay
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Discovery {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub url: String,
-    pub discovered_at: u64,
-    pub puzzle_id: Option<String>,
-}
-
 /// Player statistics
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PlayerStats {
     pub total_playtime_secs: u64,
     pub puzzles_solved: usize,
     pub total_hints_used: usize,
-    pub discoveries_made: usize,
-    pub total_urls_visited: usize,
     pub first_played: u64,
     pub last_played: u64,
     // HITL feedback statistics
@@ -147,58 +133,6 @@ impl LongTermMemory {
         Ok(())
     }
 
-    /// Check if a puzzle was solved (currently unused - kept for future puzzle progression)
-    #[allow(dead_code)]
-    pub fn is_solved(&self, puzzle_id: &str) -> Result<bool> {
-        Ok(self
-            .store
-            .get::<SolvedPuzzle>(PUZZLES_TREE, puzzle_id)?
-            .is_some())
-    }
-
-    /// Get all solved puzzles (currently unused - kept for leaderboards)
-    #[allow(dead_code)]
-    pub fn get_solved_puzzles(&self) -> Result<Vec<SolvedPuzzle>> {
-        self.store.get_all(PUZZLES_TREE)
-    }
-
-    /// Get count of solved puzzles (currently unused - kept for stats)
-    #[allow(dead_code)]
-    pub fn solved_count(&self) -> Result<usize> {
-        self.store.count(PUZZLES_TREE)
-    }
-
-    // --- Discoveries ---
-
-    /// Record a discovery (currently unused - kept for future features)
-    #[allow(dead_code)]
-    pub fn record_discovery(&self, discovery: Discovery) -> Result<()> {
-        self.store
-            .set(DISCOVERIES_TREE, &discovery.id, &discovery)?;
-
-        // Update stats atomically
-        self.store.update(STATS_TREE, "player", |old: Option<PlayerStats>| {
-            let mut stats = old.unwrap_or_else(|| {
-                let now = crate::utils::current_timestamp();
-                PlayerStats {
-                    first_played: now,
-                    last_played: now,
-                    ..Default::default()
-                }
-            });
-            stats.discoveries_made += 1;
-            Some(stats)
-        })?;
-
-        Ok(())
-    }
-
-    /// Get all discoveries (currently unused - kept for future features)
-    #[allow(dead_code)]
-    pub fn get_discoveries(&self) -> Result<Vec<Discovery>> {
-        self.store.get_all(DISCOVERIES_TREE)
-    }
-
     // --- User Facts & Context ---
 
     /// Record a fact about the user/environment
@@ -237,7 +171,8 @@ impl LongTermMemory {
 
     /// Get player statistics
     pub fn get_stats(&self) -> Result<PlayerStats> {
-        self.store
+        Ok(self
+            .store
             .get(STATS_TREE, "player")?
             .unwrap_or_else(|| {
                 let now = current_timestamp();
@@ -246,33 +181,7 @@ impl LongTermMemory {
                     last_played: now,
                     ..Default::default()
                 }
-            })
-            .pipe(Ok)
-    }
-
-    /// Save player statistics (currently unused - use update() instead)
-    #[allow(dead_code)]
-    pub fn save_stats(&self, stats: &PlayerStats) -> Result<()> {
-        self.store.set(STATS_TREE, "player", stats)
-    }
-
-    /// Add playtime (currently unused - kept for session tracking)
-    #[allow(dead_code)]
-    pub fn add_playtime(&self, seconds: u64) -> Result<()> {
-        self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
-            let mut stats = old.unwrap_or_else(|| {
-                let now = crate::utils::current_timestamp();
-                PlayerStats {
-                    first_played: now,
-                    last_played: now,
-                    ..Default::default()
-                }
-            });
-            stats.total_playtime_secs += seconds;
-            stats.last_played = crate::utils::current_timestamp();
-            Some(stats)
-        })?;
-        Ok(())
+            }))
     }
 
     // --- HITL Feedback (Chapter 13) ---
@@ -327,13 +236,6 @@ impl LongTermMemory {
     /// Get all feedback
     pub fn get_feedback(&self) -> Result<Vec<UserFeedback>> {
         self.store.get_all(FEEDBACK_TREE)
-    }
-
-    /// Get feedback by type (currently unused - kept for analytics)
-    #[allow(dead_code)]
-    pub fn get_feedback_by_target(&self, target: FeedbackTarget) -> Result<Vec<UserFeedback>> {
-        let all = self.get_feedback()?;
-        Ok(all.into_iter().filter(|f| f.target == target).collect())
     }
 
     /// Get negative feedback for learning (what to avoid)
@@ -414,32 +316,12 @@ impl LongTermMemory {
         Ok(())
     }
 
-    /// Get unresolved escalations (currently unused - kept for admin dashboard)
-    #[allow(dead_code)]
-    pub fn get_pending_escalations(&self) -> Result<Vec<Escalation>> {
-        let all: Vec<Escalation> = self.store.get_all(ESCALATIONS_TREE)?;
-        Ok(all.into_iter().filter(|e| !e.resolved).collect())
-    }
-
     /// Get patterns from negative feedback for agent learning
     /// Returns common content that received negative feedback
     pub fn get_learning_patterns(&self) -> Result<Vec<String>> {
         let negative = self.get_negative_feedback()?;
         // Return the content that was rated negatively (for the agent to learn to avoid)
         Ok(negative.into_iter().map(|f| f.content).collect())
-    }
-
-    // --- Full Reset ---
-
-    /// Reset all long-term memory (currently unused - kept for settings UI)
-    #[allow(dead_code)]
-    pub fn reset_all(&self) -> Result<()> {
-        self.store.clear_tree(PUZZLES_TREE)?;
-        self.store.clear_tree(DISCOVERIES_TREE)?;
-        self.store.clear_tree(STATS_TREE)?;
-        self.store.clear_tree(FEEDBACK_TREE)?;
-        self.store.clear_tree(ESCALATIONS_TREE)?;
-        Ok(())
     }
 
     /// Flush all pending writes to disk
@@ -466,14 +348,3 @@ fn rand_suffix() -> u32 {
     (counter.wrapping_mul(31) ^ nanos) % 1_000_000
 }
 
-/// Helper trait for pipe syntax
-trait Pipe: Sized {
-    fn pipe<F, R>(self, f: F) -> R
-    where
-        F: FnOnce(Self) -> R,
-    {
-        f(self)
-    }
-}
-
-impl<T> Pipe for T {}

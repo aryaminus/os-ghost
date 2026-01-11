@@ -142,10 +142,6 @@ impl SmartAiRouter {
         }
     }
 
-    /// Get remaining rate limit tokens
-    pub fn remaining_rate_limit(&self) -> u32 {
-        self.rate_limiter.remaining()
-    }
 
     /// Get the current LLM call counts for telemetry
     /// Returns (gemini_calls, ollama_calls)
@@ -392,6 +388,9 @@ impl SmartAiRouter {
     /// Use this for agent tasks (planning, critique, guardrails) that don't need
     /// the highest quality model. Routes to Ollama when available to reduce API costs.
     pub async fn generate_text_light(&self, prompt: &str) -> Result<String> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+
         let (primary, has_fallback) = self.choose_provider(TaskComplexity::Light);
 
         match primary {
@@ -447,6 +446,9 @@ impl SmartAiRouter {
     /// Calculate URL similarity
     /// Light task - prefers Ollama when both available (cost optimization)
     pub async fn calculate_url_similarity(&self, url1: &str, url2: &str) -> Result<f32> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+
         let (primary, has_fallback) = self.choose_provider(TaskComplexity::Light);
 
         match primary {
@@ -502,6 +504,9 @@ impl SmartAiRouter {
     /// Generate dialogue
     /// Light task - prefers Ollama when both available (cost optimization)
     pub async fn generate_dialogue(&self, context: &str, personality: &str) -> Result<String> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+
         let (primary, has_fallback) = self.choose_provider(TaskComplexity::Light);
 
         match primary {
@@ -613,6 +618,9 @@ impl SmartAiRouter {
         base64_image: &str,
         clue_description: &str,
     ) -> Result<VerificationResult> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
             if !self.gemini_failing.load(Ordering::SeqCst) {
@@ -660,6 +668,9 @@ impl SmartAiRouter {
         current_app: Option<&str>,
         current_content: Option<&str>,
     ) -> Result<AdaptivePuzzle> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
             if !self.gemini_failing.load(Ordering::SeqCst) {
@@ -709,6 +720,9 @@ impl SmartAiRouter {
         current_context: &str,
         ghost_mood: &str,
     ) -> Result<String> {
+        // Check rate limit first
+        self.check_rate_limit()?;
+
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
             if !self.gemini_failing.load(Ordering::SeqCst) {
