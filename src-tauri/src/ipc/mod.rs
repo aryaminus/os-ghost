@@ -34,18 +34,46 @@ pub struct SystemStatus {
     pub extension_operational: bool,
     /// API key configured
     pub api_key_configured: bool,
+    /// Source of the API key ("env", "user", "none")
+    pub api_key_source: String,
     /// Last known browsing URL (from extension or history)
     pub last_known_url: Option<String>,
     /// Current app mode
     pub current_mode: String,
+    /// Preferred app mode
+    pub preferred_mode: String,
+    /// Auto-create puzzles from companion suggestions
+    pub auto_puzzle_from_companion: bool,
 }
 
-/// Detect Chrome/Chromium browser installation
-#[tauri::command]
-pub fn detect_chrome() -> SystemStatus {
+fn mode_to_string(mode: crate::memory::AppMode) -> String {
+    match mode {
+        crate::memory::AppMode::Game => "game".to_string(),
+        crate::memory::AppMode::Companion => "companion".to_string(),
+    }
+}
+
+pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory>) -> SystemStatus {
     let chrome_path = find_chrome_path();
     let chrome_installed = chrome_path.is_some();
-    let api_key_configured = crate::utils::runtime_config().has_api_key();
+    let runtime = crate::utils::runtime_config();
+    let api_key_configured = runtime.has_api_key();
+    let api_key_source = if runtime.is_using_user_key() {
+        "user".to_string()
+    } else if std::env::var("GEMINI_API_KEY").is_ok() {
+        "env".to_string()
+    } else {
+        "none".to_string()
+    };
+
+    let (current_mode, preferred_mode, auto_puzzle_from_companion) = session
+        .and_then(|s| s.load().ok())
+        .map(|state| (
+            mode_to_string(state.current_mode),
+            mode_to_string(state.preferred_mode),
+            state.auto_puzzle_from_companion,
+        ))
+        .unwrap_or_else(|| ("companion".to_string(), "companion".to_string(), true));
 
     SystemStatus {
         chrome_path,
@@ -53,9 +81,82 @@ pub fn detect_chrome() -> SystemStatus {
         extension_connected: false, // Will be updated by bridge events
         extension_operational: false,
         api_key_configured,
+        api_key_source,
         last_known_url: None,
-        current_mode: "game".to_string(),
+        current_mode,
+        preferred_mode,
+        auto_puzzle_from_companion,
     }
+}
+
+/// Detect Chrome/Chromium browser installation
+#[tauri::command]
+pub fn detect_chrome(session: State<'_, Arc<crate::memory::SessionMemory>>) -> SystemStatus {
+    detect_system_status(Some(session.as_ref()))
+}
+
+/// Get current app mode ("game" or "companion")
+#[tauri::command]
+pub fn get_app_mode(session: State<'_, Arc<crate::memory::SessionMemory>>) -> Result<String, String> {
+    session
+        .get_mode()
+        .map(mode_to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// Set app mode ("game" or "companion")
+#[tauri::command]
+pub fn set_app_mode(
+    mode: String,
+    persist_preference: Option<bool>,
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
+) -> Result<String, String> {
+    let normalized = mode.trim().to_lowercase();
+    let parsed = match normalized.as_str() {
+        "game" => crate::memory::AppMode::Game,
+        "companion" => crate::memory::AppMode::Companion,
+        _ => return Err("Invalid mode. Expected 'game' or 'companion'".to_string()),
+    };
+
+    if persist_preference.unwrap_or(true) {
+        session
+            .set_preferred_mode(parsed.clone())
+            .map_err(|e| e.to_string())?;
+    }
+
+    session.set_mode(parsed).map_err(|e| e.to_string())?;
+    get_app_mode(session)
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct AutonomySettings {
+    pub auto_puzzle_from_companion: bool,
+}
+
+/// Get autonomy settings
+#[tauri::command]
+pub fn get_autonomy_settings(
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
+) -> Result<AutonomySettings, String> {
+    session
+        .get_auto_puzzle_from_companion()
+        .map(|v| AutonomySettings {
+            auto_puzzle_from_companion: v,
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Set autonomy settings
+#[tauri::command]
+pub fn set_autonomy_settings(
+    auto_puzzle_from_companion: bool,
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
+) -> Result<AutonomySettings, String> {
+    session
+        .set_auto_puzzle_from_companion(auto_puzzle_from_companion)
+        .map_err(|e| e.to_string())?;
+
+    get_autonomy_settings(session)
 }
 
 /// Find Chrome/Chromium installation path based on platform (Cached)
@@ -217,11 +318,16 @@ fn activity_to_context(
 }
 
 /// Generate an adaptive puzzle based on user's activity history
+///
+/// Unlike the raw AI call, this registers the puzzle in the backend puzzle list
+/// so verification + agent cycles work end-to-end.
 #[tauri::command]
 pub async fn generate_adaptive_puzzle(
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
     ai_router: State<'_, Arc<SmartAiRouter>>,
-) -> Result<crate::gemini_client::AdaptivePuzzle, String> {
+    puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
+) -> Result<GeneratedPuzzle, String> {
     // Get recent activity from session
     let activities = orchestrator
         .get_recent_activity(10)
@@ -240,10 +346,57 @@ pub async fn generate_adaptive_puzzle(
     let current_app = latest.map(|a| a.app_name.as_str());
     let current_content = latest.and_then(|a| a.content_context.as_deref());
 
-    ai_router
+    let adaptive = ai_router
         .generate_adaptive_puzzle(&activity_contexts, current_app, current_content)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Register as a normal puzzle so downstream flows (verify, agent cycles) work.
+    let id = crate::ipc::puzzles::generate_puzzle_id("adaptive");
+
+    let puzzle = Puzzle {
+        id: id.clone(),
+        clue: adaptive.clue.clone(),
+        hint: adaptive.hints.first().cloned().unwrap_or_default(),
+        target_url_pattern: adaptive.target_url_pattern.clone(),
+        target_description: adaptive.target_description.clone(),
+        sponsor_id: None,
+        sponsor_url: None,
+        is_sponsored: false,
+    };
+
+    {
+        let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
+        while puzzles.iter().filter(|p| p.id.starts_with("adaptive_")).count() >= 5 {
+            if let Some(idx) = puzzles.iter().position(|p| p.id.starts_with("adaptive_")) {
+                puzzles.remove(idx);
+            } else {
+                break;
+            }
+        }
+        puzzles.push(puzzle);
+    }
+
+    // Start timer for the new puzzle
+    let mut state = crate::game_state::GameState::load().await;
+    state.start_puzzle_timer().await;
+
+    // Update session
+    if let Ok(mut s) = session.load() {
+        s.puzzle_id = id.clone();
+        let _ = session.save(&s);
+    }
+
+    Ok(GeneratedPuzzle {
+        id,
+        clue: adaptive.clue,
+        hint: adaptive.hints.first().cloned().unwrap_or_default(),
+        hints: adaptive.hints,
+        target_url_pattern: adaptive.target_url_pattern,
+        target_description: adaptive.target_description,
+        is_sponsored: false,
+        sponsor_id: None,
+    })
 }
 
 /// Generate contextual dialogue based on observation history
@@ -302,6 +455,15 @@ pub async fn capture_and_analyze(
     app: tauri::AppHandle,
     ai_router: State<'_, Arc<SmartAiRouter>>,
 ) -> Result<String, String> {
+    // Enforce explicit user consent
+    let privacy = crate::privacy::PrivacySettings::load();
+    if !privacy.capture_consent {
+        return Err("Screen capture consent not granted".to_string());
+    }
+    if !privacy.ai_analysis_consent {
+        return Err("AI analysis consent not granted".to_string());
+    }
+
     // Capture screen (handles hiding window internally)
     let screenshot = capture::capture_screen(app)
         .await
@@ -330,6 +492,15 @@ pub async fn verify_screenshot_proof(
     ai_router: State<'_, Arc<SmartAiRouter>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<crate::gemini_client::VerificationResult, String> {
+    // Enforce explicit user consent
+    let privacy = crate::privacy::PrivacySettings::load();
+    if !privacy.capture_consent {
+        return Err("Screen capture consent not granted".to_string());
+    }
+    if !privacy.ai_analysis_consent {
+        return Err("AI analysis consent not granted".to_string());
+    }
+
     // 1. Capture screen within the backend
     let image_base64 = capture::capture_screen(app)
         .await
@@ -437,6 +608,20 @@ pub async fn set_api_key(api_key: String) -> Result<(), String> {
     save_config(&config)?;
 
     tracing::info!("API key set and persisted to config");
+    Ok(())
+}
+
+/// Clear runtime API key (reverting to env if present)
+#[tauri::command]
+pub fn clear_api_key() -> Result<(), String> {
+    crate::utils::runtime_config().clear_api_key();
+    
+    // Also clear from persisted config
+    let mut config = load_config();
+    config.gemini_api_key = None;
+    save_config(&config)?;
+    
+    tracing::info!("API key cleared from runtime and config");
     Ok(())
 }
 

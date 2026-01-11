@@ -48,9 +48,10 @@ const isValidUrl = (url) => {
  *
  * @param {Object} props - Component props
  * @param {function} [props.onKeySet] - Callback when configuration is successfully set
+ * @param {string} [props.apiKeySource="none"] - Source of current key ("user", "env", "none")
  * @returns {JSX.Element} AI configuration form
  */
-const ApiKeyInput = ({ onKeySet }) => {
+const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 	// Gemini state (kept separate - small, independent concerns)
 	const [apiKey, setApiKey] = useState("");
 	const [error, setError] = useState("");
@@ -138,6 +139,34 @@ const ApiKeyInput = ({ onKeySet }) => {
 	useEffect(() => {
 		inputRef.current?.focus();
 	}, []);
+
+	/**
+	 * Clear the runtime/saved API key (reverting to env if available).
+	 */
+	const handleClearKey = useCallback(async () => {
+		setIsLoading(true);
+		setError("");
+		try {
+			await invoke("clear_api_key");
+			// Check if we fell back to env key or if it's now missing
+			const configured = await invoke("check_api_key");
+			if (configured) {
+				// If we still have a key (from env), notify success but stay
+				setError("Using environment key"); // Not strictly an error, but feedback
+				// We call onKeySet to refresh parent state
+				onKeySet?.();
+			} else {
+				setApiKey("");
+				setError("");
+				onKeySet?.(); // Will update parent status to not configured
+			}
+		} catch (err) {
+			console.error("Failed to clear key:", err);
+			setError("Failed to clear key");
+		} finally {
+			setIsLoading(false);
+		}
+	}, [onKeySet]);
 
 	/**
 	 * Handle Gemini API key submission.
@@ -316,13 +345,27 @@ const ApiKeyInput = ({ onKeySet }) => {
 			<p className="api-key-description" id="api-key-desc">
 				Enter your Gemini API key for cloud AI (recommended).
 			</p>
+
+			{apiKeySource === "env" && (
+				<div className="env-key-badge">
+					<span aria-hidden="true">🔒</span> Using key from environment
+					variable (.env)
+				</div>
+			)}
+
 			<form onSubmit={handleSubmit} className="api-key-form">
 				<div className="api-key-input-wrapper">
 					<input
 						ref={inputRef}
 						type={showKey ? "text" : "password"}
 						className={`api-key-input ${error ? "has-error" : ""}`}
-						placeholder="Enter Gemini API key..."
+						placeholder={
+							apiKeySource === "user"
+								? "Enter new key to override..."
+								: apiKeySource === "env"
+									? "Enter key to override env..."
+									: "Enter Gemini API key..."
+						}
 						value={apiKey}
 						onChange={handleChange}
 						disabled={isLoading}
@@ -346,28 +389,46 @@ const ApiKeyInput = ({ onKeySet }) => {
 						{showKey ? "👁️" : "👁️‍🗨️"}
 					</button>
 				</div>
-				<button
-					type="submit"
-					className="api-key-submit"
-					disabled={isLoading || !apiKey.trim()}
-					onMouseDown={stopPropagation}
-				>
-					{isLoading ? (
-						<>
-							<span
-								className="loading-spinner"
-								aria-hidden="true"
-							/>
-							Validating...
-						</>
-					) : (
-						"Save Key"
+				<div className="api-key-actions">
+					<button
+						type="submit"
+						className="api-key-submit"
+						disabled={isLoading || !apiKey.trim()}
+						onMouseDown={stopPropagation}
+					>
+						{isLoading ? (
+							<>
+								<span
+									className="loading-spinner"
+									aria-hidden="true"
+								/>
+								Validating...
+							</>
+						) : (
+							"Save Key"
+						)}
+					</button>
+					{apiKeySource === "user" && (
+						<button
+							type="button"
+							className="api-key-clear"
+							onClick={handleClearKey}
+							disabled={isLoading}
+							onMouseDown={stopPropagation}
+							title="Clear saved key (revert to env)"
+						>
+							Clear Saved
+						</button>
 					)}
-				</button>
+				</div>
 			</form>
 			{error && (
-				<div id="gemini-error" className="api-key-error" role="alert">
-					⚠️ {error}
+				<div
+					id="gemini-error"
+					className={`api-key-error ${error.includes("Using environment") ? "info" : ""}`}
+					role="alert"
+				>
+					{error.includes("Using environment") ? "ℹ️" : "⚠️"} {error}
 				</div>
 			)}
 			<a

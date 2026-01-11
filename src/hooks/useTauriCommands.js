@@ -119,7 +119,7 @@ export const initialGameState = {
 	state: "idle",
 	dialogue: "Waiting for signal... browse the web to begin.",
 	currentUrl: "",
-	apiKeyConfigured: false,
+	apiKeyConfigured: null, // null = checking, false = missing, true = configured
 	hintAvailable: false,
 	is_sponsored: false,
 };
@@ -153,9 +153,15 @@ export function useGhostGame() {
 		extensionConnected: false,
 		extensionOperational: false,
 		apiKeyConfigured: false,
+		apiKeySource: "none", // "none" | "env" | "user"
 		lastKnownUrl: null,
-		currentMode: "game",
+		currentMode: "companion",
+		preferredMode: "companion",
+		autoPuzzleFromCompanion: true,
 	});
+
+	/** @type {React.MutableRefObject<Object>} */
+	const systemStatusRef = useRef(systemStatus);
 
 	/** @type {React.MutableRefObject<PageContentPayload|null>} */
 	const latestContentRef = useRef(globalLatestContent);
@@ -176,6 +182,9 @@ export function useGhostGame() {
 	const handlePageContentRef = useRef(null);
 	const advanceToNextPuzzleRef = useRef(null);
 	const triggerPuzzleGenerationRef = useRef(null);
+
+	// Autonomy guard (prevents repeated auto-puzzle triggers)
+	const autoPuzzleInProgressRef = useRef(false);
 
 	// Track pending timeouts to avoid setState after unmount
 	const timeoutIdsRef = useRef(new Set());
@@ -200,11 +209,34 @@ export function useGhostGame() {
 				...prev,
 				chromeInstalled: status.chrome_installed,
 				chromePath: status.chrome_path,
+				extensionConnected: status.extension_connected,
+				extensionOperational: status.extension_operational,
 				apiKeyConfigured: status.api_key_configured,
-				currentMode: status.current_mode || "game",
+				apiKeySource: status.api_key_source || "none",
+				lastKnownUrl: status.last_known_url,
+				currentMode: status.current_mode,
+				preferredMode: status.preferred_mode,
+				autoPuzzleFromCompanion: status.auto_puzzle_from_companion,
 			}));
 		} catch (err) {
 			console.error("[Ghost] System detection failed:", err);
+		}
+	}, []);
+
+	const setAppMode = useCallback(async (mode, options = {}) => {
+		const { persist = true } = options;
+		try {
+			const updatedMode = await invoke("set_app_mode", {
+				mode,
+				persistPreference: persist,
+			});
+			setSystemStatus((prev) => ({
+				...prev,
+				currentMode: updatedMode || prev.currentMode,
+				preferredMode: persist ? mode : prev.preferredMode,
+			}));
+		} catch (err) {
+			console.error("[Ghost] Failed to set app mode:", err);
 		}
 	}, []);
 
@@ -213,8 +245,59 @@ export function useGhostGame() {
 		detectSystemStatus();
 	}, [detectSystemStatus]);
 
+	// Keep current mode aligned to preferred mode when idle.
+	// This effect only triggers when modes actually differ, preventing unnecessary calls.
+	const modeAlignmentNeeded =
+		systemStatus.chromeInstalled &&
+		!autoPuzzleInProgressRef.current &&
+		systemStatus.currentMode &&
+		systemStatus.preferredMode &&
+		systemStatus.currentMode !== systemStatus.preferredMode;
+
+	useEffect(() => {
+		if (!modeAlignmentNeeded) return;
+
+		const hasPuzzle = !!gameStateRef.current?.puzzleId;
+		if (hasPuzzle) return;
+
+		setAppMode(systemStatus.preferredMode, { persist: false });
+	}, [modeAlignmentNeeded, setAppMode, systemStatus.preferredMode]);
+
 	// Companion behavior state
 	const [companionBehavior, setCompanionBehavior] = useState(null);
+
+	// Autonomy preferences (persisted via Tauri SessionMemory)
+	const [autonomySettings, setAutonomySettingsState] = useState({
+		autoPuzzleFromCompanion: true,
+	});
+	const autonomySettingsRef = useRef(autonomySettings);
+
+	useEffect(() => {
+		autonomySettingsRef.current = autonomySettings;
+	}, [autonomySettings]);
+
+	useEffect(() => {
+		setAutonomySettingsState({
+			autoPuzzleFromCompanion: !!systemStatus.autoPuzzleFromCompanion,
+		});
+	}, [systemStatus.autoPuzzleFromCompanion]);
+
+	const setAutonomySettings = useCallback(async (updater) => {
+		const current = autonomySettingsRef.current;
+		const next = typeof updater === "function" ? updater(current) : updater;
+		const nextEnabled = !!next?.autoPuzzleFromCompanion;
+
+		try {
+			const updated = await invoke("set_autonomy_settings", {
+				autoPuzzleFromCompanion: nextEnabled,
+			});
+			const enabled = !!updated?.auto_puzzle_from_companion;
+			setAutonomySettingsState({ autoPuzzleFromCompanion: enabled });
+			setSystemStatus((prev) => ({ ...prev, autoPuzzleFromCompanion: enabled }));
+		} catch (err) {
+			console.error("[Ghost] Failed to set autonomy settings:", err);
+		}
+	}, []);
 
 	/**
 	 * Generate an adaptive puzzle based on activity history
@@ -228,14 +311,14 @@ export function useGhostGame() {
 			setGameState((prev) => ({
 				...prev,
 				state: "thinking",
+				puzzleId: puzzle.id,
 				clue: puzzle.clue,
-				puzzleId: `adaptive_${Date.now()}`,
-				hint: puzzle.hints?.[0] || "",
+				hint: puzzle.hint || puzzle.hints?.[0] || "",
 				hints: puzzle.hints || [],
 				hintsRevealed: 0,
 				hintAvailable: false,
-				proximity: 0.2,
-				dialogue: `Inspired by your ${puzzle.inspired_by}... ${puzzle.clue}`,
+				proximity: 0,
+				dialogue: puzzle.clue,
 			}));
 
 			setCompanionBehavior(null); // Clear suggestion
@@ -278,10 +361,14 @@ export function useGhostGame() {
 		}
 	}, [gameState.state, triggerBrowserEffect]);
 
-	// Keep ref in sync with state
+	// Keep refs in sync with state
 	useEffect(() => {
 		gameStateRef.current = gameState;
 	}, [gameState]);
+
+	useEffect(() => {
+		systemStatusRef.current = systemStatus;
+	}, [systemStatus]);
 
 	/**
 	 * Handle page content events from Chrome extension.
@@ -297,16 +384,22 @@ export function useGhostGame() {
 
 		// If no puzzle is active and API key is configured, generate one!
 		const currentState = gameStateRef.current;
-		if (!currentState.puzzleId && currentState.apiKeyConfigured) {
-			log(
-				"[Ghost] No active puzzle, triggering generation from content..."
-			);
+		const mode = systemStatusRef.current?.currentMode || "game";
+		const autoPuzzleEnabled =
+			mode === "game" || !!autonomySettingsRef.current?.autoPuzzleFromCompanion;
+
+		if (!currentState.puzzleId && currentState.apiKeyConfigured && autoPuzzleEnabled) {
+			log("[Ghost] No active puzzle, triggering generation from content...");
+
+			if (mode === "companion") {
+				await setAppMode("game", { persist: false });
+			}
 
 			// Use ref to avoid hoisting issues with triggerDynamicPuzzle being defined later
 			triggerPuzzleGenerationRef.current &&
 				triggerPuzzleGenerationRef.current();
 		}
-	}, []);
+	}, [setAppMode]);
 
 	/**
 	 * Wrapper to generate puzzle from current context
@@ -390,7 +483,7 @@ export function useGhostGame() {
 				);
 			});
 
-			await register("browsing_context", (event) => {
+			await register("browsing_context", async (event) => {
 				const { recent_history, top_sites } = event.payload;
 				log(
 					"[Ghost] Received browsing context:",
@@ -402,12 +495,20 @@ export function useGhostGame() {
 
 				// If no puzzle and no page content, generate from history!
 				const currentState = gameStateRef.current;
+				const mode = systemStatusRef.current?.currentMode || "game";
+				const autoPuzzleEnabled =
+					mode === "game" || !!autonomySettingsRef.current?.autoPuzzleFromCompanion;
+
 				if (
 					!currentState.puzzleId &&
 					currentState.apiKeyConfigured &&
-					!latestContentRef.current
+					!latestContentRef.current &&
+					autoPuzzleEnabled
 				) {
 					log("[Ghost] Auto-triggering history puzzle generation...");
+					if (mode === "companion") {
+						await setAppMode("game", { persist: false });
+					}
 					triggerPuzzleGenerationRef.current &&
 						triggerPuzzleGenerationRef.current();
 				}
@@ -449,7 +550,11 @@ export function useGhostGame() {
 					chromeInstalled: status.chrome_installed,
 					chromePath: status.chrome_path,
 					apiKeyConfigured: status.api_key_configured,
-					currentMode: status.current_mode || "game",
+					apiKeySource: status.api_key_source || "none",
+					currentMode: status.current_mode || prev.currentMode,
+					preferredMode: status.preferred_mode || prev.preferredMode,
+					autoPuzzleFromCompanion:
+						status.auto_puzzle_from_companion ?? prev.autoPuzzleFromCompanion,
 					// Preserve extension connection state as it might be handled separately
 					// or merge if backend sends it authoritative
 				}));
@@ -469,14 +574,43 @@ export function useGhostGame() {
 				}));
 
 				if (solved) {
-					scheduleTimeout(() => advanceToNextPuzzleRef.current?.(), 5000);
+					scheduleTimeout(async () => {
+						advanceToNextPuzzleRef.current?.();
+						// If the user prefers Companion mode, return after a solve.
+						if (systemStatusRef.current?.preferredMode === "companion") {
+							await setAppMode("companion", { persist: false });
+						}
+					}, 5000);
 				}
 			});
 
-			await register("companion_behavior", (event) => {
+			await register("companion_behavior", async (event) => {
 				const behavior = event.payload;
 				log("Companion behavior:", behavior);
 				setCompanionBehavior(behavior);
+
+				// Optional full autonomy: auto-create a puzzle from companion suggestions.
+				const mode = systemStatusRef.current?.currentMode || "game";
+				const hasPuzzle = !!gameStateRef.current?.puzzleId;
+				const autoPuzzleEnabled =
+					!!autonomySettingsRef.current?.autoPuzzleFromCompanion;
+				if (
+					!isUnmounting &&
+					mode === "companion" &&
+					autoPuzzleEnabled &&
+					behavior?.behavior_type === "puzzle" &&
+					!hasPuzzle &&
+					!autoPuzzleInProgressRef.current
+				) {
+					autoPuzzleInProgressRef.current = true;
+					try {
+						await setAppMode("game", { persist: false });
+						await generateAdaptivePuzzle();
+					} finally {
+						autoPuzzleInProgressRef.current = false;
+					}
+				}
+
 				// Clear behavior after 30s - timeout cleaned up via isUnmounting check
 				const timeoutId = setTimeout(() => {
 					if (!isUnmounting) {
@@ -642,6 +776,13 @@ export function useGhostGame() {
 		async (payload) => {
 			const { url, title } = payload;
 			const currentState = gameStateRef.current;
+			const mode = systemStatusRef.current?.currentMode || "game";
+
+			// In Companion mode we do not run puzzle agent cycles.
+			if (mode === "companion") {
+				setGameState((prev) => ({ ...prev, currentUrl: url }));
+				return;
+			}
 
 			// Debounce: skip if same URL was just processed
 			if (lastProcessedUrlRef.current === url) {
@@ -1236,6 +1377,9 @@ export function useGhostGame() {
 		enableAutonomousMode,
 		detectSystemStatus,
 		generateAdaptivePuzzle,
+		setAppMode,
+		autonomySettings,
+		setAutonomySettings,
 		// HITL Feedback (Chapter 13)
 		submitFeedback,
 		reportStuck,

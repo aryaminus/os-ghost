@@ -94,6 +94,23 @@ pub async fn start_monitor_loop(
             continue;
         }
 
+        // Only run autonomous companion monitoring in Companion mode.
+        let mode = {
+            let sess_guard = match session.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::warn!("Session memory mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
+            sess_guard.load().ok().map(|s| s.current_mode)
+        };
+
+        if mode != Some(crate::memory::AppMode::Companion) {
+            tracing::debug!("Monitor: not in companion mode; skipping");
+            continue;
+        }
+
         // 1. Capture Screen (no window hiding - better UX)
         let screenshot_res = tokio::task::spawn_blocking(capture::capture_primary_monitor).await;
 
@@ -104,6 +121,18 @@ pub async fn start_monitor_loop(
                 continue;
             }
         };
+
+        // Record capture for session metrics (best effort)
+        {
+            let session_guard = match session.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::warn!("Session memory mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
+            let _ = session_guard.record_screenshot();
+        }
 
         // 2. Build rich context from memory
         // Helper to handle mutex poisoning gracefully

@@ -202,7 +202,7 @@ pub fn run() {
             // Register session memory as managed state for IPC commands
             // Create a separate Arc for SessionMemory to be used directly by bridge
             let session_for_ipc = Arc::new(memory::SessionMemory::new(store.clone()));
-            app.manage(session_for_ipc);
+            app.manage(session_for_ipc.clone());
 
             // Register LongTermMemory as managed state for IPC commands (HITL feedback)
             let ltm_for_ipc = Arc::new(memory::LongTermMemory::new(store));
@@ -288,13 +288,17 @@ pub fn run() {
                 // Check every 30 seconds (less frequent than hints)
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
 
+                use tauri::Manager;
+
                 // Initial check immediate
-                let status = ipc::detect_chrome();
+                let session = status_handle.state::<Arc<memory::SessionMemory>>();
+                let status = ipc::detect_system_status(Some(session.as_ref()));
                 let _ = status_handle.emit("system_status_update", status);
 
                 loop {
                     interval.tick().await;
-                    let status = ipc::detect_chrome();
+                    let session = status_handle.state::<Arc<memory::SessionMemory>>();
+                    let status = ipc::detect_system_status(Some(session.as_ref()));
                     // Always emit for now so UI is always in sync
                     if let Err(e) = status_handle.emit("system_status_update", status) {
                         tracing::error!("Failed to emit status event: {}", e);
@@ -314,6 +318,7 @@ pub fn run() {
             ipc::verify_screenshot_proof,
             ipc::check_api_key,
             ipc::set_api_key,
+            ipc::clear_api_key,
             ipc::validate_api_key,
             ipc::puzzles::start_investigation,
             ipc::puzzles::generate_puzzle_from_history,
@@ -324,6 +329,10 @@ pub fn run() {
             // System detection commands
             ipc::detect_chrome,
             ipc::launch_chrome,
+            ipc::get_app_mode,
+            ipc::set_app_mode,
+            ipc::get_autonomy_settings,
+            ipc::set_autonomy_settings,
             // Adaptive behavior commands
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,

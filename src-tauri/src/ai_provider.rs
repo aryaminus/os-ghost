@@ -48,6 +48,12 @@ impl std::fmt::Display for ProviderType {
 /// Circuit breaker recovery time (30 seconds)
 const CIRCUIT_BREAKER_RECOVERY_SECS: u64 = 30;
 
+/// Refresh Ollama availability periodically (seconds)
+///
+/// We treat Ollama availability as dynamic: the user might start/stop Ollama
+/// while the desktop app is already running.
+const OLLAMA_STATUS_REFRESH_SECS: u64 = 15;
+
 /// Smart AI Router that intelligently routes requests between providers
 ///
 /// ## Routing Strategy
@@ -163,6 +169,20 @@ impl SmartAiRouter {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
+    }
+
+    /// Best-effort refresh of Ollama availability (cheap + rate-limited).
+    async fn refresh_ollama_if_stale(&self) {
+        let now = Self::now_secs();
+        let last = self.ollama_last_check.load(Ordering::SeqCst);
+
+        if now.saturating_sub(last) < OLLAMA_STATUS_REFRESH_SECS {
+            return;
+        }
+
+        let available = self.ollama.is_available().await;
+        self.ollama_available.store(available, Ordering::SeqCst);
+        self.ollama_last_check.store(now, Ordering::SeqCst);
     }
 
     /// Initialize and check provider availability
@@ -286,10 +306,11 @@ impl SmartAiRouter {
     pub async fn analyze_image(&self, base64_image: &str, prompt: &str) -> Result<String> {
         // Check rate limit first
         self.check_rate_limit()?;
-        
+        self.refresh_ollama_if_stale().await;
+
         // Try Gemini first if available and not failing
         if let Some(ref gemini) = self.gemini {
-            if !self.gemini_failing.load(Ordering::SeqCst) {
+            if !self.is_gemini_circuit_open() {
                 match gemini.analyze_image(base64_image, prompt).await {
                     Ok(result) => {
                         self.mark_gemini_ok();
@@ -330,10 +351,11 @@ impl SmartAiRouter {
     pub async fn generate_text(&self, prompt: &str) -> Result<String> {
         // Check rate limit first
         self.check_rate_limit()?;
-        
+        self.refresh_ollama_if_stale().await;
+
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
-            if !self.gemini_failing.load(Ordering::SeqCst) {
+            if !self.is_gemini_circuit_open() {
                 match gemini.generate_text(prompt).await {
                     Ok(result) => {
                         self.mark_gemini_ok();
@@ -375,6 +397,7 @@ impl SmartAiRouter {
     pub async fn generate_text_light(&self, prompt: &str) -> Result<String> {
         // Check rate limit first
         self.check_rate_limit()?;
+        self.refresh_ollama_if_stale().await;
 
         let (primary, has_fallback) = self.choose_provider();
 
@@ -433,6 +456,7 @@ impl SmartAiRouter {
     pub async fn calculate_url_similarity(&self, url1: &str, url2: &str) -> Result<f32> {
         // Check rate limit first
         self.check_rate_limit()?;
+        self.refresh_ollama_if_stale().await;
 
         let (primary, has_fallback) = self.choose_provider();
 
@@ -491,6 +515,7 @@ impl SmartAiRouter {
     pub async fn generate_dialogue(&self, context: &str, personality: &str) -> Result<String> {
         // Check rate limit first
         self.check_rate_limit()?;
+        self.refresh_ollama_if_stale().await;
 
         let (primary, has_fallback) = self.choose_provider();
 
@@ -554,10 +579,11 @@ impl SmartAiRouter {
     ) -> Result<DynamicPuzzle> {
         // Check rate limit first
         self.check_rate_limit()?;
-        
+        self.refresh_ollama_if_stale().await;
+
         // Try Gemini first (has Google Search grounding)
         if let Some(ref gemini) = self.gemini {
-            if !self.gemini_failing.load(Ordering::SeqCst) {
+            if !self.is_gemini_circuit_open() {
                 match gemini
                     .generate_dynamic_puzzle(url, page_title, page_content, history_context)
                     .await
@@ -605,10 +631,11 @@ impl SmartAiRouter {
     ) -> Result<VerificationResult> {
         // Check rate limit first
         self.check_rate_limit()?;
+        self.refresh_ollama_if_stale().await;
 
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
-            if !self.gemini_failing.load(Ordering::SeqCst) {
+            if !self.is_gemini_circuit_open() {
                 match gemini
                     .verify_screenshot_clue(base64_image, clue_description)
                     .await
@@ -655,10 +682,11 @@ impl SmartAiRouter {
     ) -> Result<AdaptivePuzzle> {
         // Check rate limit first
         self.check_rate_limit()?;
+        self.refresh_ollama_if_stale().await;
 
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
-            if !self.gemini_failing.load(Ordering::SeqCst) {
+            if !self.is_gemini_circuit_open() {
                 match gemini
                     .generate_adaptive_puzzle(activities, current_app, current_content)
                     .await
@@ -707,10 +735,11 @@ impl SmartAiRouter {
     ) -> Result<String> {
         // Check rate limit first
         self.check_rate_limit()?;
+        self.refresh_ollama_if_stale().await;
 
         // Try Gemini first
         if let Some(ref gemini) = self.gemini {
-            if !self.gemini_failing.load(Ordering::SeqCst) {
+            if !self.is_gemini_circuit_open() {
                 match gemini
                     .generate_contextual_dialogue(recent_activities, current_context, ghost_mood)
                     .await

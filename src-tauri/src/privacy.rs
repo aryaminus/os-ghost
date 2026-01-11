@@ -106,8 +106,9 @@ THE OS GHOST - PRIVACY NOTICE
 This game uses the following features that access your data:
 
 1. SCREEN CAPTURE
-   - Takes screenshots of your screen when you click the Ghost
-   - Screenshots are processed locally and sent to Google's Gemini AI
+   - Takes screenshots of your screen when you use Ghost actions (and, if enabled, periodically in the background)
+   - Background monitoring captures roughly once per minute to power Companion behavior
+   - Screenshots are processed locally and may be sent to Google's Gemini AI (only if you consent)
    - Screenshots are NOT stored permanently
 
 2. BROWSER HISTORY

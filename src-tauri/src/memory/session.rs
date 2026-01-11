@@ -14,11 +14,15 @@ const ACTIVITY_TREE: &str = "activity_log";
 /// Atomic counter for unique activity IDs within a session
 static ACTIVITY_COUNTER: AtomicU32 = AtomicU32::new(0);
 
+fn default_true() -> bool {
+    true
+}
+
 /// App mode - companion (passive) or game (active puzzle hunting)
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub enum AppMode {
-    #[default]
     Game, // Active puzzle hunting mode
+    #[default]
     Companion, // Passive observation mode
 }
 
@@ -59,9 +63,15 @@ pub struct SessionState {
     pub started_at: u64,
     /// Last activity timestamp
     pub last_activity: u64,
-    /// Current app mode
+    /// Current app mode (runtime state)
     #[serde(default)]
     pub current_mode: AppMode,
+    /// Preferred mode (persisted user preference)
+    #[serde(default)]
+    pub preferred_mode: AppMode,
+    /// Auto-create puzzles from companion suggestions
+    #[serde(default = "default_true")]
+    pub auto_puzzle_from_companion: bool,
     /// Last mode change timestamp
     #[serde(default)]
     pub last_mode_change: u64,
@@ -91,7 +101,9 @@ impl Default for SessionState {
             hints_revealed: 0,
             started_at: now,
             last_activity: now,
-            current_mode: AppMode::Game,
+            current_mode: AppMode::Companion,
+            preferred_mode: AppMode::Companion,
+            auto_puzzle_from_companion: true,
             last_mode_change: now,
             puzzles_solved_session: 0,
             screenshots_taken: 0,
@@ -144,10 +156,23 @@ impl SessionMemory {
     /// Add URL to recent history
     /// Uses VecDeque for O(1) operations at both ends
     pub fn add_url(&self, url: &str) -> Result<()> {
+        self.update_current_page(url, None)
+    }
+
+    /// Update current URL/title and recent URLs.
+    ///
+    /// This is used by both the browser bridge (passive updates) and the agent
+    /// orchestrator (active cycles).
+    pub fn update_current_page(&self, url: &str, title: Option<&str>) -> Result<()> {
         let url_string = url.to_string();
+        let title_string = title.map(|t| t.to_string());
+
         self.store.update(SESSION_TREE, "current", move |old: Option<SessionState>| {
             let mut state = old.unwrap_or_default();
             state.current_url = url_string.clone();
+            if let Some(ref t) = title_string {
+                state.current_title = t.clone();
+            }
             state.recent_urls.push_back(url_string.clone());
             // Keep only last 10 URLs - O(1) pop from front with VecDeque
             while state.recent_urls.len() > 10 {
@@ -156,6 +181,7 @@ impl SessionMemory {
             state.last_activity = current_timestamp();
             Some(state)
         })?;
+
         Ok(())
     }
 
@@ -201,6 +227,37 @@ impl SessionMemory {
     /// Get current app mode
     pub fn get_mode(&self) -> Result<AppMode> {
         Ok(self.load()?.current_mode)
+    }
+
+    /// Get preferred app mode
+    pub fn get_preferred_mode(&self) -> Result<AppMode> {
+        Ok(self.load()?.preferred_mode)
+    }
+
+    /// Set preferred app mode
+    pub fn set_preferred_mode(&self, mode: AppMode) -> Result<()> {
+        let mode_clone = mode.clone();
+        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            state.preferred_mode = mode_clone.clone();
+            Some(state)
+        })?;
+        Ok(())
+    }
+
+    /// Get auto puzzle setting
+    pub fn get_auto_puzzle_from_companion(&self) -> Result<bool> {
+        Ok(self.load()?.auto_puzzle_from_companion)
+    }
+
+    /// Set auto puzzle setting
+    pub fn set_auto_puzzle_from_companion(&self, enabled: bool) -> Result<()> {
+        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
+            let mut state = old.unwrap_or_default();
+            state.auto_puzzle_from_companion = enabled;
+            Some(state)
+        })?;
+        Ok(())
     }
 
     /// Increment screenshot counter

@@ -150,12 +150,19 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                         .update_page(url.clone(), title.clone(), String::new(), timestamp)
                         .await;
 
+                    // Keep SessionMemory in sync even when not running agent cycles
+                    if let Some(session_mem) = app.try_state::<Arc<crate::memory::SessionMemory>>() {
+                        if let Err(e) = session_mem.update_current_page(&url, Some(&title)) {
+                            tracing::warn!("Failed to update session page: {}", e);
+                        }
+                    }
+
                     // Emit to frontend (legacy event for backward compatibility)
                     let _ = app.emit(
                         "browser_navigation",
                         serde_json::json!({
-                            "url": message.url.unwrap_or_default(),
-                            "title": message.title.unwrap_or_default(),
+                            "url": url,
+                            "title": title,
                             "timestamp": timestamp
                         }),
                     );
@@ -180,6 +187,9 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     // 1. Store in memory (legacy path)
                     use crate::memory::SessionMemory;
                     if let Some(session_mem) = app.try_state::<Arc<SessionMemory>>() {
+                        if let Err(e) = session_mem.update_current_page(&url, Some(&title)) {
+                            tracing::warn!("Failed to update session page: {}", e);
+                        }
                         if let Err(e) = session_mem.store_content(body_text.clone()) {
                             tracing::error!("Failed to store content: {}", e);
                         }

@@ -35,6 +35,13 @@ impl RuntimeConfig {
         }
     }
 
+    /// Clear the runtime Gemini API key (reverting to env var if present)
+    pub fn clear_api_key(&self) {
+        if let Ok(mut guard) = self.gemini_api_key.write() {
+            *guard = None;
+        }
+    }
+
     /// Get the Gemini API key
     pub fn get_api_key(&self) -> Option<String> {
         // First check runtime config
@@ -45,6 +52,14 @@ impl RuntimeConfig {
         }
         // Fall back to environment variable
         std::env::var("GEMINI_API_KEY").ok()
+    }
+
+    /// Check if using user-provided runtime key
+    pub fn is_using_user_key(&self) -> bool {
+        if let Ok(guard) = self.gemini_api_key.read() {
+            return guard.is_some();
+        }
+        false
     }
 
     /// Check if API key is configured

@@ -301,13 +301,25 @@ const Ghost = () => {
 		setIntelligentMode,
 		setReflectionMode,
 		setGuardrailsMode,
+		setAppMode,
+		autonomySettings,
+		setAutonomySettings,
 	} = useGhostGame();
 
-	const [showingKeyInput, setShowingKeyInput] = useState(false);
-	const [showingResetConfirm, setShowingResetConfirm] = useState(false);
-	const [extensionAccordionOpen, setExtensionAccordionOpen] = useState(false);
+	const [activeDialog, setActiveDialog] = useState(null); // extension | privacy | key | reset
 	const [intelligentSettings, setIntelligentSettings] = useState(null);
 	const [puzzleStartTime, setPuzzleStartTime] = useState(null);
+
+	// Privacy / consent (required for background monitoring + screenshots)
+	const [privacy, setPrivacy] = useState({
+		settings: null,
+		notice: "",
+	});
+	const [privacyForm, setPrivacyForm] = useState({
+		captureConsent: false,
+		aiConsent: false,
+		noticeAck: false,
+	});
 
 	// Fetch intelligent mode settings on mount
 	useEffect(() => {
@@ -315,6 +327,48 @@ const Ghost = () => {
 			getIntelligentMode?.().then(setIntelligentSettings);
 		}
 	}, [gameState.apiKeyConfigured, getIntelligentMode]);
+
+	const hasFullPrivacyConsent = useMemo(() => {
+		if (!privacy.settings) return false;
+		return (
+			privacy.settings.capture_consent &&
+			privacy.settings.ai_analysis_consent &&
+			privacy.settings.privacy_notice_acknowledged
+		);
+	}, [privacy.settings]);
+
+	// Load privacy notice + settings (one-time flow).
+	useEffect(() => {
+		if (!gameState.apiKeyConfigured) return;
+
+		const loadPrivacy = async () => {
+			try {
+				const settings = await invoke("get_privacy_settings");
+				const notice = await invoke("get_privacy_notice");
+
+				setPrivacy((prev) => ({
+					...prev,
+					settings,
+					notice,
+				}));
+
+				setPrivacyForm({
+					captureConsent: !!settings.capture_consent,
+					aiConsent: !!settings.ai_analysis_consent,
+					noticeAck: !!settings.privacy_notice_acknowledged,
+				});
+
+				// Auto-open privacy dialog if not acknowledged (first time user)
+				if (!settings.privacy_notice_acknowledged) {
+					setActiveDialog("privacy");
+				}
+			} catch (err) {
+				console.error("Failed to load privacy settings:", err);
+			}
+		};
+
+		loadPrivacy();
+	}, [gameState.apiKeyConfigured]);
 
 	// Track puzzle start time
 	useEffect(() => {
@@ -378,17 +432,61 @@ const Ghost = () => {
 		[glowIntensity, gameState.state]
 	);
 
+	const savePrivacySettings = useCallback(async () => {
+		try {
+			const updated = await invoke("update_privacy_settings", {
+				captureConsent: privacyForm.captureConsent,
+				aiAnalysisConsent: privacyForm.aiConsent,
+				privacyNoticeAcknowledged: privacyForm.noticeAck,
+			});
+			setPrivacy((prev) => ({
+				...prev,
+				settings: updated,
+			}));
+			setActiveDialog(null);
+		} catch (err) {
+			console.error("Failed to update privacy settings:", err);
+		}
+	}, [privacyForm.aiConsent, privacyForm.captureConsent, privacyForm.noticeAck]);
+
+	const openPrivacyModal = useCallback(() => {
+		// Reset the form to last saved settings each time we open.
+		if (privacy.settings) {
+			setPrivacyForm({
+				captureConsent: !!privacy.settings.capture_consent,
+				aiConsent: !!privacy.settings.ai_analysis_consent,
+				noticeAck: !!privacy.settings.privacy_notice_acknowledged,
+			});
+		}
+		setActiveDialog("privacy");
+	}, [privacy.settings]);
+
+	// Memoized handlers for privacy form to avoid recreating on every render
+	const handleCaptureConsentChange = useCallback((e) => {
+		setPrivacyForm((prev) => ({ ...prev, captureConsent: e.target.checked }));
+	}, []);
+	const handleAiConsentChange = useCallback((e) => {
+		setPrivacyForm((prev) => ({ ...prev, aiConsent: e.target.checked }));
+	}, []);
+	const handleNoticeAckChange = useCallback((e) => {
+		setPrivacyForm((prev) => ({ ...prev, noticeAck: e.target.checked }));
+	}, []);
+
 	/**
 	 * Handle click on Ghost - memoized for performance.
 	 * Captures screen if idle, shows hint otherwise.
 	 */
 	const handleClick = useCallback(() => {
 		if (gameState.state === "idle") {
+			if (!hasFullPrivacyConsent) {
+				openPrivacyModal();
+				return;
+			}
 			captureAndAnalyze();
 		} else {
 			showHint();
 		}
-	}, [gameState.state, captureAndAnalyze, showHint]);
+	}, [captureAndAnalyze, gameState.state, hasFullPrivacyConsent, openPrivacyModal, showHint]);
 
 	/**
 	 * Handle keyboard interaction on Ghost sprite.
@@ -402,6 +500,14 @@ const Ghost = () => {
 		},
 		[handleClick]
 	);
+
+	const handleVerifyProof = useCallback(() => {
+		if (!hasFullPrivacyConsent) {
+			openPrivacyModal();
+			return;
+		}
+		verifyScreenshotProof();
+	}, [hasFullPrivacyConsent, openPrivacyModal, verifyScreenshotProof]);
 
 	/**
 	 * Handle drag to move window (Clippy-style) - memoized.
@@ -424,7 +530,7 @@ const Ghost = () => {
 	 * Handle successful API key set - refresh game state.
 	 */
 	const handleKeySet = useCallback(async () => {
-		setShowingKeyInput(false);
+		setActiveDialog(null);
 		try {
 			const configured = await invoke("check_api_key");
 			if (configured) {
@@ -436,57 +542,62 @@ const Ghost = () => {
 		}
 	}, []);
 
-	/**
-	 * Toggle API key input visibility.
-	 */
-	const toggleKeyInput = useCallback(() => {
-		setShowingKeyInput((prev) => {
-			if (!prev) {
-				setShowingResetConfirm(false);
-			}
-			return !prev;
-		});
+	const openDialog = useCallback((type) => {
+		setActiveDialog(type);
 	}, []);
 
-	/**
-	 * Toggle reset confirmation visibility.
-	 */
-	const toggleResetConfirm = useCallback(() => {
-		setShowingResetConfirm((prev) => {
-			if (!prev) {
-				setShowingKeyInput(false);
-			}
-			return !prev;
-		});
+	const closeDialog = useCallback(() => {
+		setActiveDialog(null);
 	}, []);
 
-	/**
-	 * Handle reset game confirmation.
-	 */
 	const handleConfirmReset = useCallback(() => {
 		resetGame();
-		setShowingResetConfirm(false);
+		setActiveDialog(null);
 	}, [resetGame]);
 
-	/**
-	 * Close reset confirmation.
-	 */
-	const closeResetConfirm = useCallback(() => {
-		setShowingResetConfirm(false);
-	}, []);
+	// Derive aria-label for sprite based on state - memoized
+	const spriteAriaLabel = useMemo(
+		() =>
+			gameState.state === "idle"
+				? "Click to analyze screen"
+				: "Click for hint",
+		[gameState.state]
+	);
 
-	/**
-	 * Close key input.
-	 */
-	const closeKeyInput = useCallback(() => {
-		setShowingKeyInput(false);
-	}, []);
+	// Memoize mode derivations to avoid recalculation
+	const currentMode = useMemo(
+		() => systemStatus?.currentMode || "game",
+		[systemStatus?.currentMode]
+	);
+	const isCompanionMode = currentMode === "companion";
 
-	// Derive aria-label for sprite based on state
-	const spriteAriaLabel =
-		gameState.state === "idle"
-			? "Click to analyze screen"
-			: "Click for hint";
+	const toggleMode = useCallback(() => {
+		if (!setAppMode) return;
+		setAppMode(isCompanionMode ? "game" : "companion");
+	}, [isCompanionMode, setAppMode]);
+
+	const ensureGameMode = useCallback(async () => {
+		if (isCompanionMode && setAppMode) {
+			await setAppMode("game", { persist: false });
+		}
+	}, [isCompanionMode, setAppMode]);
+
+	const handleGenerateAdaptivePuzzle = useCallback(async () => {
+		await ensureGameMode();
+		await generateAdaptivePuzzle();
+	}, [ensureGameMode, generateAdaptivePuzzle]);
+
+	const handleTriggerDynamicPuzzle = useCallback(async () => {
+		await ensureGameMode();
+		await triggerDynamicPuzzle();
+	}, [ensureGameMode, triggerDynamicPuzzle]);
+
+	const toggleAutoPuzzle = useCallback(() => {
+		setAutonomySettings?.((prev) => ({
+			...prev,
+			autoPuzzleFromCompanion: !prev.autoPuzzleFromCompanion,
+		}));
+	}, [setAutonomySettings]);
 
 	// Determine clue text to display
 	const clueText = useMemo(() => {
@@ -496,6 +607,18 @@ const Ghost = () => {
 			: "Waiting for signal...";
 	}, [gameState.clue, gameState.puzzleId]);
 
+	useEffect(() => {
+		// Wait for initial check (null)
+		if (gameState.apiKeyConfigured === null) return;
+
+		// If missing, open dialog (enforce requirement)
+		if (gameState.apiKeyConfigured === false) {
+			if (!activeDialog) openDialog("key");
+		}
+		// NOTE: Do NOT auto-close if true. The user might have manually opened the dialog to change the key.
+		// Closing is handled by handleKeySet or the Close button.
+	}, [activeDialog, gameState.apiKeyConfigured, openDialog]);
+
 	return (
 		<div
 			className="ghost-container"
@@ -503,7 +626,150 @@ const Ghost = () => {
 			role="application"
 			aria-label="Ghost game interface"
 		>
+			{activeDialog && (
+				<div className="ghost-modal-overlay" onMouseDown={closeDialog}>
+					<div
+						className={`ghost-modal ${activeDialog === "reset" ? "danger" : ""}`}
+						role="dialog"
+						aria-modal="true"
+						aria-label="Ghost dialog"
+						onMouseDown={stopPropagation}
+					>
+						{activeDialog === "privacy" && (
+							<>
+								<div className="ghost-modal-title">Privacy & Consent</div>
+								<pre className="privacy-notice">{privacy.notice}</pre>
+
+								<label className="privacy-checkbox">
+									<input
+										type="checkbox"
+										checked={privacyForm.captureConsent}
+										onChange={handleCaptureConsentChange}
+									/>
+									Allow screen capture (enables screenshots)
+								</label>
+								<label className="privacy-checkbox">
+									<input
+										type="checkbox"
+										checked={privacyForm.aiConsent}
+										onChange={handleAiConsentChange}
+									/>
+									Allow AI analysis (enables Companion monitoring)
+								</label>
+								<label className="privacy-checkbox">
+									<input
+										type="checkbox"
+										checked={privacyForm.noticeAck}
+										onChange={handleNoticeAckChange}
+									/>
+									I have read this notice
+								</label>
+
+								<div className="ghost-modal-actions">
+									<button
+										type="button"
+										className="ghost-modal-btn"
+										disabled={!privacyForm.noticeAck}
+										onMouseDown={stopPropagation}
+										onClick={savePrivacySettings}
+										title={
+											privacyForm.captureConsent && privacyForm.aiConsent
+												? ""
+												: "Without both consents, screenshots and background monitoring remain off"
+										}
+									>
+										Save
+									</button>
+									<button
+										type="button"
+										className="ghost-modal-btn secondary"
+										onMouseDown={stopPropagation}
+										onClick={closeDialog}
+									>
+										Close
+									</button>
+								</div>
+							</>
+						)}
+
+						{activeDialog === "extension" && (
+							<>
+								<div className="ghost-modal-title">Extension</div>
+								<SystemStatusBanner
+									status={systemStatus}
+									extensionConnected={extensionConnected}
+									flat
+								/>
+								<div className="ghost-modal-actions">
+									<button
+										type="button"
+										className="ghost-modal-btn secondary"
+										onMouseDown={stopPropagation}
+										onClick={closeDialog}
+									>
+										Close
+									</button>
+								</div>
+							</>
+						)}
+
+						{activeDialog === "key" && (
+							<>
+								<div className="ghost-modal-title">AI Configuration</div>
+								<ApiKeyInput
+									onKeySet={handleKeySet}
+									apiKeySource={systemStatus.apiKeySource}
+								/>
+								<div className="ghost-modal-actions">
+									<button
+										type="button"
+										className="ghost-modal-btn secondary"
+										onMouseDown={stopPropagation}
+										onClick={closeDialog}
+									>
+										Close
+									</button>
+								</div>
+							</>
+						)}
+
+						{activeDialog === "reset" && (
+							<>
+								<div className="ghost-modal-title">
+									Reset All Progress?
+								</div>
+								<div
+									className="reset-confirm-box"
+									role="alertdialog"
+									aria-modal="true"
+								>
+									<div className="reset-actions">
+										<button
+											type="button"
+											className="confirm-reset-btn"
+											onMouseDown={stopPropagation}
+											onClick={handleConfirmReset}
+										>
+											Yes, Wipe Memory
+										</button>
+										<button
+											type="button"
+											className="cancel-reset-btn"
+											onMouseDown={stopPropagation}
+											onClick={closeDialog}
+										>
+											Cancel
+										</button>
+									</div>
+								</div>
+							</>
+						)}
+					</div>
+				</div>
+			)}
+
 			{/* Ghost Sprite */}
+
 			<div
 				className={`ghost-sprite state-${gameState.state}`}
 				onClick={handleClick}
@@ -521,213 +787,173 @@ const Ghost = () => {
 			{/* Proximity Indicator - Always visible */}
 			<ProximityBar proximity={gameState.proximity} />
 
-			{/* API Key Input - Show when not configured OR when user wants to change */}
-			{(!gameState.apiKeyConfigured || showingKeyInput) && (
-				<div className="status-section">
-					<ApiKeyInput onKeySet={handleKeySet} />
-					{showingKeyInput && (
-						<button
-							type="button"
-							className="cancel-key-btn"
-							onMouseDown={stopPropagation}
-							onClick={closeKeyInput}
-						>
-							Cancel
-						</button>
-					)}
-				</div>
-			)}
-
 			{/* Game UI Section - Shows when API key is configured (extension is now optional) */}
-			{gameState.apiKeyConfigured && !showingKeyInput && (
+			{gameState.apiKeyConfigured && (
 				<>
-					{/* Show Game UI ONLY when NOT resetting */}
-					{!showingResetConfirm ? (
-						<>
-							{/* Current Clue */}
-							<div className="clue-box">
-								<div className="clue-header">
-									<span aria-hidden="true">📜</span> CURRENT
-									MYSTERY
-									{gameState.is_sponsored && (
-										<span style={SPONSORED_BADGE_STYLE}>
-											SPONSORED
-										</span>
-									)}
-								</div>
-								<p className="clue-text">{clueText}</p>
-								{gameState.puzzleId &&
-									!gameState.hintAvailable && (
-										<div className="hint-status">
-											<span
-												className="hint-charging"
-												aria-live="polite"
-											>
-												<span aria-hidden="true">
-													⏳
-												</span>{" "}
-												Hint charging...
-											</span>
-										</div>
-									)}
+					{/* Current Clue */}
+					<div className="clue-box">
+						<div className="clue-header">
+							<div className="clue-header-left">
+								<span aria-hidden="true">📜</span>{" "}
+								{isCompanionMode ? "COMPANION" : "CURRENT"}{" "}
+								{isCompanionMode ? "MODE" : "MYSTERY"}
+								{gameState.is_sponsored && (
+									<span style={SPONSORED_BADGE_STYLE}>
+										SPONSORED
+									</span>
+								)}
 							</div>
-
-							{/* Dialogue Box */}
-							{gameState.dialogue && (
-								<div
-									className={`dialogue-box state-${gameState.state}`}
-									role="status"
-									aria-live="polite"
-								>
-									<div className="dialogue-scroll-area">
-										{gameState.state === "searching" && (
-											<div className="mode-indicator">
-												<span aria-hidden="true">
-													🔍
-												</span>{" "}
-												Background Scan
-											</div>
-										)}
-										{gameState.state === "thinking" && (
-											<div className="mode-indicator">
-												<span aria-hidden="true">
-													🔮
-												</span>{" "}
-												Consulting Oracle...
-											</div>
-										)}
-										<TypewriterText
-											text={gameState.dialogue}
-											speed={TYPEWRITER_SPEED}
-										/>
-									</div>
-									{/* HITL Feedback Buttons */}
-									{gameState.state === "idle" && (
-										<DialogueFeedback
-											content={gameState.dialogue}
-											onFeedback={submitFeedback}
-										/>
-									)}
-								</div>
-							)}
-
-							{/* Companion Behavior Suggestion */}
-							{companionBehavior && (
-								<div
-									className="companion-suggestion"
-									role="status"
-								>
-									<div className="suggestion-message">
-										<span aria-hidden="true">💭</span>{" "}
-										{companionBehavior.suggestion}
-									</div>
-									{companionBehavior.behavior_type ===
-										"puzzle" && (
-										<button
-											type="button"
-											className="suggestion-action-btn"
-											onMouseDown={stopPropagation}
-											onClick={withStopPropagation(
-												generateAdaptivePuzzle
-											)}
-										>
-											<span aria-hidden="true">🎯</span>{" "}
-											Create Puzzle
-										</button>
-									)}
-								</div>
-							)}
-
-							{/* Dynamic Puzzle Trigger */}
-							{gameState.state === "idle" &&
-								!gameState.puzzleId && (
-									<div
-										className="action-wrapper"
-										role="group"
-										aria-label="Puzzle actions"
-									>
-										<button
-											type="button"
-											className="action-btn"
-											onMouseDown={stopPropagation}
-											onClick={withStopPropagation(
-												triggerDynamicPuzzle
-											)}
-										>
-											<span aria-hidden="true">🌀</span>{" "}
-											Investigate This Signal
-										</button>
-										<button
-											type="button"
-											className="action-btn secondary"
-											onMouseDown={stopPropagation}
-											onClick={withStopPropagation(
-												generateAdaptivePuzzle
-											)}
-										>
-											<span aria-hidden="true">🧠</span>{" "}
-											Puzzle From My Observations
-										</button>
-									</div>
-								)}
-
-							{/* Prove Finding Button */}
-							{gameState.puzzleId &&
-								gameState.state !== "celebrate" && (
-									<div className="action-wrapper">
-										<button
-											type="button"
-											className="action-btn verify-btn"
-											onMouseDown={stopPropagation}
-											onClick={withStopPropagation(
-												verifyScreenshotProof
-											)}
-											style={VERIFY_BUTTON_STYLE}
-										>
-											<span aria-hidden="true">📸</span>{" "}
-											Prove Finding
-										</button>
-									</div>
-								)}
-
-							{/* I'm Stuck Button - HITL Escalation */}
-							{gameState.puzzleId &&
-								gameState.state === "idle" && (
-									<StuckButton
-										onStuck={reportStuck}
-										puzzleStartTime={puzzleStartTime}
-									/>
-								)}
-						</>
-					) : (
-						/* Reset Game Confirmation - Replaces Main UI */
-						<div
-							className="reset-confirm-box"
-							role="alertdialog"
-							aria-modal="true"
-							aria-labelledby="reset-confirm-title"
-						>
-							<p id="reset-confirm-title">Reset all progress?</p>
-							<div className="reset-actions">
+							<div className="mode-toggle-bar">
 								<button
 									type="button"
-									className="confirm-reset-btn"
+									className={`mode-toggle-btn ${isCompanionMode ? "active" : ""}`}
 									onMouseDown={stopPropagation}
-									onClick={handleConfirmReset}
+									onClick={toggleMode}
+									aria-pressed={isCompanionMode}
 								>
-									Yes, Wipe Memory
+									{isCompanionMode ? "Companion" : "Game"}
 								</button>
 								<button
 									type="button"
-									className="cancel-reset-btn"
+									disabled={!isCompanionMode}
+									className={`mode-toggle-btn ${autonomySettings?.autoPuzzleFromCompanion ? "active" : ""}`}
 									onMouseDown={stopPropagation}
-									onClick={closeResetConfirm}
+									onClick={toggleAutoPuzzle}
+									aria-pressed={!!autonomySettings?.autoPuzzleFromCompanion}
+									title="Auto-create puzzles in Companion mode"
 								>
-									Cancel
+									Auto
 								</button>
 							</div>
 						</div>
+						<p className="clue-text">{clueText}</p>
+						{gameState.puzzleId &&
+							!gameState.hintAvailable && (
+								<div className="hint-status">
+									<span
+										className="hint-charging"
+										aria-live="polite"
+									>
+										<span aria-hidden="true">⏳</span>{" "}
+										Hint charging...
+									</span>
+								</div>
+							)}
+					</div>
+
+					{/* Dialogue Box */}
+					{gameState.dialogue && (
+						<div
+							className={`dialogue-box state-${gameState.state}`}
+							role="status"
+							aria-live="polite"
+						>
+							<div className="dialogue-scroll-area">
+								{gameState.state === "searching" && (
+									<div className="mode-indicator">
+										<span aria-hidden="true">🔍</span>{" "}
+										Background Scan
+									</div>
+								)}
+								{gameState.state === "thinking" && (
+									<div className="mode-indicator">
+										<span aria-hidden="true">🔮</span>{" "}
+										Consulting Oracle...
+									</div>
+								)}
+								<TypewriterText
+									text={gameState.dialogue}
+									speed={TYPEWRITER_SPEED}
+								/>
+							</div>
+							{/* HITL Feedback Buttons */}
+							{gameState.state === "idle" && (
+								<DialogueFeedback
+									content={gameState.dialogue}
+									onFeedback={submitFeedback}
+								/>
+							)}
+						</div>
 					)}
+
+					{/* Companion Behavior Suggestion */}
+					{companionBehavior && (
+						<div
+							className="companion-suggestion"
+							role="status"
+						>
+							<div className="suggestion-message">
+								<span aria-hidden="true">💭</span>{" "}
+								{companionBehavior.suggestion}
+							</div>
+							{companionBehavior.behavior_type === "puzzle" && (
+								<button
+									type="button"
+									className="suggestion-action-btn"
+									onMouseDown={stopPropagation}
+									onClick={withStopPropagation(handleGenerateAdaptivePuzzle)}
+								>
+									<span aria-hidden="true">🎯</span>{" "}
+									Create Puzzle
+								</button>
+							)}
+						</div>
+					)}
+
+					{/* Dynamic Puzzle Trigger */}
+					{gameState.state === "idle" &&
+						!gameState.puzzleId && (
+							<div
+								className="action-wrapper"
+								role="group"
+								aria-label="Puzzle actions"
+							>
+								<button
+									type="button"
+									className="action-btn"
+									onMouseDown={stopPropagation}
+									onClick={withStopPropagation(handleTriggerDynamicPuzzle)}
+								>
+									<span aria-hidden="true">🌀</span>{" "}
+									Investigate This Signal
+								</button>
+								<button
+									type="button"
+									className="action-btn secondary"
+									onMouseDown={stopPropagation}
+									onClick={withStopPropagation(handleGenerateAdaptivePuzzle)}
+								>
+									<span aria-hidden="true">🧠</span>{" "}
+									Puzzle From My Observations
+								</button>
+							</div>
+						)}
+
+					{/* Prove Finding Button */}
+					{gameState.puzzleId &&
+						gameState.state !== "celebrate" && (
+							<div className="action-wrapper">
+								<button
+									type="button"
+									className="action-btn verify-btn"
+									onMouseDown={stopPropagation}
+									onClick={withStopPropagation(handleVerifyProof)}
+									style={VERIFY_BUTTON_STYLE}
+								>
+									<span aria-hidden="true">📸</span>{" "}
+									Prove Finding
+								</button>
+							</div>
+						)}
+
+					{/* I'm Stuck Button - HITL Escalation */}
+					{gameState.puzzleId &&
+						gameState.state === "idle" && (
+							<StuckButton
+								onStuck={reportStuck}
+								puzzleStartTime={puzzleStartTime}
+							/>
+						)}
 				</>
 			)}
 
@@ -740,16 +966,6 @@ const Ghost = () => {
 				>
 					<div className="system-header">SYSTEM CONTROLS</div>
 
-					{/* System Status Banner - Moved to footer */}
-					{!showingKeyInput && (
-						<SystemStatusBanner
-							status={systemStatus}
-							extensionConnected={extensionConnected}
-							isExpanded={extensionAccordionOpen}
-							onToggleExpand={setExtensionAccordionOpen}
-						/>
-					)}
-
 					{/* Intelligent Mode Settings */}
 					<IntelligentModeSettings
 						settings={intelligentSettings}
@@ -759,25 +975,40 @@ const Ghost = () => {
 					/>
 
 					<div className="system-controls-grid">
-						{/* Core Actions */}
 						<button
 							type="button"
-							className={`system-btn change-key ${showingKeyInput ? "active" : ""}`}
+							className="system-btn secondary"
 							onMouseDown={stopPropagation}
-							onClick={toggleKeyInput}
-							aria-pressed={showingKeyInput}
+							onClick={() => openDialog("extension")}
 						>
-							{showingKeyInput ? "Close Key" : "Change Key"}
+							Extension
 						</button>
 
 						<button
 							type="button"
-							className={`system-btn danger ${showingResetConfirm ? "active" : ""}`}
+							className="system-btn secondary"
 							onMouseDown={stopPropagation}
-							onClick={toggleResetConfirm}
-							aria-pressed={showingResetConfirm}
+							onClick={openPrivacyModal}
 						>
-							{showingResetConfirm ? "Cancel" : "Reset Game"}
+							Privacy
+						</button>
+
+						<button
+							type="button"
+							className="system-btn change-key"
+							onMouseDown={stopPropagation}
+							onClick={() => openDialog("key")}
+						>
+							Change Key
+						</button>
+
+						<button
+							type="button"
+							className="system-btn danger"
+							onMouseDown={stopPropagation}
+							onClick={() => openDialog("reset")}
+						>
+							Reset Game
 						</button>
 					</div>
 				</div>

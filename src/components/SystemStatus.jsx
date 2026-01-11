@@ -75,6 +75,7 @@ const getStatusMessage = (status) => {
  * @param {boolean} [props.extensionConnected=false] - Live extension connection state (WebSocket)
  * @param {boolean} [props.isExpanded=false] - Controlled accordion expanded state
  * @param {function} [props.onToggleExpand] - Callback to toggle expanded state (receives boolean or updater function)
+ * @param {boolean} [props.flat=false] - If true, removes borders/accordion behavior and shows full content
  * @returns {JSX.Element} Status banner component
  */
 const SystemStatusBanner = ({
@@ -82,6 +83,7 @@ const SystemStatusBanner = ({
 	extensionConnected,
 	isExpanded = false,
 	onToggleExpand,
+	flat = false,
 }) => {
 	const [isLaunching, setIsLaunching] = useState(false);
 	const [actionError, setActionError] = useState(null);
@@ -197,12 +199,14 @@ const SystemStatusBanner = ({
 	};
 
 	const toggleExpanded = useCallback(() => {
+		if (flat) return;
 		onToggleExpand?.((prev) => !prev);
-	}, [onToggleExpand]);
+	}, [onToggleExpand, flat]);
 
 	const expand = useCallback(() => {
+		if (flat) return;
 		onToggleExpand?.(true);
-	}, [onToggleExpand]);
+	}, [onToggleExpand, flat]);
 
 	/**
 	 * Handle keyboard interaction for toggle.
@@ -210,6 +214,7 @@ const SystemStatusBanner = ({
 	 * @param {function} action - Action to perform
 	 */
 	const handleKeyDown = (e, action) => {
+		if (flat) return;
 		if (e.key === "Enter" || e.key === " ") {
 			e.preventDefault();
 			action();
@@ -229,8 +234,11 @@ const SystemStatusBanner = ({
 		handler();
 	};
 
-	// If everything is connected, show minimal badge
-	if (statusLevel === STATUS_LEVELS.CONNECTED && !isExpanded) {
+	// If flat mode, force expanded behavior and simplified rendering
+	const effectiveExpanded = flat || isExpanded;
+
+	// If everything is connected, show minimal badge (ONLY if not flat)
+	if (!flat && statusLevel === STATUS_LEVELS.CONNECTED && !isExpanded) {
 		return (
 			<div
 				className="system-status-banner collapsed"
@@ -255,7 +263,7 @@ const SystemStatusBanner = ({
 
 	return (
 		<div
-			className={`system-status-banner ${isExpanded ? "expanded" : ""}`}
+			className={`system-status-banner ${effectiveExpanded ? "expanded" : ""} ${flat ? "flat" : ""}`}
 			role="region"
 			aria-label="System status"
 		>
@@ -264,10 +272,11 @@ const SystemStatusBanner = ({
 				className="status-header"
 				onClick={toggleExpanded}
 				onKeyDown={(e) => handleKeyDown(e, toggleExpanded)}
-				role="button"
-				tabIndex={0}
-				aria-expanded={isExpanded}
+				role={flat ? undefined : "button"}
+				tabIndex={flat ? -1 : 0}
+				aria-expanded={flat ? undefined : effectiveExpanded}
 				aria-controls={contentId}
+				style={{ cursor: flat ? "default" : "pointer" }}
 			>
 				<div className="status-indicator">
 					<span
@@ -276,13 +285,15 @@ const SystemStatusBanner = ({
 					/>
 					<span className="status-text">{statusMessage}</span>
 				</div>
-				<span className="expand-icon" aria-hidden="true">
-					{isExpanded ? "▼" : "▶"}
-				</span>
+				{!flat && (
+					<span className="expand-icon" aria-hidden="true">
+						{effectiveExpanded ? "▼" : "▶"}
+					</span>
+				)}
 			</div>
 
 			{/* Expandable content */}
-			{isExpanded && (
+			{effectiveExpanded && (
 				<div id={contentId} className="status-content">
 					{/* Error Banner */}
 					{actionError && (
@@ -412,12 +423,14 @@ SystemStatusBanner.propTypes = {
 	extensionConnected: PropTypes.bool,
 	isExpanded: PropTypes.bool,
 	onToggleExpand: PropTypes.func,
+	flat: PropTypes.bool,
 };
 
 SystemStatusBanner.defaultProps = {
 	extensionConnected: false,
 	isExpanded: false,
 	onToggleExpand: undefined,
+	flat: false,
 };
 
 export default React.memo(SystemStatusBanner);
