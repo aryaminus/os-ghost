@@ -97,15 +97,15 @@ async fn register_puzzle(
 ) -> Result<(), String> {
     {
         let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
-        // Count dynamic puzzles before cleanup
-        let dynamic_count = puzzles
-            .iter()
-            .filter(|p| p.id.starts_with("dynamic_"))
-            .count();
-        // Remove oldest dynamic puzzles to prevent buildup (keep max 5)
-        if dynamic_count >= 5 {
-            puzzles.retain(|p| !p.id.starts_with("dynamic_"));
+        // Keep at most 5 dynamic puzzles (remove oldest first)
+        while puzzles.iter().filter(|p| p.id.starts_with("dynamic_")).count() >= 5 {
+            if let Some(idx) = puzzles.iter().position(|p| p.id.starts_with("dynamic_")) {
+                puzzles.remove(idx);
+            } else {
+                break;
+            }
         }
+
         puzzles.push(puzzle);
     }
 

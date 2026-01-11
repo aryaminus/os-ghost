@@ -102,7 +102,19 @@ fn main() {
 
         // Forward message to Tauri
         if let Some(ref mut stream) = tauri_connection {
-            let json = serde_json::to_vec(&message).unwrap_or_default();
+            let json = match serde_json::to_vec(&message) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    log(&format!("Failed to serialize message to JSON: {}", e));
+                    send_native_response(&NativeResponse {
+                        action: "error".to_string(),
+                        success: false,
+                        error: Some("Failed to serialize message".to_string()),
+                    });
+                    continue;
+                }
+            };
+
             let len = (json.len() as u32).to_le_bytes();
 
             if stream.write_all(&len).is_err() || stream.write_all(&json).is_err() {
@@ -187,8 +199,10 @@ fn read_native_message() -> io::Result<Option<BrowserMessage>> {
 
 /// Send a native messaging response to stdout (length-prefixed JSON)
 fn send_native_response(response: &NativeResponse) {
-    let json = serde_json::to_vec(response).unwrap_or_default();
-    write_raw_to_stdout(&json);
+    match serde_json::to_vec(response) {
+        Ok(json) => write_raw_to_stdout(&json),
+        Err(e) => log(&format!("Failed to serialize response: {}", e)),
+    }
 }
 
 /// Write raw bytes to stdout with length prefix

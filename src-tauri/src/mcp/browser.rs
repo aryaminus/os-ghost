@@ -291,7 +291,10 @@ impl McpTool for NavigateTool {
     async fn execute(&self, arguments: serde_json::Value) -> Result<serde_json::Value, McpError> {
         self.validate_arguments(&arguments)?;
 
-        let url = arguments["url"].as_str().unwrap();
+        let url = arguments
+            .get("url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| McpError::InvalidArguments("Missing 'url' parameter".to_string()))?;
 
         self.effect_sender
             .send(json!({

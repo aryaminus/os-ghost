@@ -66,13 +66,14 @@ fn find_chrome_path() -> Option<String> {
         .get_or_init(|| {
             #[cfg(target_os = "macos")]
             {
+                // Prefer app bundle paths so `open -a <path>` works reliably
                 let paths = [
-                    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-                    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-                    "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
-                    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-                    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-                    "/Applications/Arc.app/Contents/MacOS/Arc",
+                    "/Applications/Google Chrome.app",
+                    "/Applications/Chromium.app",
+                    "/Applications/Google Chrome Canary.app",
+                    "/Applications/Brave Browser.app",
+                    "/Applications/Microsoft Edge.app",
+                    "/Applications/Arc.app",
                 ];
                 for path in paths {
                     if std::path::Path::new(path).exists() {
@@ -394,8 +395,17 @@ fn load_config() -> AppConfig {
     }
 
     match std::fs::read_to_string(&config_path) {
-        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
-        Err(_) => AppConfig::default(),
+        Ok(contents) => match serde_json::from_str(&contents) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                tracing::warn!("Failed to parse config file {:?}: {}", config_path, e);
+                AppConfig::default()
+            }
+        },
+        Err(e) => {
+            tracing::warn!("Failed to read config file {:?}: {}", config_path, e);
+            AppConfig::default()
+        }
     }
 }
 
