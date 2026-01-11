@@ -313,13 +313,38 @@ body {
 	background: var(--box-bg);
 	border: 1px solid var(--border-color);
 	border-radius: 6px;
-	padding: 8px;
-	min-height: 60px;
-	max-height: 80px;
-	overflow-y: auto;
-	overflow-x: hidden;
+	/* Dialogue box - Flex container for sticky footer */
+	display: flex;
+	flex-direction: column;
+	min-height: 100px; /* Increased height for better visibility */
+	max-height: 140px;
+	overflow: hidden; /* Scroll handled by inner area */
+	padding: 0; /* Removing padding from container to let children handle it */
 	position: relative;
 	flex-shrink: 0;
+}
+
+.dialogue-scroll-area {
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 8px 8px 0 8px; /* Padding for text content */
+	/* Custom Scrollbar */
+	scrollbar-width: thin;
+	scrollbar-color: var(--ghost-glow) rgba(0, 0, 0, 0.3);
+}
+
+.dialogue-scroll-area::-webkit-scrollbar {
+	width: 4px;
+}
+
+.dialogue-scroll-area::-webkit-scrollbar-track {
+	background: rgba(0, 0, 0, 0.3);
+}
+
+.dialogue-scroll-area::-webkit-scrollbar-thumb {
+	background: var(--ghost-glow);
+	border-radius: 2px;
 }
 
 /* Custom scrollbar for dialogue box */
@@ -1024,28 +1049,6 @@ body {
 	background: rgba(255, 68, 68, 0.1);
 }
 
-.system-btn.dev-scan {
-	color: var(--text-dim);
-}
-
-.system-btn.dev-scan:hover {
-	border-color: var(--warm);
-	color: #fff;
-	background: rgba(255, 170, 0, 0.15);
-	box-shadow: 0 0 8px rgba(255, 170, 0, 0.3);
-}
-
-.system-btn.dev-auto {
-	color: var(--text-dim);
-}
-
-.system-btn.dev-auto:hover {
-	border-color: var(--ghost-green);
-	color: #fff;
-	background: rgba(0, 255, 136, 0.15);
-	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
-}
-
 /* High contrast mode support */
 @media (prefers-contrast: high) {
 	:root {
@@ -1654,31 +1657,33 @@ body {
 .feedback-buttons {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin-top: 8px;
-	padding-top: 6px;
-	border-top: 1px dashed rgba(0, 255, 136, 0.2);
+	justify-content: flex-end; /* Align to right */
+	gap: 6px;
+	padding: 4px 8px;
+	background: rgba(0, 0, 0, 0.3); /* Subtle footer background */
+	border-top: 1px solid rgba(0, 255, 136, 0.1);
+	margin-top: 0; /* Was 8px */
 }
 
 .feedback-btn {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 28px;
-	height: 28px;
+	width: 20px; /* Smaller size */
+	height: 20px;
 	padding: 0;
-	background: rgba(0, 0, 0, 0.4);
-	border: 1px solid var(--text-dim);
-	border-radius: 50%;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 4px; /* Rounded rect instead of circle */
 	cursor: pointer;
-	font-size: 14px;
+	font-size: 10px;
 	transition: all 0.2s ease;
-	opacity: 0.7;
+	opacity: 0.5;
 }
 
 .feedback-btn:hover:not(:disabled) {
 	opacity: 1;
-	transform: scale(1.1);
+	transform: translateY(-1px);
 }
 
 .feedback-btn.positive:hover:not(:disabled) {
@@ -1847,6 +1852,7 @@ body {
 .intelligent-settings {
 	width: 100%;
 	margin-top: 8px;
+	margin-bottom: 8px; /* Added spacing between settings and system buttons */
 }
 
 .settings-toggle-btn {
@@ -1854,7 +1860,7 @@ body {
 	align-items: center;
 	gap: 6px;
 	width: 100%;
-	padding: 6px 10px;
+	padding: 6px 10px; /* Consistent with other inputs */
 	background: rgba(136, 68, 255, 0.08);
 	border: 1px solid var(--agent-purple-dim);
 	border-radius: 6px;
@@ -1863,6 +1869,7 @@ body {
 	font-size: 10px;
 	cursor: pointer;
 	transition: all 0.2s ease;
+	min-height: 28px; /* Ensure similar height to system buttons */
 }
 
 .settings-toggle-btn:hover {
@@ -1886,52 +1893,76 @@ body {
 }
 
 .settings-panel {
-	padding: 10px;
-	background: rgba(136, 68, 255, 0.05);
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 8px;
+	background: rgba(0, 0, 0, 0.3);
 	border: 1px solid var(--agent-purple-dim);
 	border-top: none;
 	border-radius: 0 0 6px 6px;
 	animation: fadeIn 0.2s ease;
 }
 
-.setting-toggle {
+.setting-chip {
+	position: relative;
 	display: flex;
-	flex-wrap: wrap;
 	align-items: center;
-	gap: 8px;
-	padding: 6px 0;
+	padding: 4px 8px;
+	background: rgba(136, 68, 255, 0.05); /* Very subtle default bg */
+	border: 1px solid rgba(136, 68, 255, 0.2);
+	border-radius: 12px; /* Chip/pill shape */
 	cursor: pointer;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+	transition: all 0.2s ease;
+	user-select: none;
 }
 
-.setting-toggle:last-child {
-	border-bottom: none;
-	padding-bottom: 0;
+.setting-chip:hover {
+	background: rgba(136, 68, 255, 0.1);
+	border-color: rgba(136, 68, 255, 0.4);
 }
 
-.setting-toggle input[type="checkbox"] {
-	width: 16px;
-	height: 16px;
-	accent-color: var(--ghost-green);
+/* Hide actual checkbox */
+.setting-chip input[type="checkbox"] {
+	position: absolute;
+	opacity: 0;
 	cursor: pointer;
+	height: 0;
+	width: 0;
 }
 
-.toggle-label {
+/* Active State (Checked) - Using :has pseudo-class if supported, or generic active style */
+/* Since we don't know browser support for :has, we rely on React checked state or :checked + span */
+.setting-chip:has(input:checked) {
+	background: rgba(0, 255, 136, 0.15);
+	border-color: var(--ghost-green);
+	box-shadow: 0 0 8px rgba(0, 255, 136, 0.1);
+}
+
+/* Fallback for older browsers (though :has is widely supported now)
+   If :has fails, the chip just looks clicked via the span styling below */
+.setting-chip input:checked + .chip-content {
+	color: var(--ghost-green);
+	text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+}
+
+.chip-content {
 	display: flex;
 	align-items: center;
 	gap: 4px;
 	font-size: 10px;
+	color: var(--text-dim);
+	transition: color 0.2s ease;
+}
+
+.setting-chip:hover .chip-content {
 	color: var(--text-secondary);
 }
 
-.toggle-icon {
-	font-size: 12px;
+.setting-chip:has(input:checked) .chip-content {
+	color: var(--ghost-green);
 }
 
-.toggle-desc {
-	flex-basis: 100%;
-	margin-left: 24px;
-	font-size: 8px;
-	color: var(--text-dim);
+.chip-icon {
+	font-size: 11px;
 }
-

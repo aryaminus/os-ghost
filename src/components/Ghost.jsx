@@ -538,16 +538,6 @@ const Ghost = () => {
 				</div>
 			)}
 
-			{/* System Status Banner - Non-blocking, always visible when API key configured */}
-			{gameState.apiKeyConfigured && !showingKeyInput && (
-				<SystemStatusBanner
-					status={systemStatus}
-					extensionConnected={extensionConnected}
-					isExpanded={extensionAccordionOpen}
-					onToggleExpand={setExtensionAccordionOpen}
-				/>
-			)}
-
 			{/* Game UI Section - Shows when API key is configured (extension is now optional) */}
 			{gameState.apiKeyConfigured && !showingKeyInput && (
 				<>
@@ -583,37 +573,43 @@ const Ghost = () => {
 							</div>
 
 							{/* Dialogue Box */}
-					{gameState.dialogue && (
-						<div
-							className={`dialogue-box state-${gameState.state}`}
-							role="status"
-							aria-live="polite"
-						>
-							{gameState.state === "searching" && (
-								<div className="mode-indicator">
-									<span aria-hidden="true">🔍</span>{" "}
-									Background Scan
+							{gameState.dialogue && (
+								<div
+									className={`dialogue-box state-${gameState.state}`}
+									role="status"
+									aria-live="polite"
+								>
+									<div className="dialogue-scroll-area">
+										{gameState.state === "searching" && (
+											<div className="mode-indicator">
+												<span aria-hidden="true">
+													🔍
+												</span>{" "}
+												Background Scan
+											</div>
+										)}
+										{gameState.state === "thinking" && (
+											<div className="mode-indicator">
+												<span aria-hidden="true">
+													🔮
+												</span>{" "}
+												Consulting Oracle...
+											</div>
+										)}
+										<TypewriterText
+											text={gameState.dialogue}
+											speed={TYPEWRITER_SPEED}
+										/>
+									</div>
+									{/* HITL Feedback Buttons */}
+									{gameState.state === "idle" && (
+										<DialogueFeedback
+											content={gameState.dialogue}
+											onFeedback={submitFeedback}
+										/>
+									)}
 								</div>
 							)}
-							{gameState.state === "thinking" && (
-								<div className="mode-indicator">
-									<span aria-hidden="true">🔮</span>{" "}
-									Consulting Oracle...
-								</div>
-							)}
-							<TypewriterText
-								text={gameState.dialogue}
-								speed={TYPEWRITER_SPEED}
-							/>
-							{/* HITL Feedback Buttons */}
-							{gameState.state === "idle" && (
-								<DialogueFeedback
-									content={gameState.dialogue}
-									onFeedback={submitFeedback}
-								/>
-							)}
-						</div>
-					)}
 
 							{/* Companion Behavior Suggestion */}
 							{companionBehavior && (
@@ -678,30 +674,30 @@ const Ghost = () => {
 							{/* Prove Finding Button */}
 							{gameState.puzzleId &&
 								gameState.state !== "celebrate" && (
-							<div className="action-wrapper">
-								<button
-									type="button"
-									className="action-btn verify-btn"
-									onMouseDown={stopPropagation}
-									onClick={withStopPropagation(
-										verifyScreenshotProof
-									)}
-									style={VERIFY_BUTTON_STYLE}
-								>
-									<span aria-hidden="true">📸</span>{" "}
-									Prove Finding
-								</button>
-							</div>
-						)}
+									<div className="action-wrapper">
+										<button
+											type="button"
+											className="action-btn verify-btn"
+											onMouseDown={stopPropagation}
+											onClick={withStopPropagation(
+												verifyScreenshotProof
+											)}
+											style={VERIFY_BUTTON_STYLE}
+										>
+											<span aria-hidden="true">📸</span>{" "}
+											Prove Finding
+										</button>
+									</div>
+								)}
 
-					{/* I'm Stuck Button - HITL Escalation */}
-					{gameState.puzzleId &&
-						gameState.state === "idle" && (
-							<StuckButton
-								onStuck={reportStuck}
-								puzzleStartTime={puzzleStartTime}
-							/>
-						)}
+							{/* I'm Stuck Button - HITL Escalation */}
+							{gameState.puzzleId &&
+								gameState.state === "idle" && (
+									<StuckButton
+										onStuck={reportStuck}
+										puzzleStartTime={puzzleStartTime}
+									/>
+								)}
 						</>
 					) : (
 						/* Reset Game Confirmation - Replaces Main UI */
@@ -744,6 +740,16 @@ const Ghost = () => {
 				>
 					<div className="system-header">SYSTEM CONTROLS</div>
 
+					{/* System Status Banner - Moved to footer */}
+					{!showingKeyInput && (
+						<SystemStatusBanner
+							status={systemStatus}
+							extensionConnected={extensionConnected}
+							isExpanded={extensionAccordionOpen}
+							onToggleExpand={setExtensionAccordionOpen}
+						/>
+					)}
+
 					{/* Intelligent Mode Settings */}
 					<IntelligentModeSettings
 						settings={intelligentSettings}
@@ -753,7 +759,7 @@ const Ghost = () => {
 					/>
 
 					<div className="system-controls-grid">
-						{/* Top Row: Core Actions */}
+						{/* Core Actions */}
 						<button
 							type="button"
 							className={`system-btn change-key ${showingKeyInput ? "active" : ""}`}
@@ -772,29 +778,6 @@ const Ghost = () => {
 							aria-pressed={showingResetConfirm}
 						>
 							{showingResetConfirm ? "Cancel" : "Reset Game"}
-						</button>
-
-						{/* Bottom Row: Dev/Tools */}
-						<button
-							type="button"
-							className="system-btn dev-scan"
-							onMouseDown={stopPropagation}
-							onClick={startBackgroundChecks}
-							title="Scan Background Content"
-							aria-label="Scan background content"
-						>
-							Scan BG
-						</button>
-
-						<button
-							type="button"
-							className="system-btn dev-auto"
-							onMouseDown={stopPropagation}
-							onClick={enableAutonomousMode}
-							title="Enable Auto-Agent Mode"
-							aria-label="Enable auto-agent mode"
-						>
-							Auto Mode
 						</button>
 					</div>
 				</div>

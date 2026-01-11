@@ -292,7 +292,7 @@ export const IntelligentModeSettings = React.memo(
 						role="group"
 						aria-label="Intelligent mode settings"
 					>
-						<label className="setting-toggle">
+						<label className="setting-chip">
 							<input
 								type="checkbox"
 								checked={settings?.intelligent_mode ?? true}
@@ -300,16 +300,15 @@ export const IntelligentModeSettings = React.memo(
 								onMouseDown={stopPropagation}
 								disabled={disabled}
 							/>
-							<span className="toggle-label">
-								<span className="toggle-icon" aria-hidden="true">
+							<span className="chip-content">
+								<span className="chip-icon" aria-hidden="true">
 									🧠
 								</span>
 								Planning
 							</span>
-							<span className="toggle-desc">Dynamic sub-goals</span>
 						</label>
 
-						<label className="setting-toggle">
+						<label className="setting-chip">
 							<input
 								type="checkbox"
 								checked={settings?.reflection ?? true}
@@ -317,16 +316,15 @@ export const IntelligentModeSettings = React.memo(
 								onMouseDown={stopPropagation}
 								disabled={disabled}
 							/>
-							<span className="toggle-label">
-								<span className="toggle-icon" aria-hidden="true">
+							<span className="chip-content">
+								<span className="chip-icon" aria-hidden="true">
 									🪞
 								</span>
 								Reflection
 							</span>
-							<span className="toggle-desc">Quality control</span>
 						</label>
 
-						<label className="setting-toggle">
+						<label className="setting-chip">
 							<input
 								type="checkbox"
 								checked={settings?.guardrails ?? true}
@@ -334,13 +332,12 @@ export const IntelligentModeSettings = React.memo(
 								onMouseDown={stopPropagation}
 								disabled={disabled}
 							/>
-							<span className="toggle-label">
-								<span className="toggle-icon" aria-hidden="true">
+							<span className="chip-content">
+								<span className="chip-icon" aria-hidden="true">
 									🛡️
 								</span>
-								Guardrails
+								Safety
 							</span>
-							<span className="toggle-desc">Safety filtering</span>
 						</label>
 					</div>
 				)}
@@ -370,4 +367,3 @@ IntelligentModeSettings.defaultProps = {
 	onToggleGuardrails: null,
 	disabled: false,
 };
-
