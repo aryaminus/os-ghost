@@ -371,8 +371,3 @@ IntelligentModeSettings.defaultProps = {
 	disabled: false,
 };
 
-export default {
-	DialogueFeedback,
-	StuckButton,
-	IntelligentModeSettings,
-};

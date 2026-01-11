@@ -28,8 +28,8 @@ function warn(...args) {
 }
 
 /**
- * Ghost state type - idle, thinking, searching, or celebrate
- * @typedef {"idle" | "thinking" | "searching" | "celebrate"} GhostState
+ * Ghost state type
+ * @typedef {"idle" | "thinking" | "searching" | "celebrate" | "observant"} GhostState
  */
 
 /**
@@ -114,12 +114,14 @@ export const initialGameState = {
 	clue: "",
 	hint: "",
 	hints: [],
+	hintsRevealed: 0,
 	proximity: 0,
 	state: "idle",
 	dialogue: "Waiting for signal... browse the web to begin.",
 	currentUrl: "",
 	apiKeyConfigured: false,
 	hintAvailable: false,
+	is_sponsored: false,
 };
 
 /**
@@ -143,8 +145,6 @@ let globalLatestContent = null;
 export function useGhostGame() {
 	const [gameState, setGameState] = useState(initialGameState);
 	const [isLoading, setIsLoading] = useState(false);
-	/** @type {[string|null, function(string|null): void]} */
-	const [error, setError] = useState(null);
 
 	// System status for Chrome/extension detection
 	const [systemStatus, setSystemStatus] = useState({
@@ -176,6 +176,18 @@ export function useGhostGame() {
 	const handlePageContentRef = useRef(null);
 	const advanceToNextPuzzleRef = useRef(null);
 	const triggerPuzzleGenerationRef = useRef(null);
+
+	// Track pending timeouts to avoid setState after unmount
+	const timeoutIdsRef = useRef(new Set());
+
+	const scheduleTimeout = useCallback((fn, ms) => {
+		const id = setTimeout(() => {
+			timeoutIdsRef.current.delete(id);
+			fn();
+		}, ms);
+		timeoutIdsRef.current.add(id);
+		return id;
+	}, []);
 
 	/**
 	 * Detect system status (Chrome, extension, etc.)
@@ -218,7 +230,6 @@ export function useGhostGame() {
 				state: "thinking",
 				clue: puzzle.clue,
 				puzzleId: `adaptive_${Date.now()}`,
-				currentPuzzle: puzzle.target_description,
 				hint: puzzle.hints?.[0] || "",
 				hints: puzzle.hints || [],
 				hintsRevealed: 0,
@@ -230,9 +241,10 @@ export function useGhostGame() {
 			setCompanionBehavior(null); // Clear suggestion
 		} catch (err) {
 			console.error("[Ghost] Adaptive puzzle failed:", err);
-			setError(
-				"Could not generate adaptive puzzle. Need more observations."
-			);
+			setGameState((prev) => ({
+				...prev,
+				dialogue: "Could not generate adaptive puzzle. Need more observations.",
+			}));
 		} finally {
 			setIsLoading(false);
 		}
@@ -320,7 +332,6 @@ export function useGhostGame() {
 					hintAvailable: false,
 					state: "thinking", // Start thinking then idle?
 					dialogue: puzzle.clue, // Use clue as dialogue initially
-					currentPuzzle: puzzle.target_description,
 					proximity: 0,
 				}));
 			}
@@ -458,7 +469,7 @@ export function useGhostGame() {
 				}));
 
 				if (solved) {
-					setTimeout(() => advanceToNextPuzzleRef.current(), 5000);
+					scheduleTimeout(() => advanceToNextPuzzleRef.current?.(), 5000);
 				}
 			});
 
@@ -531,6 +542,11 @@ export function useGhostGame() {
 			isUnmounting = true;
 			isMountedRef.current = false;
 			unlistenFns.forEach((fn) => fn());
+
+			// Clear any scheduled timeouts
+			timeoutIdsRef.current.forEach((id) => clearTimeout(id));
+			timeoutIdsRef.current.clear();
+
 			// Clean up navigation debounce timer
 			if (navigationDebounceRef.current) {
 				clearTimeout(navigationDebounceRef.current);
@@ -608,9 +624,9 @@ export function useGhostGame() {
 		// This makes it feel seamless if the user is still on a page
 		// Always try to trigger next puzzle (will fallback to history if no content)
 		if (triggerPuzzleGenerationRef.current) {
-			setTimeout(() => {
+			scheduleTimeout(() => {
 				log("[Ghost] Auto-triggering next puzzle generation...");
-				triggerPuzzleGenerationRef.current();
+				triggerPuzzleGenerationRef.current?.();
 			}, 2000); // Small delay for effect
 		}
 	}, []);
@@ -682,7 +698,7 @@ export function useGhostGame() {
 							puzzle_clue: currentState.clue,
 							target_pattern: "", // Backend handles this from puzzle ID
 							hints: currentState.hints,
-							hints_revealed: 0, // Should be tracked in session state
+							hints_revealed: currentState.hintsRevealed ?? 0,
 						},
 					})
 				);
@@ -697,8 +713,10 @@ export function useGhostGame() {
 
 					// Handle solved state
 					if (result.solved) {
-						setTimeout(() => {
-							advanceToNextPuzzle();
+						scheduleTimeout(() => {
+							if (isMountedRef.current) {
+								advanceToNextPuzzle();
+							}
 						}, 5000);
 					}
 				}
@@ -707,7 +725,7 @@ export function useGhostGame() {
 				setGameState((prev) => ({ ...prev, state: "idle" }));
 			} finally {
 				// Release lock after short delay to allow batching
-				setTimeout(() => {
+				scheduleTimeout(() => {
 					agentCycleInProgressRef.current = false;
 				}, 300);
 			}
@@ -723,7 +741,10 @@ export function useGhostGame() {
 	const captureAndAnalyze = useCallback(async () => {
 		const currentState = gameStateRef.current;
 		if (!currentState.apiKeyConfigured) {
-			setError("GEMINI_API_KEY not configured");
+			setGameState((prev) => ({
+				...prev,
+				dialogue: "GEMINI_API_KEY not configured",
+			}));
 			return null;
 		}
 
@@ -744,7 +765,7 @@ export function useGhostGame() {
 			return analysis;
 		} catch (err) {
 			if (isMountedRef.current) {
-				setError(/** @type {string} */ (err));
+				console.error("[Ghost] capture_and_analyze failed:", err);
 				setGameState((prev) => ({ ...prev, state: "idle" }));
 			}
 			return null;
@@ -792,8 +813,8 @@ export function useGhostGame() {
 						"Proof accepted! You found the fragment.",
 					proximity: 1.0,
 				}));
-				// Advance after delay - use ref to avoid stale closure
-				setTimeout(() => {
+				// Advance after delay - avoid firing after unmount
+				scheduleTimeout(() => {
 					if (isMountedRef.current) {
 						advanceToNextPuzzleRef.current?.();
 					}
@@ -858,6 +879,7 @@ export function useGhostGame() {
 					...prev,
 					dialogue: hint,
 					hintAvailable: false,
+					hintsRevealed: (prev.hintsRevealed ?? 0) + 1,
 				}));
 			}
 		} catch (err) {
@@ -964,7 +986,7 @@ export function useGhostGame() {
 					puzzle_clue: currentState.clue,
 					target_pattern: "",
 					hints: currentState.hints || [],
-					hints_revealed: 0,
+					hints_revealed: currentState.hintsRevealed ?? 0,
 				},
 			});
 			log(" Background checks completed");
@@ -1032,7 +1054,7 @@ export function useGhostGame() {
 					puzzle_clue: currentState.clue,
 					target_pattern: "",
 					hints: currentState.hints || [],
-					hints_revealed: 0,
+					hints_revealed: currentState.hintsRevealed ?? 0,
 				},
 			});
 			log(" Autonomous mode enabled");
@@ -1095,7 +1117,7 @@ export function useGhostGame() {
 			const escalation = await invoke("submit_escalation", {
 				puzzleId: currentState.puzzleId,
 				timeStuckSecs,
-				hintsRevealed: currentState.hints?.length || 0,
+				hintsRevealed: currentState.hintsRevealed ?? 0,
 				currentUrl: currentState.currentUrl || "",
 				description,
 			});
