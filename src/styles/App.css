@@ -316,8 +316,8 @@ body {
 	/* Dialogue box - Flex container for sticky footer */
 	display: flex;
 	flex-direction: column;
-	min-height: 100px; /* Increased height for better visibility */
-	max-height: 140px;
+	min-height: 100px;
+	flex: 1; /* Dynamic height */
 	overflow: hidden; /* Scroll handled by inner area */
 	padding: 0; /* Removing padding from container to let children handle it */
 	position: relative;
@@ -400,6 +400,8 @@ body {
 	display: flex;
 	flex-direction: column;
 	gap: var(--spacing-sm);
+	flex: 1; /* Dynamic height */
+	justify-content: center;
 }
 
 /* Warning box */
@@ -894,6 +896,10 @@ body {
 	text-align: center;
 	margin-top: 4px;
 	animation: fadeIn 0.3s ease;
+	flex: 1; /* Dynamic height */
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
 }
 
 .reset-confirm-box p {
