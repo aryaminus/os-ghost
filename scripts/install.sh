@@ -1,7 +1,21 @@
 #!/bin/bash
 set -e
 
-echo "🎮 Installing The OS Ghost (Tauri Edition)..."
+# =============================================================================
+# OS Ghost - Development Setup Script
+# =============================================================================
+# This script is for LOCAL DEVELOPMENT only.
+# 
+# If you downloaded a release from GitHub, just run the app - it auto-registers
+# the Chrome extension bridge on first launch.
+#
+# This script:
+# 1. Installs dependencies (npm, cargo)
+# 2. Builds the native_bridge sidecar
+# 3. Registers the Native Messaging manifest for development
+# =============================================================================
+
+echo "🎮 Setting up The OS Ghost for Development..."
 echo ""
 
 # Get the directory where this script is located
@@ -32,81 +46,93 @@ echo "📦 Installing Node dependencies..."
 cd "$PROJECT_DIR"
 npm install
 
-# Build Tauri app
+# Build native_bridge (needed for both dev and sidecar bundling)
 echo ""
-echo "🔨 Building Tauri application..."
-npm run tauri build
+echo "🔧 Building native_bridge..."
+cd "$PROJECT_DIR/src-tauri"
+cargo build --release --bin native_bridge
 
-# Determine the native_bridge binary path (separate from main app)
+# Prepare sidecar with target triple (required by Tauri bundle)
+HOST_TRIPLE=$(rustc -vV | grep host | awk '{print $2}')
+echo "   Target triple: $HOST_TRIPLE"
+cp target/release/native_bridge "native_bridge-$HOST_TRIPLE"
+echo "   Prepared sidecar: src-tauri/native_bridge-$HOST_TRIPLE"
+
+cd "$PROJECT_DIR"
+
+# Determine the native_bridge binary path for dev mode
+BINARY_PATH="$PROJECT_DIR/src-tauri/target/release/native_bridge"
+
+# Extension IDs (Store published + Unpacked for development)
+# These are public IDs, not secrets
+EXTENSION_ID_STORE="iakaaklohlcdhoalipmmljopmjnhbcdn"
+EXTENSION_ID_UNPACKED="mmoochocmifhoanmkhkjolhjbikijjag"
+
+# Register Native Messaging host for development
+echo ""
+echo "🔗 Registering Native Messaging host for development..."
+
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    BINARY_PATH="$PROJECT_DIR/src-tauri/target/release/native_bridge"
-    APP_PATH="$PROJECT_DIR/src-tauri/target/release/bundle/macos/The OS Ghost.app"
+    # macOS - Chrome
+    CHROME_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
+    CHROMIUM_DIR="$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    BINARY_PATH="$PROJECT_DIR/src-tauri/target/release/native_bridge"
-    APP_PATH="$PROJECT_DIR/src-tauri/target/release/os-ghost"
+    # Linux - Chrome
+    CHROME_DIR="$HOME/.config/google-chrome/NativeMessagingHosts"
+    CHROMIUM_DIR="$HOME/.config/chromium/NativeMessagingHosts"
 else
-    echo "⚠️  Windows detected. Run install.bat instead."
-    exit 1
+    echo "⚠️  Windows detected. Please use PowerShell or run the app directly."
+    echo "   The app will auto-register on first launch."
+    exit 0
 fi
 
-# Ensure native_bridge binary exists
-if [[ ! -f "$BINARY_PATH" ]]; then
-    echo "⚠️  native_bridge binary not found. Building separately..."
-    cd "$PROJECT_DIR/src-tauri"
-    cargo build --release --bin native_bridge
-fi
-
-echo ""
-echo "📱 Chrome Extension Installation"
-echo "================================"
-echo "1. Install 'OS Ghost Bridge' from the Chrome Web Store:"
-echo "   https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn"
-echo ""
-
-# Fixed Extension ID from Web Store
-EXTENSION_ID="iakaaklohlcdhoalipmmljopmjnhbcdn"
-
-# Register Native Messaging host
-echo ""
-echo "🔗 Registering Native Messaging host..."
-
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS
-    MANIFEST_DIR="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
-    mkdir -p "$MANIFEST_DIR"
-    
-    cat > "$MANIFEST_DIR/com.osghost.game.json" <<EOF
+# Register for Chrome if installed
+if [[ -d "$(dirname "$CHROME_DIR")" ]]; then
+    mkdir -p "$CHROME_DIR"
+    cat > "$CHROME_DIR/com.osghost.game.json" <<EOF
 {
   "name": "com.osghost.game",
   "description": "OS Ghost Native Messaging Bridge",
   "path": "$BINARY_PATH",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://$EXTENSION_ID/"]
+  "allowed_origins": [
+    "chrome-extension://$EXTENSION_ID_STORE/",
+    "chrome-extension://$EXTENSION_ID_UNPACKED/"
+  ]
 }
 EOF
-    echo "✅ Native Messaging manifest registered at:"
-    echo "   $MANIFEST_DIR/com.osghost.game.json"
+    echo "✅ Registered for Chrome: $CHROME_DIR/com.osghost.game.json"
+fi
 
-elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    # Linux
-    MANIFEST_DIR="$HOME/.config/google-chrome/NativeMessagingHosts"
-    mkdir -p "$MANIFEST_DIR"
-    
-    cat > "$MANIFEST_DIR/com.osghost.game.json" <<EOF
+# Register for Chromium if installed
+if [[ -d "$(dirname "$CHROMIUM_DIR")" ]]; then
+    mkdir -p "$CHROMIUM_DIR"
+    cat > "$CHROMIUM_DIR/com.osghost.game.json" <<EOF
 {
   "name": "com.osghost.game",
   "description": "OS Ghost Native Messaging Bridge",
   "path": "$BINARY_PATH",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://$EXTENSION_ID/"]
+  "allowed_origins": [
+    "chrome-extension://$EXTENSION_ID_STORE/",
+    "chrome-extension://$EXTENSION_ID_UNPACKED/"
+  ]
 }
 EOF
-    echo "✅ Native Messaging manifest registered at:"
-    echo "   $MANIFEST_DIR/com.osghost.game.json"
+    echo "✅ Registered for Chromium: $CHROMIUM_DIR/com.osghost.game.json"
 fi
+
+# Chrome Extension instructions
+echo ""
+echo "📱 Chrome Extension"
+echo "==================="
+echo "Install 'OS Ghost Bridge' from the Chrome Web Store:"
+echo "   https://chromewebstore.google.com/detail/os-ghost-bridge/$EXTENSION_ID_STORE"
+echo ""
+echo "Or load the unpacked extension from: ghost-extension/"
+echo ""
 
 # API Key setup reminder
-echo ""
 echo "🔑 API Key Configuration"
 echo "========================"
 echo "To enable AI features, set your Gemini API key:"
@@ -117,19 +143,14 @@ echo "Add this to your ~/.zshrc or ~/.bashrc for persistence."
 echo ""
 
 # Completion message
+echo "✅ Development setup complete!"
 echo ""
-echo "✅ Installation complete!"
-echo ""
-echo "To start the Ghost in development mode:"
+echo "To start in development mode:"
 echo "  cd $PROJECT_DIR"
 echo "  export GEMINI_API_KEY='your-key'"
 echo "  npm run tauri dev"
 echo ""
-echo "To run the production build:"
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    echo "  open \"$APP_PATH\""
-else
-    echo "  $APP_PATH"
-fi
+echo "To build for production:"
+echo "  npm run tauri build"
 echo ""
 echo "👻 The Ghost awaits..."

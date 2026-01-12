@@ -2,11 +2,11 @@
 //! A screen-aware meta-game where an AI entity lives in your desktop
 
 // Core modules
-pub mod gemini_client;
 pub mod ai_provider;
 pub mod bridge;
 pub mod capture;
 pub mod game_state;
+pub mod gemini_client;
 pub mod history;
 pub mod ipc;
 pub mod monitor;
@@ -23,9 +23,9 @@ pub mod workflow;
 // MCP-compatible abstractions (Chapter 10: Model Context Protocol)
 pub mod mcp;
 
-use gemini_client::GeminiClient;
 use ai_provider::SmartAiRouter;
 use game_state::EffectQueue;
+use gemini_client::GeminiClient;
 use ipc::Puzzle;
 use memory::LongTermMemory;
 use ollama_client::OllamaClient;
@@ -72,9 +72,8 @@ fn default_puzzles() -> Vec<Puzzle> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logging
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        tracing_subscriber::EnvFilter::new("os_ghost=debug,tauri=info")
-    });
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("os_ghost=debug,tauri=info"));
 
     tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
@@ -98,7 +97,8 @@ pub fn run() {
 
                         // Load Gemini API key if not in environment
                         if std::env::var("GEMINI_API_KEY").is_err() {
-                            if let Some(key) = config.get("gemini_api_key").and_then(|k| k.as_str()) {
+                            if let Some(key) = config.get("gemini_api_key").and_then(|k| k.as_str())
+                            {
                                 if !key.is_empty() {
                                     runtime.set_api_key(key.to_string());
                                     tracing::info!("Loaded Gemini API key from config file");
@@ -114,14 +114,21 @@ pub fn run() {
                             }
                         }
 
-                        if let Some(model) = config.get("ollama_vision_model").and_then(|v| v.as_str()) {
+                        if let Some(model) =
+                            config.get("ollama_vision_model").and_then(|v| v.as_str())
+                        {
                             if !model.is_empty() {
                                 runtime.set_ollama_vision_model(model.to_string());
-                                tracing::debug!("Loaded Ollama vision model from config: {}", model);
+                                tracing::debug!(
+                                    "Loaded Ollama vision model from config: {}",
+                                    model
+                                );
                             }
                         }
 
-                        if let Some(model) = config.get("ollama_text_model").and_then(|v| v.as_str()) {
+                        if let Some(model) =
+                            config.get("ollama_text_model").and_then(|v| v.as_str())
+                        {
                             if !model.is_empty() {
                                 runtime.set_ollama_text_model(model.to_string());
                                 tracing::debug!("Loaded Ollama text model from config: {}", model);
@@ -308,7 +315,14 @@ pub fn run() {
 
             // Start Native Messaging bridge for Chrome extension
             let app_handle = app.handle().clone();
-            bridge::start_native_messaging_server(app_handle);
+            bridge::start_native_messaging_server(app_handle.clone());
+
+            // Auto-register Native Messaging Host if needed (for distributed builds)
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = auto_register_manifest(&app_handle) {
+                    tracing::error!("Failed to auto-register manifest: {}", e);
+                }
+            });
 
             Ok(())
         })
@@ -367,4 +381,215 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// ============================================================================
+// Auto-Registration Helper
+// ============================================================================
+
+/// Extension IDs for allowed origins
+const EXTENSION_ID_STORE: &str = "iakaaklohlcdhoalipmmljopmjnhbcdn";
+const EXTENSION_ID_UNPACKED: &str = "mmoochocmifhoanmkhkjolhjbikijjag";
+
+/// Automatically register the Native Messaging manifest for the bundled sidecar
+fn auto_register_manifest(_app: &tauri::AppHandle) -> Result<(), String> {
+    // 1. Resolve the path to the bundled sidecar binary
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_dir = exe_path.parent().ok_or("No parent dir for exe")?;
+
+    #[cfg(windows)]
+    let binary_name = "native_bridge.exe";
+    #[cfg(not(windows))]
+    let binary_name = "native_bridge";
+
+    let binary_path = exe_dir.join(binary_name);
+
+    if !binary_path.exists() {
+        // In dev mode, sidecars might not be present. Skip auto-registration.
+        tracing::debug!("Sidecar not found at {:?}, skipping auto-reg", binary_path);
+        return Ok(());
+    }
+
+    // 2. Register for all supported browsers
+    #[cfg(target_os = "macos")]
+    {
+        // Chrome
+        register_manifest_for_dir(
+            &binary_path,
+            &dirs::home_dir()
+                .ok_or("No home dir")?
+                .join("Library/Application Support/Google/Chrome/NativeMessagingHosts"),
+        )?;
+        // Chromium
+        register_manifest_for_dir(
+            &binary_path,
+            &dirs::home_dir()
+                .ok_or("No home dir")?
+                .join("Library/Application Support/Chromium/NativeMessagingHosts"),
+        )?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let home = dirs::home_dir().ok_or("No home dir")?;
+        // Chrome
+        register_manifest_for_dir(
+            &binary_path,
+            &home.join(".config/google-chrome/NativeMessagingHosts"),
+        )?;
+        // Chromium
+        register_manifest_for_dir(
+            &binary_path,
+            &home.join(".config/chromium/NativeMessagingHosts"),
+        )?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        register_windows_manifest(&binary_path)?;
+    }
+
+    Ok(())
+}
+
+/// Register manifest in a specific directory (macOS/Linux)
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn register_manifest_for_dir(
+    binary_path: &std::path::Path,
+    manifest_dir: &std::path::Path,
+) -> Result<(), String> {
+    // Only create manifest if parent browser config exists (browser is installed)
+    if let Some(parent) = manifest_dir.parent() {
+        if !parent.exists() {
+            tracing::debug!(
+                "Browser config dir {:?} doesn't exist, skipping",
+                parent
+            );
+            return Ok(());
+        }
+    }
+
+    if !manifest_dir.exists() {
+        std::fs::create_dir_all(manifest_dir).map_err(|e| e.to_string())?;
+    }
+
+    let manifest_path = manifest_dir.join("com.osghost.game.json");
+
+    let content = serde_json::json!({
+        "name": "com.osghost.game",
+        "description": "OS Ghost Native Messaging Bridge",
+        "path": binary_path,
+        "type": "stdio",
+        "allowed_origins": [
+            format!("chrome-extension://{}/", EXTENSION_ID_STORE),
+            format!("chrome-extension://{}/", EXTENSION_ID_UNPACKED)
+        ]
+    });
+
+    let json = serde_json::to_string_pretty(&content).map_err(|e| e.to_string())?;
+    std::fs::write(&manifest_path, json).map_err(|e| e.to_string())?;
+
+    tracing::info!(
+        "Auto-registered Native Messaging manifest at {:?}",
+        manifest_path
+    );
+    Ok(())
+}
+
+/// Register Native Messaging host via Windows Registry
+#[cfg(target_os = "windows")]
+fn register_windows_manifest(binary_path: &std::path::Path) -> Result<(), String> {
+    use std::process::Command;
+
+    // On Windows, Native Messaging requires:
+    // 1. A manifest JSON file (can be anywhere)
+    // 2. A registry key pointing to that manifest
+
+    // Put manifest in app data
+    let app_data = dirs::data_local_dir().ok_or("No local app data dir")?;
+    let manifest_dir = app_data.join("OSGhost");
+
+    if !manifest_dir.exists() {
+        std::fs::create_dir_all(&manifest_dir).map_err(|e| e.to_string())?;
+    }
+
+    let manifest_path = manifest_dir.join("com.osghost.game.json");
+
+    // Windows paths in JSON need forward slashes or escaped backslashes
+    let binary_path_str = binary_path.to_string_lossy().replace('\\', "\\\\");
+
+    let content = serde_json::json!({
+        "name": "com.osghost.game",
+        "description": "OS Ghost Native Messaging Bridge",
+        "path": binary_path_str,
+        "type": "stdio",
+        "allowed_origins": [
+            format!("chrome-extension://{}/", EXTENSION_ID_STORE),
+            format!("chrome-extension://{}/", EXTENSION_ID_UNPACKED)
+        ]
+    });
+
+    let json = serde_json::to_string_pretty(&content).map_err(|e| e.to_string())?;
+    std::fs::write(&manifest_path, &json).map_err(|e| e.to_string())?;
+
+    tracing::info!("Wrote Native Messaging manifest to {:?}", manifest_path);
+
+    // Register in Windows Registry for Chrome
+    // HKEY_CURRENT_USER\Software\Google\Chrome\NativeMessagingHosts\com.osghost.game
+    let manifest_path_str = manifest_path.to_string_lossy();
+
+    let reg_result = Command::new("reg")
+        .args([
+            "add",
+            r"HKCU\Software\Google\Chrome\NativeMessagingHosts\com.osghost.game",
+            "/ve",
+            "/t",
+            "REG_SZ",
+            "/d",
+            &manifest_path_str,
+            "/f",
+        ])
+        .output();
+
+    match reg_result {
+        Ok(output) if output.status.success() => {
+            tracing::info!("Registered Chrome Native Messaging host in registry");
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::warn!("Failed to register Chrome host: {}", stderr);
+        }
+        Err(e) => {
+            tracing::warn!("Failed to run reg command for Chrome: {}", e);
+        }
+    }
+
+    // Also register for Chromium
+    let reg_result = Command::new("reg")
+        .args([
+            "add",
+            r"HKCU\Software\Chromium\NativeMessagingHosts\com.osghost.game",
+            "/ve",
+            "/t",
+            "REG_SZ",
+            "/d",
+            &manifest_path_str,
+            "/f",
+        ])
+        .output();
+
+    match reg_result {
+        Ok(output) if output.status.success() => {
+            tracing::info!("Registered Chromium Native Messaging host in registry");
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::debug!("Chromium registry (may not be installed): {}", stderr);
+        }
+        Err(e) => {
+            tracing::debug!("Failed to run reg command for Chromium: {}", e);
+        }
+    }
+
+    Ok(())
 }

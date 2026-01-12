@@ -62,6 +62,7 @@ pub struct SessionState {
     /// Session start timestamp
     pub started_at: u64,
     /// Timestamp when current puzzle started
+    #[serde(default)]
     pub puzzle_started_at: u64,
     /// Last activity timestamp
     pub last_activity: u64,

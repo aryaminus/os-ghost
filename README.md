@@ -1,4 +1,4 @@
-# 👻 The OS Ghost
+# The OS Ghost
 
 A screen-aware meta-game where an AI entity lives in your desktop, transforming your browser into an interactive puzzle box.
 
@@ -10,51 +10,95 @@ A screen-aware meta-game where an AI entity lives in your desktop, transforming 
 - **Hot/cold feedback** - Get closer to solving mysteries
 - **Persistent memory** - Progress saves between sessions
 
-## Quick Start
+## Installation
 
-### Prerequisites
+### Option 1: Download Release (Recommended)
+
+1. Download the latest release for your platform from [GitHub Releases](https://github.com/aryaminus/os-ghost/releases)
+2. Install the Chrome extension: [OS Ghost Bridge](https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn)
+3. Run the app - it automatically registers the Chrome extension bridge on first launch
+
+| Platform | Download |
+|----------|----------|
+| macOS (Apple Silicon) | `The.OS.Ghost_x.x.x_aarch64.dmg` |
+| macOS (Intel) | `The.OS.Ghost_x.x.x_x64.dmg` |
+| Windows | `The.OS.Ghost_x.x.x_x64-setup.exe` |
+| Linux | `the-os-ghost_x.x.x_amd64.deb` / `.AppImage` |
+
+### Option 2: Build from Source (Development)
+
+#### Prerequisites
 
 - Node.js 18+
 - Rust (via rustup)
-- Chrome browser
+- Chrome/Chromium browser
 - Gemini API key
 
-### Installation
+#### Setup
 
 ```bash
-# Clone and enter directory
+# Clone the repository
+git clone https://github.com/aryaminus/os-ghost.git
 cd os-ghost
 
-# Install dependencies
-npm install
+# Run the development setup script
+./scripts/install.sh
 
-# Set your API key
-cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY
-
-# Run in development
+# Start in development mode
 npm run tauri dev
 ```
 
-### Chrome Extension Setup
+The setup script will:
 
-1. Install [OS Ghost Bridge](https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn) from the Chrome Web Store
-2. Valid Extension ID (`iakaaklohlcdhoalipmmljopmjnhbcdn`) is automatically handled by the install script
+- Install npm dependencies
+- Build the native messaging bridge
+- Register the Chrome extension manifest for development
 
-### Register Native Messaging
+## Chrome Extension
+
+The Ghost communicates with your browser through a Chrome extension.
+
+**For Release Users:** Install from [Chrome Web Store](https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn)
+
+**For Developers:** You can also load the unpacked extension from `ghost-extension/` directory:
+
+1. Open `chrome://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select the `ghost-extension` folder
+
+## Configuration
+
+### API Key
+
+The Ghost uses Google Gemini for AI features. Set your API key:
+
+**Option A: Environment variable**
 
 ```bash
-./scripts/install.sh
+export GEMINI_API_KEY='your-api-key-here'
 ```
 
-## Project Structure
+**Option B: Config file** (for production builds)
 
-```text
-os-ghost/
-├── src/                    # React frontend
-├── src-tauri/              # Rust backend
-├── ghost-extension/        # Chrome extension
-└── scripts/                # Installation
+Create `~/.config/os-ghost/config.json`:
+
+```json
+{
+  "gemini_api_key": "your-api-key-here"
+}
+```
+
+### Ollama (Optional)
+
+For local AI processing, you can configure Ollama as an alternative/fallback:
+
+```json
+{
+  "ollama_url": "http://localhost:11434",
+  "ollama_vision_model": "llava",
+  "ollama_text_model": "llama3"
+}
 ```
 
 ## How to Play
@@ -65,17 +109,27 @@ os-ghost/
 4. Watch the proximity indicator heat up as you get closer
 5. Find the correct page to unlock the next memory fragment
 
-## Configuration
+## Project Structure
 
-### Environment Variables
-
-| Variable         | Required | Description           |
-|------------------|----------|-----------------------|
-| `GEMINI_API_KEY` | Yes      | Google Gemini API key |
+```text
+os-ghost/
+├── src/                    # React frontend
+├── src-tauri/              # Rust backend
+│   ├── src/
+│   │   ├── lib.rs          # Main app logic
+│   │   ├── bridge.rs       # Chrome extension bridge
+│   │   └── bin/
+│   │       └── native_bridge.rs  # Native messaging binary
+├── ghost-extension/        # Chrome extension source
+└── scripts/                # Development scripts
+```
 
 ## Development
 
 ```bash
+# Run in development mode
+npm run tauri dev
+
 # Run Rust tests
 cd src-tauri && cargo test
 
@@ -85,7 +139,30 @@ npm run tauri build
 
 ## Release & Deployment
 
-For details on the **CI/CD Pipeline**, **Auto-Versioning**, and **Code Signing** (macOS/Windows), please read the [Release Pipeline Docs](docs/RELEASE_PIPELINE.md).
+For details on the **CI/CD Pipeline**, **Auto-Versioning**, and **Code Signing** (macOS/Windows), see [Release Pipeline Docs](docs/RELEASE_PIPELINE.md).
+
+## Troubleshooting
+
+### Chrome extension not connecting
+
+1. Ensure the app is running
+2. Check that the extension is installed and enabled
+3. For development: verify the manifest was registered by running `./scripts/install.sh`
+4. For releases: restart the app (it auto-registers on launch)
+
+### "Native host not found" error
+
+The native messaging manifest may not be registered.
+
+- **Release builds**: Restart the app
+- **Development**: Run `./scripts/install.sh`
+
+### macOS Gatekeeper warning
+
+If macOS blocks the app:
+
+1. Go to System Settings > Privacy & Security
+2. Click "Open Anyway" next to the OS Ghost warning
 
 ## License
 

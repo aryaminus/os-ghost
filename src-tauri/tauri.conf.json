@@ -46,6 +46,7 @@
 	"bundle": {
 		"createUpdaterArtifacts": true,
 		"active": true,
+		"externalBin": ["native_bridge"],
 		"targets": "all",
 		"icon": [
 			"icons/32x32.png",

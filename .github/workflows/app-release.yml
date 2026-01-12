@@ -113,6 +113,45 @@ jobs:
                   echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> $GITHUB_OUTPUT
                   echo "Certificate imported: $CERT_ID"
 
+            - name: Build Sidecar (native_bridge)
+              shell: bash
+              run: |
+                  # Determine target triple
+                  TARGET=""
+                  if [[ "${{ matrix.args }}" == *"--target"* ]]; then
+                      TARGET=$(echo "${{ matrix.args }}" | awk -F'--target ' '{print $2}' | awk '{print $1}')
+                  else
+                      TARGET=$(rustc -vV | grep host | awk '{print $2}')
+                  fi
+                  echo "Target Triple: $TARGET"
+
+                  # Determine binary extension based on target
+                  EXT=""
+                  if [[ "$TARGET" == *"windows"* ]]; then
+                      EXT=".exe"
+                  fi
+
+                  # Build binary
+                  cd src-tauri
+                  CMD="cargo build --release --bin native_bridge"
+                  if [[ "${{ matrix.args }}" == *"--target"* ]]; then
+                      CMD="$CMD --target $TARGET"
+                  fi
+                  echo "Running: $CMD"
+                  eval $CMD
+
+                  # Paths
+                  if [[ "${{ matrix.args }}" == *"--target"* ]]; then
+                      BIN_PATH="target/$TARGET/release/native_bridge${EXT}"
+                  else
+                      BIN_PATH="target/release/native_bridge${EXT}"
+                  fi
+
+                  # Rename for Tauri sidecar pattern
+                  # src-tauri/native_bridge-<target-triple>[.exe]
+                  cp "$BIN_PATH" "native_bridge-$TARGET${EXT}"
+                  ls -l "native_bridge-$TARGET${EXT}"
+
             - name: Build and Publish
               uses: tauri-apps/tauri-action@v0
               env:
