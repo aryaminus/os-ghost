@@ -59,19 +59,12 @@ fi
 echo ""
 echo "📱 Chrome Extension Installation"
 echo "================================"
-echo "1. Open Chrome and go to: chrome://extensions"
-echo "2. Enable 'Developer mode' (toggle in top right)"
-echo "3. Click 'Load unpacked'"
-echo "4. Select this folder: $PROJECT_DIR/ghost-extension"
+echo "1. Install 'OS Ghost Bridge' from the Chrome Web Store:"
+echo "   https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn"
 echo ""
-echo "After loading the extension, note the Extension ID shown."
-read -p "Enter your Extension ID: " EXTENSION_ID
 
-if [[ -z "$EXTENSION_ID" ]]; then
-    echo "⚠️  No Extension ID provided. Native messaging won't work."
-    echo "   You can configure it later by editing the manifest file."
-    EXTENSION_ID="YOUR_EXTENSION_ID"
-fi
+# Fixed Extension ID from Web Store
+EXTENSION_ID="iakaaklohlcdhoalipmmljopmjnhbcdn"
 
 # Register Native Messaging host
 echo ""

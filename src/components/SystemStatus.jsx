@@ -34,10 +34,9 @@ const ERROR_DISMISS_TIMEOUT = 5000;
  * Extension installation instructions for manual fallback.
  */
 const EXTENSION_INSTALL_INSTRUCTIONS = [
-	"1. Open Chrome and go to: chrome://extensions",
-	'2. Enable "Developer mode"',
-	'3. Click "Load unpacked"',
-	"4. Select the ghost-extension folder",
+	"1. Click 'Install Extension' to open the Chrome Web Store",
+	'2. Click "Add to Chrome"',
+	'3. Confirm "Add Extension"',
 ].join("\n");
 
 /**
@@ -181,15 +180,18 @@ const SystemStatusBanner = ({
 	};
 
 	/**
-	 * Handle extension installation - opens extensions page.
+	 * Handle extension installation - opens Web Store page.
 	 * Uses unified backend command for cross-platform support.
 	 */
 	const handleInstallExtension = async () => {
 		clearError();
 		try {
-			await invoke("launch_chrome", { url: "chrome://extensions" });
+			const WEB_STORE_URL =
+				"https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn";
+			// Try to open via Tauri's launcher first to open in default browser
+			await invoke("launch_chrome", { url: WEB_STORE_URL });
 		} catch (err) {
-			console.error("Failed to open extensions page:", err);
+			console.error("Failed to open Web Store page:", err);
 			if (isMountedRef.current) {
 				showError(
 					`To install the extension:\n${EXTENSION_INSTALL_INSTRUCTIONS}`

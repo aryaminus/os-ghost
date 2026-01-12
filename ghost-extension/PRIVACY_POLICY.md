@@ -52,7 +52,7 @@ When using AI-powered features in the desktop app:
 
 ## User Control
 
-- **Disable Anytime**: You can disable or remove the Extension at any time via `chrome://extensions`
+- **Disable Anytime**: You can disable or remove the Extension at any time via your browser's extensions management page
 - **Desktop App Required**: Data collection only occurs when the OS Ghost desktop app is running
 - **No Tracking**: We do not use any analytics or tracking services
 

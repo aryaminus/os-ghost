@@ -38,17 +38,13 @@ npm run tauri dev
 
 ### Chrome Extension Setup
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked**
-4. Select `ghost-extension/` folder
-5. Note the Extension ID
+1. Install [OS Ghost Bridge](https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn) from the Chrome Web Store
+2. Valid Extension ID (`iakaaklohlcdhoalipmmljopmjnhbcdn`) is automatically handled by the install script
 
 ### Register Native Messaging
 
 ```bash
 ./scripts/install.sh
-# Enter your Extension ID when prompted
 ```
 
 ## Project Structure
