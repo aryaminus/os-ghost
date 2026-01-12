@@ -43,9 +43,23 @@ if (cargoContent.includes(`version = "${currentVersion}"`)) {
 	fs.writeFileSync(cargoPath, cargoContent);
 	console.log(`Updated src-tauri/Cargo.toml to ${newVersion}`);
 
+	// Create placeholder sidecar for cargo check (Tauri requires externalBin to exist)
+	console.log("Creating placeholder sidecar for cargo check...");
+	const targetTriple = execSync("rustc -vV | grep host | awk '{print $2}'", {
+		encoding: "utf-8",
+	}).trim();
+	const sidecarPath = path.resolve(`src-tauri/native_bridge-${targetTriple}`);
+	fs.writeFileSync(sidecarPath, "");
+	fs.chmodSync(sidecarPath, 0o755);
+	console.log(`Created placeholder: native_bridge-${targetTriple}`);
+
 	// Update Cargo.lock
 	console.log("Updating Cargo.lock...");
 	execSync("cargo check", { cwd: "src-tauri", stdio: "inherit" });
+
+	// Clean up placeholder
+	fs.unlinkSync(sidecarPath);
+	console.log("Cleaned up placeholder sidecar");
 
 	// Ensure package-lock.json is synced (although npm version usually handles it, this is a safety net)
 	console.log("Ensuring package-lock.json is synced...");

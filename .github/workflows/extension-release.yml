@@ -40,14 +40,62 @@ jobs:
                   path: os-ghost-extension-v${{ steps.version.outputs.VERSION }}.zip
 
             - name: Publish to Chrome Web Store
-              continue-on-error: true # May fail until extension is approved
-              uses: trmcnvn/chrome-addon@v2
-              with:
-                  extension: ${{ secrets.EXTENSION_ID }}
-                  zip: os-ghost-extension-v${{ steps.version.outputs.VERSION }}.zip
-                  client-id: ${{ secrets.CWS_CLIENT_ID }}
-                  client-secret: ${{ secrets.CWS_CLIENT_SECRET }}
-                  refresh-token: ${{ secrets.CWS_REFRESH_TOKEN }}
+              continue-on-error: true
+              run: |
+                  # Get access token from refresh token
+                  echo "Requesting access token..."
+                  TOKEN_RESPONSE=$(curl -s -X POST "https://oauth2.googleapis.com/token" \
+                      -d "client_id=${{ secrets.CWS_CLIENT_ID }}" \
+                      -d "client_secret=${{ secrets.CWS_CLIENT_SECRET }}" \
+                      -d "refresh_token=${{ secrets.CWS_REFRESH_TOKEN }}" \
+                      -d "grant_type=refresh_token")
+
+                  ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
+
+                  if [ "$ACCESS_TOKEN" == "null" ] || [ -z "$ACCESS_TOKEN" ]; then
+                      echo "::error::Failed to get access token"
+                      echo "Response: $TOKEN_RESPONSE"
+                      exit 1
+                  fi
+
+                  echo "Access token obtained successfully"
+
+                  # Upload the extension
+                  echo "Uploading extension..."
+                  UPLOAD_RESPONSE=$(curl -s -X PUT \
+                      -H "Authorization: Bearer $ACCESS_TOKEN" \
+                      -H "x-goog-api-version: 2" \
+                      -T "os-ghost-extension-v${{ steps.version.outputs.VERSION }}.zip" \
+                      "https://www.googleapis.com/upload/chromewebstore/v1.1/items/${{ secrets.EXTENSION_ID }}")
+
+                  echo "Upload response: $UPLOAD_RESPONSE"
+
+                  UPLOAD_STATE=$(echo "$UPLOAD_RESPONSE" | jq -r '.uploadState')
+                  if [ "$UPLOAD_STATE" != "SUCCESS" ]; then
+                      echo "::error::Upload failed with state: $UPLOAD_STATE"
+                      echo "$UPLOAD_RESPONSE" | jq .
+                      exit 1
+                  fi
+
+                  echo "Upload successful!"
+
+                  # Publish the extension
+                  echo "Publishing extension..."
+                  PUBLISH_RESPONSE=$(curl -s -X POST \
+                      -H "Authorization: Bearer $ACCESS_TOKEN" \
+                      -H "x-goog-api-version: 2" \
+                      -H "Content-Length: 0" \
+                      "https://www.googleapis.com/chromewebstore/v1.1/items/${{ secrets.EXTENSION_ID }}/publish")
+
+                  echo "Publish response: $PUBLISH_RESPONSE"
+
+                  PUBLISH_STATUS=$(echo "$PUBLISH_RESPONSE" | jq -r '.status[0]')
+                  if [ "$PUBLISH_STATUS" == "OK" ] || [ "$PUBLISH_STATUS" == "PENDING" ]; then
+                      echo "::notice::Extension published successfully (status: $PUBLISH_STATUS)"
+                  else
+                      echo "::warning::Publish returned status: $PUBLISH_STATUS"
+                      echo "$PUBLISH_RESPONSE" | jq .
+                  fi
 
             - name: Create GitHub Release
               uses: softprops/action-gh-release@v2
