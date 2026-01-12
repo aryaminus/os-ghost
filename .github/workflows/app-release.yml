@@ -131,8 +131,13 @@ jobs:
                       EXT=".exe"
                   fi
 
-                  # Build binary
+                  # Create placeholder sidecar first (Tauri build script requires it to exist)
                   cd src-tauri
+                  touch "native_bridge-${TARGET}${EXT}"
+                  chmod +x "native_bridge-${TARGET}${EXT}" 2>/dev/null || true
+                  echo "Created placeholder: native_bridge-${TARGET}${EXT}"
+
+                  # Build binary
                   CMD="cargo build --release --bin native_bridge"
                   if [[ "${{ matrix.args }}" == *"--target"* ]]; then
                       CMD="$CMD --target $TARGET"
@@ -147,8 +152,7 @@ jobs:
                       BIN_PATH="target/release/native_bridge${EXT}"
                   fi
 
-                  # Rename for Tauri sidecar pattern
-                  # src-tauri/native_bridge-<target-triple>[.exe]
+                  # Replace placeholder with real binary
                   cp "$BIN_PATH" "native_bridge-$TARGET${EXT}"
                   ls -l "native_bridge-$TARGET${EXT}"
 
