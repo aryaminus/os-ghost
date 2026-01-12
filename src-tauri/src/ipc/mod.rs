@@ -68,11 +68,13 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
 
     let (current_mode, preferred_mode, auto_puzzle_from_companion) = session
         .and_then(|s| s.load().ok())
-        .map(|state| (
-            mode_to_string(state.current_mode),
-            mode_to_string(state.preferred_mode),
-            state.auto_puzzle_from_companion,
-        ))
+        .map(|state| {
+            (
+                mode_to_string(state.current_mode),
+                mode_to_string(state.preferred_mode),
+                state.auto_puzzle_from_companion,
+            )
+        })
         .unwrap_or_else(|| ("companion".to_string(), "companion".to_string(), true));
 
     SystemStatus {
@@ -97,7 +99,9 @@ pub fn detect_chrome(session: State<'_, Arc<crate::memory::SessionMemory>>) -> S
 
 /// Get current app mode ("game" or "companion")
 #[tauri::command]
-pub fn get_app_mode(session: State<'_, Arc<crate::memory::SessionMemory>>) -> Result<String, String> {
+pub fn get_app_mode(
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
+) -> Result<String, String> {
     session
         .get_mode()
         .map(mode_to_string)
@@ -286,10 +290,6 @@ pub async fn launch_chrome(url: Option<String>) -> Result<(), String> {
 }
 
 // ============================================================================
-// Session & Mode Management Commands - REMOVED (Unused)
-// ============================================================================
-
-// ============================================================================
 // Adaptive Behavior Commands
 // ============================================================================
 
@@ -367,7 +367,12 @@ pub async fn generate_adaptive_puzzle(
 
     {
         let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
-        while puzzles.iter().filter(|p| p.id.starts_with("adaptive_")).count() >= 5 {
+        while puzzles
+            .iter()
+            .filter(|p| p.id.starts_with("adaptive_"))
+            .count()
+            >= 5
+        {
             if let Some(idx) = puzzles.iter().position(|p| p.id.starts_with("adaptive_")) {
                 puzzles.remove(idx);
             } else {
@@ -615,12 +620,12 @@ pub async fn set_api_key(api_key: String) -> Result<(), String> {
 #[tauri::command]
 pub fn clear_api_key() -> Result<(), String> {
     crate::utils::runtime_config().clear_api_key();
-    
+
     // Also clear from persisted config
     let mut config = load_config();
     config.gemini_api_key = None;
     save_config(&config)?;
-    
+
     tracing::info!("API key cleared from runtime and config");
     Ok(())
 }
@@ -882,10 +887,13 @@ pub async fn process_agent_cycle(
 
     // Run pipeline
     tracing::debug!("Running orchestrator pipeline...");
-    let result = orchestrator.process(&agent_context, mcp_ref).await.map_err(|e| {
-        tracing::error!("Agent cycle failed: {}", e);
-        format!("Agent cycle failed: {}", e)
-    })?;
+    let result = orchestrator
+        .process(&agent_context, mcp_ref)
+        .await
+        .map_err(|e| {
+            tracing::error!("Agent cycle failed: {}", e);
+            format!("Agent cycle failed: {}", e)
+        })?;
 
     tracing::info!(
         "Agent cycle completed: proximity={}, solved={}, state={}",
@@ -1002,8 +1010,14 @@ pub async fn submit_escalation(
     description: Option<String>,
     ltm: State<'_, Arc<crate::memory::LongTermMemory>>,
 ) -> Result<crate::memory::long_term::Escalation, String> {
-    ltm.create_escalation(&puzzle_id, time_stuck_secs, hints_revealed, &current_url, description)
-        .map_err(|e| format!("Failed to create escalation: {}", e))
+    ltm.create_escalation(
+        &puzzle_id,
+        time_stuck_secs,
+        hints_revealed,
+        &current_url,
+        description,
+    )
+    .map_err(|e| format!("Failed to create escalation: {}", e))
 }
 
 /// Resolve an existing escalation

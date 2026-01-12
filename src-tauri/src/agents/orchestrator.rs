@@ -16,27 +16,33 @@ use super::guardrail::GuardrailAgent;
 use super::narrator::NarratorAgent;
 use super::observer::ObserverAgent;
 use super::planner::PlannerAgent;
-use super::traits::{Agent, AgentContext, AgentMode, AgentOutput, AgentResult, NextAction, PlanningContext};
+use super::traits::{
+    Agent, AgentContext, AgentMode, AgentOutput, AgentResult, NextAction, PlanningContext,
+};
 use super::verifier::VerifierAgent;
 use crate::ai_provider::SmartAiRouter;
+use crate::mcp::{McpServer, ResourceDescriptor, ToolDescriptor};
 use crate::memory::{LongTermMemory, SessionMemory};
-use crate::mcp::{McpServer, ToolDescriptor, ResourceDescriptor};
 use crate::workflow::{
-    loop_agent::create_adaptive_loop,
-    parallel::create_parallel_checks,
-    planning::create_intelligent_pipeline,
-    reflection::create_narrator_with_reflection,
-    sequential::create_puzzle_pipeline,
-    PlanningWorkflow, ReflectionWorkflow, SequentialWorkflow, Workflow,
+    loop_agent::create_adaptive_loop, parallel::create_parallel_checks,
+    planning::create_intelligent_pipeline, reflection::create_narrator_with_reflection,
+    sequential::create_puzzle_pipeline, PlanningWorkflow, ReflectionWorkflow, SequentialWorkflow,
+    Workflow,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-/// Shared memory types for cross-module access
+/// Shared session memory types
 pub type SharedLongTermMemory = Arc<Mutex<LongTermMemory>>;
 pub type SharedSessionMemory = Arc<Mutex<SessionMemory>>;
+
+// Configuration constants
+const AUTONOMOUS_LOOP_MAX_ITERATIONS: usize = 5;
+const AUTONOMOUS_LOOP_DELAY_MS: u64 = 2000;
+const PLANNED_LOOP_MAX_ITERATIONS: usize = 10;
+const PLANNED_LOOP_DELAY_MS: u64 = 1500;
 
 /// The main orchestrator that coordinates all agents
 /// Enhanced with Planning, Reflection, and Guardrails capabilities
@@ -101,11 +107,7 @@ impl AgentOrchestrator {
         let guardrail = Arc::new(GuardrailAgent::new(Arc::clone(&ai_router)));
 
         // Build legacy workflow pipeline: Observer -> Verifier -> Narrator
-        let workflow = create_puzzle_pipeline(
-            observer.clone(),
-            verifier.clone(),
-            narrator.clone(),
-        );
+        let workflow = create_puzzle_pipeline(observer.clone(), verifier.clone(), narrator.clone());
 
         // Build intelligent planning workflow: Planner -> Observer -> Verifier -> Narrator
         let planning_workflow = create_intelligent_pipeline(
@@ -183,21 +185,24 @@ impl AgentOrchestrator {
     /// Enable or disable intelligent planning mode (legacy API)
     pub fn set_intelligent_mode(&self, enabled: bool) {
         let current = self.agent_mode();
-        let new_mode = AgentMode::from_flags(enabled, current.use_reflection(), current.use_guardrails());
+        let new_mode =
+            AgentMode::from_flags(enabled, current.use_reflection(), current.use_guardrails());
         self.set_agent_mode(new_mode);
     }
 
     /// Enable or disable reflection for narrator (legacy API)
     pub fn set_reflection(&self, enabled: bool) {
         let current = self.agent_mode();
-        let new_mode = AgentMode::from_flags(current.use_planning(), enabled, current.use_guardrails());
+        let new_mode =
+            AgentMode::from_flags(current.use_planning(), enabled, current.use_guardrails());
         self.set_agent_mode(new_mode);
     }
 
     /// Enable or disable guardrails for safety (legacy API)
     pub fn set_guardrails(&self, enabled: bool) {
         let current = self.agent_mode();
-        let new_mode = AgentMode::from_flags(current.use_planning(), current.use_reflection(), enabled);
+        let new_mode =
+            AgentMode::from_flags(current.use_planning(), current.use_reflection(), enabled);
         self.set_agent_mode(new_mode);
     }
 
@@ -231,7 +236,6 @@ impl AgentOrchestrator {
         self.ai_router.reset_call_counts()
     }
 
-
     /// Run the full agent pipeline
     /// Uses intelligent planning workflow if enabled, otherwise legacy sequential
     /// Applies guardrails for input/output safety filtering
@@ -243,11 +247,19 @@ impl AgentOrchestrator {
         // Apply input guardrails if enabled
         if self.use_guardrails() {
             // Check current URL and content for safety
-            let url_safety = self.guardrail.evaluate_safety(&context.current_url, super::guardrail::ContentType::Url, context).await?;
+            let url_safety = self
+                .guardrail
+                .evaluate_safety(
+                    &context.current_url,
+                    super::guardrail::ContentType::Url,
+                    context,
+                )
+                .await?;
             if !url_safety.is_safe {
                 tracing::warn!("Guardrail blocked URL: {}", context.current_url);
                 return Ok(OrchestrationResult {
-                    message: "The ghost senses something... unsettling. Let's move elsewhere.".to_string(),
+                    message: "The ghost senses something... unsettling. Let's move elsewhere."
+                        .to_string(),
                     proximity: 0.0,
                     solved: false,
                     show_hint: None,
@@ -281,7 +293,10 @@ impl AgentOrchestrator {
                         if let Some(args) = tool_call.get("arguments") {
                             tracing::info!("Executing MCP tool: {} {:?}", tool_name, args);
                             // Fire and forget - tool execution is a side effect
-                            if let Err(e) = self.invoke_browser_tool(server, tool_name, args.clone()).await {
+                            if let Err(e) = self
+                                .invoke_browser_tool(server, tool_name, args.clone())
+                                .await
+                            {
                                 tracing::error!("Failed to execute tool {}: {}", tool_name, e);
                             }
                         }
@@ -321,9 +336,11 @@ impl AgentOrchestrator {
         if self.use_reflection() && !message.is_empty() && !solved {
             let mut reflection_context = context.clone();
             reflection_context.previous_outputs.push(message.clone());
-            
+
             // Run reflection to validate/improve the message
-            if let Ok(reflection_outputs) = self.reflection_workflow.execute(&reflection_context).await {
+            if let Ok(reflection_outputs) =
+                self.reflection_workflow.execute(&reflection_context).await
+            {
                 if let Some(last) = reflection_outputs.last() {
                     // Check if reflection approved the output
                     let approved = last
@@ -331,7 +348,7 @@ impl AgentOrchestrator {
                         .get("reflection_approved")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(true);
-                    
+
                     if approved {
                         // Use the (potentially refined) output
                         message = last.result.clone();
@@ -344,10 +361,7 @@ impl AgentOrchestrator {
         if self.use_guardrails() && !message.is_empty() {
             let safety = self.guardrail.quick_safety_check(&message);
             if !safety.is_safe {
-                tracing::warn!(
-                    "Guardrail filtered output: {:?}",
-                    safety.triggered_policies
-                );
+                tracing::warn!("Guardrail filtered output: {:?}", safety.triggered_policies);
                 // Replace with safe fallback message
                 message = self.guardrail.redact_unsafe_content(&message, &safety);
             }
@@ -362,7 +376,11 @@ impl AgentOrchestrator {
                 crate::agents::traits::SearchStrategy::Verify => "excited".to_string(),
                 crate::agents::traits::SearchStrategy::Focus => "searching".to_string(),
                 crate::agents::traits::SearchStrategy::Explore => {
-                    if proximity > 0.3 { "thinking".to_string() } else { "idle".to_string() }
+                    if proximity > 0.3 {
+                        "thinking".to_string()
+                    } else {
+                        "idle".to_string()
+                    }
                 }
             }
         } else if proximity > 0.7 {
@@ -411,7 +429,11 @@ impl AgentOrchestrator {
     ) -> AgentResult<Vec<AgentOutput>> {
         // Use the enhanced adaptive loop for intelligent self-correction
         let observer = self.observer.clone() as Arc<dyn crate::agents::Agent>;
-        let workflow = create_adaptive_loop(observer, 5, 2000);
+        let workflow = create_adaptive_loop(
+            observer,
+            AUTONOMOUS_LOOP_MAX_ITERATIONS,
+            AUTONOMOUS_LOOP_DELAY_MS,
+        );
         workflow.execute(context).await
     }
 
@@ -422,7 +444,7 @@ impl AgentOrchestrator {
         context: &AgentContext,
     ) -> AgentResult<Vec<AgentOutput>> {
         let mut current_context = context.clone();
-        
+
         // Step 1: Generate initial plan
         let planning_output = self.planner.process(&current_context).await?;
         if let Some(pc) = planning_output.data.get("planning_context") {
@@ -433,8 +455,9 @@ impl AgentOrchestrator {
 
         // Step 2: Run adaptive loop with planning context
         let observer = self.observer.clone() as Arc<dyn crate::agents::Agent>;
-        let workflow = create_adaptive_loop(observer, 10, 1500);
-        
+        let workflow =
+            create_adaptive_loop(observer, PLANNED_LOOP_MAX_ITERATIONS, PLANNED_LOOP_DELAY_MS);
+
         let mut outputs = vec![planning_output];
         let loop_outputs = workflow.execute(&current_context).await?;
         outputs.extend(loop_outputs);
@@ -453,10 +476,26 @@ impl AgentOrchestrator {
             .unwrap_or_default()
             .as_secs();
 
+        // Calculate time to solve based on session start time
+        let time_to_solve = if let Ok(session) = self.session.lock() {
+            if let Ok(state) = session.load() {
+                let start = state.puzzle_started_at;
+                if start > 0 && now > start {
+                    now - start
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
         let solved_puzzle = crate::memory::long_term::SolvedPuzzle {
             puzzle_id: context.puzzle_id.clone(),
             solved_at: now,
-            time_to_solve_secs: 0, // Would need to track start time
+            time_to_solve_secs: time_to_solve,
             hints_used: context.hints_revealed,
             solution_url: context.current_url.clone(),
         };
@@ -582,7 +621,9 @@ impl AgentOrchestrator {
         feedback: &crate::agents::traits::ReflectionFeedback,
         context: &AgentContext,
     ) -> AgentResult<String> {
-        self.critic.suggest_improvement(dialogue, feedback, context).await
+        self.critic
+            .suggest_improvement(dialogue, feedback, context)
+            .await
     }
 
     // =========================================================================
@@ -591,7 +632,10 @@ impl AgentOrchestrator {
 
     /// Get all available browser tools from the MCP server
     /// Returns tool descriptors that agents can use for capability discovery
-    pub fn get_available_browser_tools(&self, mcp_server: &crate::mcp::BrowserMcpServer) -> Vec<ToolDescriptor> {
+    pub fn get_available_browser_tools(
+        &self,
+        mcp_server: &crate::mcp::BrowserMcpServer,
+    ) -> Vec<ToolDescriptor> {
         mcp_server.discover_tools(None)
     }
 
@@ -607,13 +651,19 @@ impl AgentOrchestrator {
 
     /// Get available browser resources from the MCP server
     /// Resources: browser://current-page, browser://history, browser://top-sites
-    pub fn get_available_browser_resources(&self, mcp_server: &crate::mcp::BrowserMcpServer) -> Vec<ResourceDescriptor> {
+    pub fn get_available_browser_resources(
+        &self,
+        mcp_server: &crate::mcp::BrowserMcpServer,
+    ) -> Vec<ResourceDescriptor> {
         mcp_server.discover_resources()
     }
 
     /// Get MCP manifest for LLM context injection
     /// This provides a complete description of all available capabilities
-    pub fn get_mcp_manifest(&self, mcp_server: &crate::mcp::BrowserMcpServer) -> crate::mcp::McpManifest {
+    pub fn get_mcp_manifest(
+        &self,
+        mcp_server: &crate::mcp::BrowserMcpServer,
+    ) -> crate::mcp::McpManifest {
         mcp_server.manifest()
     }
 
@@ -656,7 +706,7 @@ impl AgentOrchestrator {
             output.push_str(&format!("Description: {}\n", tool.description));
             output.push_str(&format!("Category: {}\n", tool.category));
             output.push_str(&format!("Has Side Effects: {}\n", tool.is_side_effect));
-            
+
             if let Some(props) = &tool.input_schema.properties {
                 output.push_str("Parameters:\n");
                 for (name, schema) in props {
@@ -707,11 +757,18 @@ impl AgentOrchestrator {
 
         // Wait for all initializations
         let results = futures::future::join_all(init_futures).await;
-        
+
         // Check for any failures
         for (idx, result) in results.into_iter().enumerate() {
             if let Err(e) = result {
-                let agent_names = ["Observer", "Verifier", "Narrator", "Planner", "Critic", "Guardrail"];
+                let agent_names = [
+                    "Observer",
+                    "Verifier",
+                    "Narrator",
+                    "Planner",
+                    "Critic",
+                    "Guardrail",
+                ];
                 tracing::warn!("{} initialization failed: {}", agent_names[idx], e);
             }
         }
@@ -724,7 +781,7 @@ impl AgentOrchestrator {
     /// Call this before application exit to clean up resources
     pub async fn shutdown(&self) -> AgentResult<()> {
         tracing::info!("Shutting down AgentOrchestrator...");
-        
+
         // Shutdown each agent
         let shutdown_futures = vec![
             self.observer.shutdown(),
@@ -736,10 +793,17 @@ impl AgentOrchestrator {
         ];
 
         let results = futures::future::join_all(shutdown_futures).await;
-        
+
         for (idx, result) in results.into_iter().enumerate() {
             if let Err(e) = result {
-                let agent_names = ["Observer", "Verifier", "Narrator", "Planner", "Critic", "Guardrail"];
+                let agent_names = [
+                    "Observer",
+                    "Verifier",
+                    "Narrator",
+                    "Planner",
+                    "Critic",
+                    "Guardrail",
+                ];
                 tracing::warn!("{} shutdown failed: {}", agent_names[idx], e);
             }
         }
@@ -802,8 +866,6 @@ impl AgentOrchestrator {
         }
 
         // Check all agents
-        self.observer.health_check()
-            && self.verifier.health_check()
-            && self.narrator.health_check()
+        self.observer.health_check() && self.verifier.health_check() && self.narrator.health_check()
     }
 }

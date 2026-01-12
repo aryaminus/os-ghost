@@ -6,26 +6,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
-/** Debug mode - only log in development */
-const DEBUG_MODE = import.meta.env.DEV;
-
-/**
- * Conditional debug logger
- * @param {...any} args - Arguments to log
- */
-function log(...args) {
-	if (DEBUG_MODE) console.log("[Ghost]", ...args);
-}
-
-/**
- * Conditional warning logger
- * @param {...any} args - Arguments to log
- */
-function warn(...args) {
-	if (DEBUG_MODE) console.warn("[Ghost]", ...args);
-}
+import { safeInvoke, log, warn } from "../utils/data";
 
 /**
  * Ghost state type
@@ -203,8 +186,8 @@ export function useGhostGame() {
 	 * Called on mount and periodically
 	 */
 	const detectSystemStatus = useCallback(async () => {
-		try {
-			const status = await invoke("detect_chrome");
+		const status = await safeInvoke("detect_chrome", {}, null);
+		if (status) {
 			setSystemStatus((prev) => ({
 				...prev,
 				chromeInstalled: status.chrome_installed,
@@ -218,25 +201,26 @@ export function useGhostGame() {
 				preferredMode: status.preferred_mode,
 				autoPuzzleFromCompanion: status.auto_puzzle_from_companion,
 			}));
-		} catch (err) {
-			console.error("[Ghost] System detection failed:", err);
 		}
 	}, []);
 
 	const setAppMode = useCallback(async (mode, options = {}) => {
 		const { persist = true } = options;
-		try {
-			const updatedMode = await invoke("set_app_mode", {
+		const updatedMode = await safeInvoke(
+			"set_app_mode",
+			{
 				mode,
 				persistPreference: persist,
-			});
+			},
+			null
+		);
+
+		if (updatedMode) {
 			setSystemStatus((prev) => ({
 				...prev,
 				currentMode: updatedMode || prev.currentMode,
 				preferredMode: persist ? mode : prev.preferredMode,
 			}));
-		} catch (err) {
-			console.error("[Ghost] Failed to set app mode:", err);
 		}
 	}, []);
 
@@ -287,15 +271,21 @@ export function useGhostGame() {
 		const next = typeof updater === "function" ? updater(current) : updater;
 		const nextEnabled = !!next?.autoPuzzleFromCompanion;
 
-		try {
-			const updated = await invoke("set_autonomy_settings", {
+		const updated = await safeInvoke(
+			"set_autonomy_settings",
+			{
 				autoPuzzleFromCompanion: nextEnabled,
-			});
+			},
+			null
+		);
+
+		if (updated) {
 			const enabled = !!updated?.auto_puzzle_from_companion;
 			setAutonomySettingsState({ autoPuzzleFromCompanion: enabled });
-			setSystemStatus((prev) => ({ ...prev, autoPuzzleFromCompanion: enabled }));
-		} catch (err) {
-			console.error("[Ghost] Failed to set autonomy settings:", err);
+			setSystemStatus((prev) => ({
+				...prev,
+				autoPuzzleFromCompanion: enabled,
+			}));
 		}
 	}, []);
 
@@ -326,7 +316,8 @@ export function useGhostGame() {
 			console.error("[Ghost] Adaptive puzzle failed:", err);
 			setGameState((prev) => ({
 				...prev,
-				dialogue: "Could not generate adaptive puzzle. Need more observations.",
+				dialogue:
+					"Could not generate adaptive puzzle. Need more observations.",
 			}));
 		} finally {
 			setIsLoading(false);
@@ -341,15 +332,11 @@ export function useGhostGame() {
 	 * @returns {Promise<void>}
 	 */
 	const triggerBrowserEffect = useCallback(async (effect, duration, text) => {
-		try {
-			await invoke("trigger_browser_effect", {
-				effect,
-				duration,
-				text,
-			});
-		} catch (err) {
-			console.error("[Ghost] Failed to trigger effect:", err);
-		}
+		await safeInvoke("trigger_browser_effect", {
+			effect,
+			duration,
+			text,
+		});
 	}, []);
 
 	// Manage Ghost Trail effect based on state
@@ -377,29 +364,39 @@ export function useGhostGame() {
 	 * @returns {Promise<void>}
 	 */
 
-	const handlePageContent = useCallback(async (payload) => {
-		log(" handlePageContent received:", payload.url);
-		globalLatestContent = payload;
-		latestContentRef.current = payload;
+	const handlePageContent = useCallback(
+		async (payload) => {
+			log(" handlePageContent received:", payload.url);
+			globalLatestContent = payload;
+			latestContentRef.current = payload;
 
-		// If no puzzle is active and API key is configured, generate one!
-		const currentState = gameStateRef.current;
-		const mode = systemStatusRef.current?.currentMode || "game";
-		const autoPuzzleEnabled =
-			mode === "game" || !!autonomySettingsRef.current?.autoPuzzleFromCompanion;
+			// If no puzzle is active and API key is configured, generate one!
+			const currentState = gameStateRef.current;
+			const mode = systemStatusRef.current?.currentMode || "game";
+			const autoPuzzleEnabled =
+				mode === "game" ||
+				!!autonomySettingsRef.current?.autoPuzzleFromCompanion;
 
-		if (!currentState.puzzleId && currentState.apiKeyConfigured && autoPuzzleEnabled) {
-			log("[Ghost] No active puzzle, triggering generation from content...");
+			if (
+				!currentState.puzzleId &&
+				currentState.apiKeyConfigured &&
+				autoPuzzleEnabled
+			) {
+				log(
+					"[Ghost] No active puzzle, triggering generation from content..."
+				);
 
-			if (mode === "companion") {
-				await setAppMode("game", { persist: false });
+				if (mode === "companion") {
+					await setAppMode("game", { persist: false });
+				}
+
+				// Use ref to avoid hoisting issues with triggerDynamicPuzzle being defined later
+				triggerPuzzleGenerationRef.current &&
+					triggerPuzzleGenerationRef.current();
 			}
-
-			// Use ref to avoid hoisting issues with triggerDynamicPuzzle being defined later
-			triggerPuzzleGenerationRef.current &&
-				triggerPuzzleGenerationRef.current();
-		}
-	}, [setAppMode]);
+		},
+		[setAppMode]
+	);
 
 	/**
 	 * Wrapper to generate puzzle from current context
@@ -497,7 +494,8 @@ export function useGhostGame() {
 				const currentState = gameStateRef.current;
 				const mode = systemStatusRef.current?.currentMode || "game";
 				const autoPuzzleEnabled =
-					mode === "game" || !!autonomySettingsRef.current?.autoPuzzleFromCompanion;
+					mode === "game" ||
+					!!autonomySettingsRef.current?.autoPuzzleFromCompanion;
 
 				if (
 					!currentState.puzzleId &&
@@ -554,7 +552,8 @@ export function useGhostGame() {
 					currentMode: status.current_mode || prev.currentMode,
 					preferredMode: status.preferred_mode || prev.preferredMode,
 					autoPuzzleFromCompanion:
-						status.auto_puzzle_from_companion ?? prev.autoPuzzleFromCompanion,
+						status.auto_puzzle_from_companion ??
+						prev.autoPuzzleFromCompanion,
 					// Preserve extension connection state as it might be handled separately
 					// or merge if backend sends it authoritative
 				}));
@@ -577,7 +576,10 @@ export function useGhostGame() {
 					scheduleTimeout(async () => {
 						advanceToNextPuzzleRef.current?.();
 						// If the user prefers Companion mode, return after a solve.
-						if (systemStatusRef.current?.preferredMode === "companion") {
+						if (
+							systemStatusRef.current?.preferredMode ===
+							"companion"
+						) {
 							await setAppMode("companion", { persist: false });
 						}
 					}, 5000);
@@ -1224,18 +1226,16 @@ export function useGhostGame() {
 	const submitFeedback = useCallback(
 		async (target, content, isPositive, comment = null) => {
 			const currentState = gameStateRef.current;
-			try {
-				await invoke("submit_feedback", {
-					target,
-					content,
-					isPositive,
-					puzzleId: currentState.puzzleId || null,
-					comment,
-				});
-				log(`[+] Feedback submitted: ${target} = ${isPositive ? "positive" : "negative"}`);
-			} catch (err) {
-				console.error("[Ghost] Failed to submit feedback:", err);
-			}
+			await safeInvoke("submit_feedback", {
+				target,
+				content,
+				isPositive,
+				puzzleId: currentState.puzzleId || null,
+				comment,
+			});
+			log(
+				`[+] Feedback submitted: ${target} = ${isPositive ? "positive" : "negative"}`
+			);
 		},
 		[]
 	);
@@ -1247,52 +1247,51 @@ export function useGhostGame() {
 	 * @param {string|null} [description] - User's description of why they're stuck
 	 * @returns {Promise<Object|null>} Escalation record or null if failed
 	 */
-	const reportStuck = useCallback(async (timeStuckSecs, description = null) => {
-		const currentState = gameStateRef.current;
-		if (!currentState.puzzleId) {
-			warn("[Ghost] Cannot report stuck: No active puzzle");
-			return null;
-		}
+	const reportStuck = useCallback(
+		async (timeStuckSecs, description = null) => {
+			const currentState = gameStateRef.current;
+			if (!currentState.puzzleId) {
+				warn("[Ghost] Cannot report stuck: No active puzzle");
+				return null;
+			}
 
-		try {
-			const escalation = await invoke("submit_escalation", {
-				puzzleId: currentState.puzzleId,
-				timeStuckSecs,
-				hintsRevealed: currentState.hintsRevealed ?? 0,
-				currentUrl: currentState.currentUrl || "",
-				description,
-			});
+			const escalation = await safeInvoke(
+				"submit_escalation",
+				{
+					puzzleId: currentState.puzzleId,
+					timeStuckSecs,
+					hintsRevealed: currentState.hintsRevealed ?? 0,
+					currentUrl: currentState.currentUrl || "",
+					description,
+				},
+				null
+			);
 
-			log("[HITL] Escalation created:", escalation);
+			if (escalation) {
+				log("[HITL] Escalation created:", escalation);
 
-			// Update dialogue to provide extra help
-			setGameState((prev) => ({
-				...prev,
-				dialogue:
-					"I hear you. Let me think of another approach... Here's a bigger hint.",
-				state: "thinking",
-			}));
+				// Update dialogue to provide extra help
+				setGameState((prev) => ({
+					...prev,
+					dialogue:
+						"I hear you. Let me think of another approach... Here's a bigger hint.",
+					state: "thinking",
+				}));
+			}
 
 			return escalation;
-		} catch (err) {
-			console.error("[Ghost] Failed to create escalation:", err);
-			return null;
-		}
-	}, []);
+		},
+		[]
+	);
 
 	/**
 	 * Get player statistics including feedback counts.
 	 * @returns {Promise<Object|null>} Player stats or null if failed
 	 */
 	const getPlayerStats = useCallback(async () => {
-		try {
-			const stats = await invoke("get_player_stats");
-			log("[Stats] Player stats:", stats);
-			return stats;
-		} catch (err) {
-			console.error("[Ghost] Failed to get player stats:", err);
-			return null;
-		}
+		const stats = await safeInvoke("get_player_stats", {}, null);
+		if (stats) log("[Stats] Player stats:", stats);
+		return stats;
 	}, []);
 
 	// ============================================================================
@@ -1304,12 +1303,7 @@ export function useGhostGame() {
 	 * @returns {Promise<Object|null>} { intelligent_mode, reflection, guardrails }
 	 */
 	const getIntelligentMode = useCallback(async () => {
-		try {
-			return await invoke("get_intelligent_mode");
-		} catch (err) {
-			console.error("[Ghost] Failed to get intelligent mode:", err);
-			return null;
-		}
+		return await safeInvoke("get_intelligent_mode", {}, null);
 	}, []);
 
 	/**
@@ -1318,14 +1312,13 @@ export function useGhostGame() {
 	 * @returns {Promise<Object|null>} Updated settings or null if failed
 	 */
 	const setIntelligentMode = useCallback(async (enabled) => {
-		try {
-			const result = await invoke("set_intelligent_mode", { enabled });
-			log(`[Settings] Intelligent mode set to: ${enabled}`);
-			return result;
-		} catch (err) {
-			console.error("[Ghost] Failed to set intelligent mode:", err);
-			return null;
-		}
+		const result = await safeInvoke(
+			"set_intelligent_mode",
+			{ enabled },
+			null
+		);
+		if (result) log(`[Settings] Intelligent mode set to: ${enabled}`);
+		return result;
 	}, []);
 
 	/**
@@ -1334,14 +1327,13 @@ export function useGhostGame() {
 	 * @returns {Promise<Object|null>} Updated settings or null if failed
 	 */
 	const setReflectionMode = useCallback(async (enabled) => {
-		try {
-			const result = await invoke("set_reflection_mode", { enabled });
-			log(`[Settings] Reflection mode set to: ${enabled}`);
-			return result;
-		} catch (err) {
-			console.error("[Ghost] Failed to set reflection mode:", err);
-			return null;
-		}
+		const result = await safeInvoke(
+			"set_reflection_mode",
+			{ enabled },
+			null
+		);
+		if (result) log(`[Settings] Reflection mode set to: ${enabled}`);
+		return result;
 	}, []);
 
 	/**
@@ -1350,44 +1342,70 @@ export function useGhostGame() {
 	 * @returns {Promise<Object|null>} Updated settings or null if failed
 	 */
 	const setGuardrailsMode = useCallback(async (enabled) => {
-		try {
-			const result = await invoke("set_guardrails_mode", { enabled });
-			log(`[Settings] Guardrails mode set to: ${enabled}`);
-			return result;
-		} catch (err) {
-			console.error("[Ghost] Failed to set guardrails mode:", err);
-			return null;
-		}
+		const result = await safeInvoke(
+			"set_guardrails_mode",
+			{ enabled },
+			null
+		);
+		if (result) log(`[Settings] Guardrails mode set to: ${enabled}`);
+		return result;
 	}, []);
 
-	return {
-		gameState,
-		isLoading,
-		extensionConnected: systemStatus.extensionConnected,
-		systemStatus,
-		companionBehavior,
-		captureAndAnalyze,
-		verifyScreenshotProof,
-		triggerBrowserEffect,
-		showHint,
-		advanceToNextPuzzle,
-		resetGame,
-		triggerDynamicPuzzle,
-		startBackgroundChecks,
-		enableAutonomousMode,
-		detectSystemStatus,
-		generateAdaptivePuzzle,
-		setAppMode,
-		autonomySettings,
-		setAutonomySettings,
-		// HITL Feedback (Chapter 13)
-		submitFeedback,
-		reportStuck,
-		getPlayerStats,
-		// Intelligent Mode Settings
-		getIntelligentMode,
-		setIntelligentMode,
-		setReflectionMode,
-		setGuardrailsMode,
-	};
+	return useMemo(
+		() => ({
+			gameState,
+			isLoading,
+			extensionConnected: systemStatus.extensionConnected,
+			systemStatus,
+			companionBehavior,
+			captureAndAnalyze,
+			verifyScreenshotProof,
+			triggerBrowserEffect,
+			showHint,
+			advanceToNextPuzzle,
+			resetGame,
+			triggerDynamicPuzzle,
+			startBackgroundChecks,
+			enableAutonomousMode,
+			detectSystemStatus,
+			generateAdaptivePuzzle,
+			setAppMode,
+			autonomySettings,
+			setAutonomySettings,
+			submitFeedback,
+			reportStuck,
+			getPlayerStats,
+			getIntelligentMode,
+			setIntelligentMode,
+			setReflectionMode,
+			setGuardrailsMode,
+		}),
+		[
+			gameState,
+			isLoading,
+			systemStatus,
+			companionBehavior,
+			autonomySettings,
+			captureAndAnalyze,
+			verifyScreenshotProof,
+			triggerBrowserEffect,
+			showHint,
+			advanceToNextPuzzle,
+			resetGame,
+			triggerDynamicPuzzle,
+			startBackgroundChecks,
+			enableAutonomousMode,
+			detectSystemStatus,
+			generateAdaptivePuzzle,
+			setAppMode,
+			setAutonomySettings,
+			submitFeedback,
+			reportStuck,
+			getPlayerStats,
+			getIntelligentMode,
+			setIntelligentMode,
+			setReflectionMode,
+			setGuardrailsMode,
+		]
+	);
 }

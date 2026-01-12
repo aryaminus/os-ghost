@@ -61,6 +61,8 @@ pub struct SessionState {
     pub hints_revealed: usize,
     /// Session start timestamp
     pub started_at: u64,
+    /// Timestamp when current puzzle started
+    pub puzzle_started_at: u64,
     /// Last activity timestamp
     pub last_activity: u64,
     /// Current app mode (runtime state)
@@ -100,6 +102,7 @@ impl Default for SessionState {
             ghost_state: "idle".to_string(),
             hints_revealed: 0,
             started_at: now,
+            puzzle_started_at: 0,
             last_activity: now,
             current_mode: AppMode::Companion,
             preferred_mode: AppMode::Companion,
@@ -135,21 +138,23 @@ impl SessionMemory {
 
     /// Update last activity timestamp
     pub fn touch(&self) -> Result<()> {
-        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.last_activity = current_timestamp();
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.last_activity = current_timestamp();
+                Some(state)
+            })?;
         Ok(())
     }
 
     /// Store latest page content
     pub fn store_content(&self, content: String) -> Result<()> {
-        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.current_content = Some(content.clone());
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.current_content = Some(content.clone());
+                Some(state)
+            })?;
         Ok(())
     }
 
@@ -167,31 +172,33 @@ impl SessionMemory {
         let url_string = url.to_string();
         let title_string = title.map(|t| t.to_string());
 
-        self.store.update(SESSION_TREE, "current", move |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.current_url = url_string.clone();
-            if let Some(ref t) = title_string {
-                state.current_title = t.clone();
-            }
-            state.recent_urls.push_back(url_string.clone());
-            // Keep only last 10 URLs - O(1) pop from front with VecDeque
-            while state.recent_urls.len() > 10 {
-                state.recent_urls.pop_front();
-            }
-            state.last_activity = current_timestamp();
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", move |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.current_url = url_string.clone();
+                if let Some(ref t) = title_string {
+                    state.current_title = t.clone();
+                }
+                state.recent_urls.push_back(url_string.clone());
+                // Keep only last 10 URLs - O(1) pop from front with VecDeque
+                while state.recent_urls.len() > 10 {
+                    state.recent_urls.pop_front();
+                }
+                state.last_activity = current_timestamp();
+                Some(state)
+            })?;
 
         Ok(())
     }
 
     /// Update proximity score
     pub fn set_proximity(&self, proximity: f32) -> Result<()> {
-        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.proximity = proximity;
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.proximity = proximity;
+                Some(state)
+            })?;
         Ok(())
     }
 
@@ -205,12 +212,13 @@ impl SessionMemory {
         let mode_clone = mode.clone();
 
         // Update state (atomic at the key level)
-        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.current_mode = mode_clone.clone();
-            state.last_mode_change = current_timestamp();
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.current_mode = mode_clone.clone();
+                state.last_mode_change = current_timestamp();
+                Some(state)
+            })?;
 
         // Log activity (best effort). This is intentionally outside the atomic update
         // because sled's update closure cannot return Result.
@@ -237,11 +245,12 @@ impl SessionMemory {
     /// Set preferred app mode
     pub fn set_preferred_mode(&self, mode: AppMode) -> Result<()> {
         let mode_clone = mode.clone();
-        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.preferred_mode = mode_clone.clone();
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.preferred_mode = mode_clone.clone();
+                Some(state)
+            })?;
         Ok(())
     }
 
@@ -252,32 +261,35 @@ impl SessionMemory {
 
     /// Set auto puzzle setting
     pub fn set_auto_puzzle_from_companion(&self, enabled: bool) -> Result<()> {
-        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.auto_puzzle_from_companion = enabled;
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.auto_puzzle_from_companion = enabled;
+                Some(state)
+            })?;
         Ok(())
     }
 
     /// Increment screenshot counter
     pub fn record_screenshot(&self) -> Result<()> {
-        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.screenshots_taken += 1;
-            state.last_activity = current_timestamp();
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.screenshots_taken += 1;
+                state.last_activity = current_timestamp();
+                Some(state)
+            })?;
         Ok(())
     }
 
     /// Increment puzzles solved counter
     pub fn record_puzzle_solved(&self) -> Result<()> {
-        self.store.update(SESSION_TREE, "current", |old: Option<SessionState>| {
-            let mut state = old.unwrap_or_default();
-            state.puzzles_solved_session += 1;
-            Some(state)
-        })?;
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.puzzles_solved_session += 1;
+                Some(state)
+            })?;
         Ok(())
     }
 
@@ -323,8 +335,14 @@ impl SessionMemory {
             // Expected: activity_<timestamp>_<counter>
             let rest = key.strip_prefix("activity_").unwrap_or(key);
             let mut parts = rest.split('_');
-            let ts = parts.next().and_then(|p| p.parse::<u64>().ok()).unwrap_or(0);
-            let counter = parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
+            let ts = parts
+                .next()
+                .and_then(|p| p.parse::<u64>().ok())
+                .unwrap_or(0);
+            let counter = parts
+                .next()
+                .and_then(|p| p.parse::<u32>().ok())
+                .unwrap_or(0);
             (ts, counter)
         }
 
@@ -332,7 +350,9 @@ impl SessionMemory {
         keys.sort_by(|a, b| {
             let (a_ts, a_ctr) = parse_key(a);
             let (b_ts, b_ctr) = parse_key(b);
-            b_ts.cmp(&a_ts).then_with(|| b_ctr.cmp(&a_ctr)).then_with(|| b.cmp(a))
+            b_ts.cmp(&a_ts)
+                .then_with(|| b_ctr.cmp(&a_ctr))
+                .then_with(|| b.cmp(a))
         });
 
         for key in keys.into_iter().skip(keep_count) {

@@ -13,6 +13,7 @@ import React, {
 } from "react";
 import PropTypes from "prop-types";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "../utils/data";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 /**
@@ -185,10 +186,10 @@ const SystemStatusBanner = ({
 	 */
 	const handleInstallExtension = async () => {
 		clearError();
+		const WEB_STORE_URL =
+			"https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn";
+		// Try to open via Tauri's launcher first to open in default browser
 		try {
-			const WEB_STORE_URL =
-				"https://chromewebstore.google.com/detail/os-ghost-bridge/iakaaklohlcdhoalipmmljopmjnhbcdn";
-			// Try to open via Tauri's launcher first to open in default browser
 			await invoke("launch_chrome", { url: WEB_STORE_URL });
 		} catch (err) {
 			console.error("Failed to open Web Store page:", err);

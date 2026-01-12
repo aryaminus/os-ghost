@@ -7,6 +7,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "../utils/data";
 
 /** Default Ollama status when unavailable */
 const DEFAULT_OLLAMA_STATUS = {
@@ -87,38 +88,35 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 	 * Load Ollama configuration from backend.
 	 */
 	const loadOllamaConfig = useCallback(async () => {
-		try {
-			const config = await invoke("get_ollama_config");
-			if (!isMountedRef.current) return;
+		const config = await safeInvoke("get_ollama_config", {}, null);
+		if (!isMountedRef.current || !config) return;
 
-			updateOllamaMultiple({
-				url: config.url || config.default_url,
-				visionModel: config.vision_model || config.default_vision_model,
-				textModel: config.text_model || config.default_text_model,
-				defaults: {
-					url: config.default_url,
-					visionModel: config.default_vision_model,
-					textModel: config.default_text_model,
-				},
-			});
-		} catch (err) {
-			console.error("[ApiKeyInput] Failed to load Ollama config:", err);
-		}
+		updateOllamaMultiple({
+			url: config.url || config.default_url,
+			visionModel: config.vision_model || config.default_vision_model,
+			textModel: config.text_model || config.default_text_model,
+			defaults: {
+				url: config.default_url,
+				visionModel: config.default_vision_model,
+				textModel: config.default_text_model,
+			},
+		});
 	}, [updateOllamaMultiple]);
 
 	/**
 	 * Check Ollama server status.
 	 */
+	/**
+	 * Check Ollama server status.
+	 */
 	const checkOllamaStatus = useCallback(async () => {
-		try {
-			const status = await invoke("get_ollama_status");
-			if (isMountedRef.current) {
-				updateOllama("status", status);
-			}
-		} catch {
-			if (isMountedRef.current) {
-				updateOllama("status", DEFAULT_OLLAMA_STATUS);
-			}
+		const status = await safeInvoke(
+			"get_ollama_status",
+			{},
+			DEFAULT_OLLAMA_STATUS
+		);
+		if (isMountedRef.current) {
+			updateOllama("status", status);
 		}
 	}, [updateOllama]);
 
@@ -221,14 +219,18 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 			clearTimeout(successTimeoutRef.current);
 		}
 
-		try {
-			await invoke("set_ollama_config", {
+		const result = await safeInvoke(
+			"set_ollama_config",
+			{
 				url: ollama.url,
 				visionModel: ollama.visionModel,
 				textModel: ollama.textModel,
-			});
-			await checkOllamaStatus();
+			},
+			null
+		);
 
+		if (result !== null) {
+			await checkOllamaStatus();
 			if (!isMountedRef.current) return;
 
 			updateOllamaMultiple({
@@ -244,11 +246,10 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 			}, 3000);
 
 			onKeySet?.();
-		} catch (err) {
+		} else {
 			if (isMountedRef.current) {
 				updateOllamaMultiple({
-					error:
-						typeof err === "string" ? err : "Failed to save config",
+					error: "Failed to save config",
 					saving: false,
 				});
 			}
@@ -269,23 +270,22 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 	const handleResetOllama = useCallback(async () => {
 		updateOllamaMultiple({ saving: true, error: "" });
 
-		try {
-			const config = await invoke("reset_ollama_config");
-			if (!isMountedRef.current) return;
+		const config = await safeInvoke("reset_ollama_config", {}, null);
 
+		if (!isMountedRef.current) return;
+
+		if (config) {
 			updateOllamaMultiple({
 				url: config.url,
 				visionModel: config.vision_model,
 				textModel: config.text_model,
 				saving: false,
 			});
-		} catch {
-			if (isMountedRef.current) {
-				updateOllamaMultiple({
-					error: "Failed to reset config",
-					saving: false,
-				});
-			}
+		} else {
+			updateOllamaMultiple({
+				error: "Failed to reset config",
+				saving: false,
+			});
 		}
 	}, [updateOllamaMultiple]);
 
@@ -348,8 +348,8 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 
 			{apiKeySource === "env" && (
 				<div className="env-key-badge">
-					<span aria-hidden="true">🔒</span> Using key from environment
-					variable (.env)
+					<span aria-hidden="true">🔒</span> Using key from
+					environment variable (.env)
 				</div>
 			)}
 

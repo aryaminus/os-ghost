@@ -98,7 +98,12 @@ async fn register_puzzle(
     {
         let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
         // Keep at most 5 dynamic puzzles (remove oldest first)
-        while puzzles.iter().filter(|p| p.id.starts_with("dynamic_")).count() >= 5 {
+        while puzzles
+            .iter()
+            .filter(|p| p.id.starts_with("dynamic_"))
+            .count()
+            >= 5
+        {
             if let Some(idx) = puzzles.iter().position(|p| p.id.starts_with("dynamic_")) {
                 puzzles.remove(idx);
             } else {
@@ -182,6 +187,7 @@ pub async fn start_investigation(
         // Update session
         if let Ok(mut s) = session.load() {
             s.puzzle_id = puzzle.id.clone();
+            s.puzzle_started_at = crate::utils::current_timestamp();
             let _ = session.save(&s);
         }
 
@@ -221,6 +227,7 @@ pub async fn start_investigation(
     // Update session
     if let Ok(mut s) = session.load() {
         s.puzzle_id = generated.id.clone();
+        s.puzzle_started_at = crate::utils::current_timestamp();
         let _ = session.save(&s);
     }
 
