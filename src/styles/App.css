@@ -4,16 +4,26 @@
 	/* Color palette */
 	--bg-primary: transparent;
 	--ghost-green: #00ff88;
+	--ghost-green-rgb: 0, 255, 136;
 	--ghost-glow: rgba(0, 255, 136, 0.8);
 	--celebrate-glow: rgba(255, 215, 0, 0.9);
 	--text-primary: #00ff88;
 	--text-secondary: #88ffaa;
-	--text-dim: #447755;
+	--text-dim: #557766;
 	--border-color: rgba(0, 255, 136, 0.5);
 	--box-bg: rgba(0, 0, 0, 0.85);
 
+	/* Mode colors - Based on color theory + WCAG contrast requirements */
+	/* Green: Growth, helper, nature (Companion) */
+	/* Orange: Activity, energy, challenge (Game) */
+	/* Cyan: Cool, calm, protected (Read-only) - High visibility */
+	--game-orange: #ff8800;
+	--game-orange-rgb: 255, 136, 0;
+	--readonly-cyan: #00aacc;
+	--readonly-cyan-rgb: 0, 170, 204;
+
 	/* Proximity colors */
-	--cold: #4488ff;
+	--cold: #00aacc;
 	--warm: #ffaa00;
 	--hot: #ff4444;
 
@@ -28,13 +38,45 @@
 	--spacing-lg: 24px;
 }
 
-/* Read-Only Mode Overrides (Blue/Grey Theme) */
+/* ============================================================================
+   Mode Color Themes (Based on Color Theory)
+   - Companion Mode: GREEN (#00ff88) - Growth, helper, nature (DEFAULT)
+   - Game Mode: ORANGE (#ff8800) - Activity, energy, challenge  
+   - Read-Only Mode: CYAN (#00aacc) - Cool, calm, protected (HIGHEST PRIORITY)
+   ============================================================================ */
+
+/* Companion Mode Theme (Green - AI Helper/Default) */
+.ghost-container.companion-mode:not(.read-only-mode) {
+	--ghost-green: #00ff88;
+	--ghost-green-rgb: 0, 255, 136;
+	--ghost-glow: rgba(0, 255, 136, 0.5);
+	--text-primary: #00ff88;
+	--text-secondary: #88ffaa;
+	--text-dim: #557766;
+	--border-color: rgba(0, 255, 136, 0.4);
+}
+
+/* Game Mode Theme (Orange - Challenge/Activity) */
+.ghost-container.game-mode:not(.read-only-mode) {
+	--ghost-green: #ff8800;
+	--ghost-green-rgb: 255, 136, 0;
+	--ghost-glow: rgba(255, 136, 0, 0.5);
+	--text-primary: #ff8800;
+	--text-secondary: #ffaa44;
+	--text-dim: #886644;
+	--border-color: rgba(255, 136, 0, 0.4);
+}
+
+/* Read-Only Mode Overrides (Cyan - Cool/Protected - HIGHEST PRIORITY) */
+/* Using #00aacc cyan for high visibility on all backgrounds */
 .ghost-container.read-only-mode {
-	--ghost-green: #4488ff; /* Cold blue */
-	--ghost-glow: rgba(68, 136, 255, 0.4);
-	--text-primary: #4488ff;
-	--text-secondary: #88bbff;
-	--border-color: rgba(68, 136, 255, 0.3);
+	--ghost-green: #00aacc;
+	--ghost-green-rgb: 0, 170, 204;
+	--ghost-glow: rgba(0, 170, 204, 0.7);
+	--text-primary: #00aacc;
+	--text-secondary: #44ccdd;
+	--text-dim: #338899;
+	--border-color: rgba(0, 170, 204, 0.6);
 }
 
 * {
@@ -72,10 +114,10 @@ body {
 	backdrop-filter: blur(16px);
 	-webkit-backdrop-filter: blur(16px);
 	border-radius: 16px;
-	border: 1px solid rgba(0, 255, 136, 0.3);
+	border: 1px solid var(--border-color, rgba(0, 255, 136, 0.3));
 	box-shadow:
 		0 8px 32px rgba(0, 0, 0, 0.4),
-		0 0 20px rgba(0, 255, 136, 0.1),
+		0 0 20px var(--ghost-glow, rgba(0, 255, 136, 0.1)),
 		inset 0 1px 0 rgba(255, 255, 255, 0.05);
 	cursor: grab;
 	transition:
@@ -87,9 +129,9 @@ body {
 .app-container:hover {
 	box-shadow:
 		0 8px 32px rgba(0, 0, 0, 0.5),
-		0 0 30px rgba(0, 255, 136, 0.2),
+		0 0 30px var(--ghost-glow, rgba(0, 255, 136, 0.2)),
 		inset 0 1px 0 rgba(255, 255, 255, 0.08);
-	border-color: rgba(0, 255, 136, 0.5);
+	border-color: var(--ghost-green, rgba(0, 255, 136, 0.5));
 }
 
 .app-container:active {
@@ -105,9 +147,9 @@ body {
 	width: 16px;
 	height: 16px;
 	background:
-		linear-gradient(135deg, transparent 50%, rgba(0, 255, 136, 0.3) 50%),
-		linear-gradient(135deg, transparent 60%, rgba(0, 255, 136, 0.2) 60%),
-		linear-gradient(135deg, transparent 70%, rgba(0, 255, 136, 0.1) 70%);
+		linear-gradient(135deg, transparent 50%, var(--ghost-glow) 50%),
+		linear-gradient(135deg, transparent 60%, rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2) 60%),
+		linear-gradient(135deg, transparent 70%, rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1) 70%);
 	cursor: se-resize;
 	pointer-events: none;
 	opacity: 0.6;
@@ -116,6 +158,61 @@ body {
 
 .app-container:hover::after {
 	opacity: 1;
+}
+
+/* ============================================================================
+   App Container Mode Awareness (via :has selector for CSS variable inheritance)
+   ============================================================================ */
+
+/* Companion Mode - Green border and glow */
+.app-container:has(.ghost-container.companion-mode:not(.read-only-mode)) {
+	--ghost-green: #00ff88;
+	--ghost-green-rgb: 0, 255, 136;
+	--ghost-glow: rgba(0, 255, 136, 0.5);
+	--border-color: rgba(0, 255, 136, 0.4);
+	border-color: var(--border-color);
+}
+
+.app-container:has(.ghost-container.companion-mode:not(.read-only-mode)):hover {
+	box-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.5),
+		0 0 30px rgba(0, 255, 136, 0.3),
+		inset 0 1px 0 rgba(255, 255, 255, 0.08);
+	border-color: rgba(0, 255, 136, 0.6);
+}
+
+/* Game Mode - Orange border and glow */
+.app-container:has(.ghost-container.game-mode:not(.read-only-mode)) {
+	--ghost-green: #ff8800;
+	--ghost-green-rgb: 255, 136, 0;
+	--ghost-glow: rgba(255, 136, 0, 0.5);
+	--border-color: rgba(255, 136, 0, 0.4);
+	border-color: var(--border-color);
+}
+
+.app-container:has(.ghost-container.game-mode:not(.read-only-mode)):hover {
+	box-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.5),
+		0 0 30px rgba(255, 136, 0, 0.3),
+		inset 0 1px 0 rgba(255, 255, 255, 0.08);
+	border-color: rgba(255, 136, 0, 0.6);
+}
+
+/* Read-Only Mode - Cyan border and glow (HIGHEST PRIORITY) */
+.app-container:has(.ghost-container.read-only-mode) {
+	--ghost-green: #00aacc;
+	--ghost-green-rgb: 0, 170, 204;
+	--ghost-glow: rgba(0, 170, 204, 0.7);
+	--border-color: rgba(0, 170, 204, 0.6);
+	border-color: var(--border-color);
+}
+
+.app-container:has(.ghost-container.read-only-mode):hover {
+	box-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.5),
+		0 0 30px rgba(0, 170, 204, 0.5),
+		inset 0 1px 0 rgba(255, 255, 255, 0.08);
+	border-color: rgba(0, 170, 204, 0.8);
 }
 
 /* Ghost container */
@@ -304,11 +401,11 @@ body {
 .quick-action-btn.primary {
 	border-color: var(--ghost-green);
 	color: var(--ghost-green);
-	background: rgba(0, 255, 136, 0.12);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.12);
 }
 
 .quick-action-btn:hover:not(:disabled) {
-	background: rgba(0, 255, 136, 0.2);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2);
 	border-color: var(--ghost-green);
 	color: #fff;
 }
@@ -364,14 +461,14 @@ body {
 
 .quick-ask-input:focus {
 	border-color: var(--ghost-green);
-	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+	box-shadow: 0 0 8px var(--ghost-glow);
 }
 
 .quick-ask-submit {
 	padding: 6px 8px;
 	font-size: 10px;
 	font-family: "Courier New", monospace;
-	background: rgba(0, 255, 136, 0.15);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	border: 1px solid var(--ghost-green);
 	border-radius: 4px;
 	color: var(--ghost-green);
@@ -380,8 +477,9 @@ body {
 }
 
 .quick-ask-submit:hover:not(:disabled) {
-	background: rgba(0, 255, 136, 0.25);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
 	color: #fff;
+	box-shadow: 0 0 8px var(--ghost-glow);
 }
 
 .quick-ask-submit:disabled {
@@ -481,31 +579,43 @@ body {
 }
 
 .mode-toggle-btn {
-	padding: 2px 6px;
+	padding: 3px 8px;
 	font-size: 8px;
 	font-family: "Courier New", monospace;
-	background: rgba(0, 0, 0, 0.35);
-	border: 1px solid rgba(255, 255, 255, 0.15);
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid rgba(255, 255, 255, 0.2);
 	border-radius: 10px;
-	color: var(--text-dim);
+	color: rgba(255, 255, 255, 0.6);
 	cursor: pointer;
 	transition: all 0.2s ease;
+	font-weight: 500;
 }
 
 .mode-toggle-btn:hover:not(:disabled) {
 	border-color: var(--ghost-green);
 	color: var(--ghost-green);
-	box-shadow: 0 0 6px rgba(0, 255, 136, 0.18);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
+	box-shadow: 0 0 8px var(--ghost-glow);
 }
 
-.mode-toggle-btn.active {
-	border-color: var(--cold);
-	color: var(--cold);
-	background: rgba(68, 136, 255, 0.12);
+/* Mode/Companion button - active uses mode color */
+.mode-toggle-btn.active:not(.shield) {
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2);
+	box-shadow: 0 0 6px var(--ghost-glow);
+}
+
+/* Shield button (read-only mode) - always cyan when active */
+.mode-toggle-btn.shield.active {
+	border-color: var(--readonly-cyan, #00aacc);
+	color: #fff;
+	background: rgba(var(--readonly-cyan-rgb, 0, 170, 204), 0.4);
+	box-shadow: 0 0 12px rgba(0, 170, 204, 0.6);
 }
 
 .mode-toggle-btn:disabled {
-	opacity: 0.4;
+	opacity: 0.35;
 	cursor: not-allowed;
 }
 
@@ -589,6 +699,7 @@ body {
 .typewriter-text {
 	font-size: 11px;
 	line-height: 1.3;
+	color: var(--text-primary);
 }
 
 .cursor {
@@ -670,7 +781,7 @@ body {
 .action-btn {
 	width: 100%;
 	margin-top: 6px;
-	background: rgba(0, 255, 136, 0.1);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
 	border: 1px solid var(--ghost-glow);
 	color: var(--ghost-glow);
 	padding: 8px 12px;
@@ -682,8 +793,8 @@ body {
 }
 
 .action-btn:hover {
-	background: rgba(0, 255, 136, 0.2);
-	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
+	box-shadow: 0 0 12px var(--ghost-glow);
 }
 
 .action-btn:focus-visible {
@@ -711,7 +822,7 @@ body {
 	width: 100%;
 	margin-top: 10px;
 	padding: 8px;
-	border-top: 1px dashed rgba(0, 255, 136, 0.3);
+	border-top: 1px dashed var(--border-color);
 	background: rgba(0, 0, 0, 0.3);
 }
 
@@ -895,7 +1006,7 @@ body {
 
 .api-key-input:focus {
 	border-color: var(--ghost-green);
-	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+	box-shadow: 0 0 8px var(--ghost-glow);
 }
 
 .api-key-input.has-error {
@@ -907,9 +1018,19 @@ body {
 	color: var(--text-dim);
 }
 
+/* Action wrapper - container for action buttons */
+.action-wrapper {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	width: 100%;
+	min-width: 200px;
+}
+
 /* Action buttons - primary interactions */
 .action-btn {
 	width: 100%;
+	min-height: 36px;
 	padding: 8px;
 	border: 1px solid var(--text-dim);
 	background: rgba(0, 0, 0, 0.4);
@@ -921,16 +1042,16 @@ body {
 	transition: all 0.2s ease;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
-	margin-top: 4px;
 	position: relative;
 	overflow: hidden;
+	box-sizing: border-box;
 }
 
 .action-btn:hover {
-	background: rgba(0, 255, 136, 0.2);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
 	border-color: var(--ghost-green);
 	color: #fff;
-	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+	box-shadow: 0 0 12px var(--ghost-glow);
 }
 
 .action-btn.verify-btn {
@@ -940,10 +1061,113 @@ body {
 }
 
 .action-btn.verify-btn:hover {
-	background: rgba(0, 255, 136, 0.2);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
 	border-color: var(--ghost-green);
 	color: #fff;
-	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+	box-shadow: 0 0 12px var(--ghost-glow);
+}
+
+/* Primary action button - highlighted */
+.action-btn.primary {
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+	box-shadow: 0 0 8px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2);
+}
+
+.action-btn.primary:hover {
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
+	color: #fff;
+	box-shadow: 0 0 15px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.4);
+}
+
+/* Disabled action button */
+.action-btn.disabled,
+.action-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	background: rgba(0, 0, 0, 0.3);
+	border-color: var(--text-dim);
+	color: var(--text-dim);
+	box-shadow: none;
+}
+
+.action-btn.disabled:hover,
+.action-btn:disabled:hover {
+	background: rgba(0, 0, 0, 0.3);
+	border-color: var(--text-dim);
+	color: var(--text-dim);
+	box-shadow: none;
+}
+
+/* Auto Status Indicator - Uses mode-aware CSS variables */
+.auto-status-indicator {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	width: 100%;
+	padding: 10px 12px;
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
+	border: 1px dashed var(--border-color);
+	border-radius: 6px;
+	color: var(--ghost-green);
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	transition: all 0.3s ease;
+}
+
+/* Read-only mode - uses cyan color */
+.auto-status-indicator.readonly {
+	background: rgba(var(--readonly-cyan-rgb, 0, 170, 204), 0.1);
+	border-color: rgba(var(--readonly-cyan-rgb, 0, 170, 204), 0.4);
+	color: var(--readonly-cyan, #00aacc);
+}
+
+/* Warning state - needs consent */
+.auto-status-indicator.warning {
+	background: rgba(255, 170, 0, 0.1);
+	border-color: rgba(255, 170, 0, 0.4);
+	color: #ffaa00;
+}
+
+.auto-pulse {
+	width: 8px;
+	height: 8px;
+	background: var(--ghost-green);
+	border-radius: 50%;
+	animation: pulse-auto 2s ease-in-out infinite;
+	box-shadow: 0 0 6px var(--ghost-glow);
+}
+
+/* Paused pulse for inactive states */
+.auto-pulse.paused {
+	animation: none;
+	opacity: 0.5;
+	box-shadow: none;
+}
+
+.auto-status-indicator.readonly .auto-pulse {
+	background: var(--readonly-cyan, #00aacc);
+	box-shadow: 0 0 6px rgba(0, 170, 204, 0.5);
+}
+
+.auto-status-indicator.warning .auto-pulse {
+	background: #ffaa00;
+	box-shadow: 0 0 6px rgba(255, 170, 0, 0.5);
+}
+
+@keyframes pulse-auto {
+	0%, 100% {
+		opacity: 0.5;
+		transform: scale(0.9);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1.15);
+		box-shadow: 0 0 12px var(--ghost-glow);
+	}
 }
 
 .install-btn {
@@ -960,10 +1184,10 @@ body {
 }
 
 .install-btn:hover {
-	background: rgba(0, 255, 136, 0.2);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2);
 	border-color: var(--ghost-green);
 	color: #fff;
-	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+	box-shadow: 0 0 10px var(--ghost-glow);
 }
 
 /* Cancel button for API key input */
@@ -1008,7 +1232,7 @@ body {
 	padding: 6px 10px;
 	font-size: 10px;
 	font-family: "Courier New", monospace;
-	background: rgba(0, 255, 136, 0.15);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	border: 1px solid var(--ghost-green);
 	border-radius: 4px;
 	color: var(--ghost-green);
@@ -1053,8 +1277,8 @@ body {
 }
 
 .api-key-submit:hover:not(:disabled) {
-	background: rgba(0, 255, 136, 0.25);
-	box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
+	box-shadow: 0 0 10px var(--ghost-glow);
 }
 
 .api-key-submit:disabled {
@@ -1073,8 +1297,8 @@ body {
 
 .api-key-error.info {
 	color: var(--ghost-green);
-	background: rgba(0, 255, 136, 0.1);
-	border: 1px solid rgba(0, 255, 136, 0.2);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
+	border: 1px solid rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2);
 }
 
 .api-key-link {
@@ -1244,16 +1468,16 @@ body {
 	width: 100%;
 	margin-top: auto; /* Push to bottom */
 	padding-top: 8px;
-	border-top: 1px dashed rgba(0, 255, 136, 0.3);
+	border-top: 1px dashed var(--border-color);
 }
 
 .system-header {
-	font-size: 8px;
-	color: var(--text-dim);
-	letter-spacing: 1px;
-	margin-bottom: 6px;
+	font-size: 9px;
+	color: var(--text-secondary);
+	letter-spacing: 1.5px;
+	margin-bottom: 8px;
 	text-align: center;
-	opacity: 1;
+	opacity: 0.9;
 	font-weight: bold;
 }
 
@@ -1282,8 +1506,8 @@ body {
 .system-btn:hover {
 	border-color: var(--ghost-green);
 	color: var(--ghost-green);
-	background: rgba(0, 255, 136, 0.1);
-	box-shadow: 0 0 8px rgba(0, 255, 136, 0.2);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
+	box-shadow: 0 0 10px var(--ghost-glow);
 }
 
 .system-btn:focus-visible {
@@ -1606,7 +1830,7 @@ body {
 }
 
 .status-action-btn:hover:not(:disabled) {
-	background: rgba(0, 255, 136, 0.15);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	border-color: var(--ghost-green);
 	color: var(--ghost-green);
 }
@@ -1619,12 +1843,12 @@ body {
 .status-action-btn.primary {
 	border-color: var(--ghost-green);
 	color: var(--ghost-green);
-	background: rgba(0, 255, 136, 0.1);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
 }
 
 .status-action-btn.primary:hover:not(:disabled) {
-	background: rgba(0, 255, 136, 0.25);
-	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
+	box-shadow: 0 0 8px var(--ghost-glow);
 }
 
 /* Fallback mode notice */
@@ -1662,10 +1886,10 @@ body {
 	margin: 8px 0;
 	background: linear-gradient(
 		135deg,
-		rgba(136, 68, 255, 0.15) 0%,
-		rgba(0, 255, 136, 0.1) 100%
+		rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15) 0%,
+		rgba(var(--ghost-green-rgb, 0, 255, 136), 0.08) 100%
 	);
-	border: 1px solid rgba(136, 68, 255, 0.4);
+	border: 1px solid var(--border-color);
 	border-radius: 8px;
 	animation: suggestion-pulse 3s ease-in-out infinite;
 }
@@ -1673,12 +1897,12 @@ body {
 @keyframes suggestion-pulse {
 	0%,
 	100% {
-		border-color: rgba(136, 68, 255, 0.4);
-		box-shadow: 0 0 4px rgba(136, 68, 255, 0.2);
+		border-color: var(--border-color);
+		box-shadow: 0 0 4px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2);
 	}
 	50% {
-		border-color: rgba(0, 255, 136, 0.5);
-		box-shadow: 0 0 12px rgba(0, 255, 136, 0.3);
+		border-color: var(--ghost-green);
+		box-shadow: 0 0 12px var(--ghost-glow);
 	}
 }
 
@@ -1709,7 +1933,7 @@ body {
 	padding: 6px 12px;
 	font-size: 9px;
 	font-family: "Courier New", monospace;
-	background: rgba(0, 255, 136, 0.15);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	border: 1px solid var(--ghost-green);
 	border-radius: 4px;
 	color: var(--ghost-green);
@@ -1719,22 +1943,23 @@ body {
 }
 
 .suggestion-action-btn:hover {
-	background: rgba(0, 255, 136, 0.3);
-	box-shadow: 0 0 10px rgba(0, 255, 136, 0.4);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
+	box-shadow: 0 0 10px var(--ghost-glow);
 	transform: translateY(-1px);
 }
 
-/* Secondary action button style */
+/* Secondary action button style - Uses the current mode color but slightly muted */
 .action-btn.secondary {
-	background: rgba(136, 68, 255, 0.15);
-	border-color: rgba(136, 68, 255, 0.5);
-	color: #aa88ff;
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
+	border-color: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.4);
+	color: var(--text-secondary);
 }
 
 .action-btn.secondary:hover {
-	background: rgba(136, 68, 255, 0.3);
-	border-color: #aa88ff;
-	box-shadow: 0 0 10px rgba(136, 68, 255, 0.4);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+	box-shadow: 0 0 10px var(--ghost-glow);
 }
 
 /* Adaptive puzzle indicator */
@@ -1819,8 +2044,8 @@ body {
 }
 
 .ollama-status.available {
-	background: rgba(0, 255, 136, 0.1);
-	border: 1px solid rgba(0, 255, 136, 0.3);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
+	border: 1px solid rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
 	color: var(--ghost-green);
 }
 
@@ -1940,8 +2165,8 @@ body {
 	padding: 6px 8px;
 	border-radius: 4px;
 	margin-bottom: 8px;
-	background: rgba(0, 255, 136, 0.1);
-	border: 1px solid rgba(0, 255, 136, 0.3);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
+	border: 1px solid rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
 	color: var(--ghost-green);
 }
 
@@ -1998,7 +2223,7 @@ body {
 	gap: 6px;
 	padding: 4px 8px;
 	background: rgba(0, 0, 0, 0.3); /* Subtle footer background */
-	border-top: 1px solid rgba(0, 255, 136, 0.1);
+	border-top: 1px solid rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	margin-top: 0; /* Was 8px */
 }
 
@@ -2025,8 +2250,8 @@ body {
 
 .feedback-btn.positive:hover:not(:disabled) {
 	border-color: var(--ghost-green);
-	background: rgba(0, 255, 136, 0.15);
-	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
+	box-shadow: 0 0 8px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
 }
 
 .feedback-btn.negative:hover:not(:disabled) {
@@ -2041,8 +2266,8 @@ body {
 
 .feedback-btn.positive.selected {
 	border-color: var(--ghost-green);
-	background: rgba(0, 255, 136, 0.25);
-	box-shadow: 0 0 10px rgba(0, 255, 136, 0.4);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
+	box-shadow: 0 0 10px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.4);
 }
 
 .feedback-btn.negative.selected {
@@ -2103,8 +2328,8 @@ body {
 	width: 100%;
 	padding: 8px;
 	margin-top: 8px;
-	background: rgba(0, 255, 136, 0.1);
-	border: 1px solid rgba(0, 255, 136, 0.3);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
+	border: 1px solid rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
 	border-radius: 6px;
 	color: var(--ghost-green);
 	font-size: 10px;
@@ -2136,7 +2361,7 @@ body {
 
 .stuck-description:focus {
 	border-color: var(--ghost-green);
-	box-shadow: 0 0 6px rgba(0, 255, 136, 0.3);
+	box-shadow: 0 0 6px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
 }
 
 .stuck-description::placeholder {
@@ -2161,14 +2386,14 @@ body {
 }
 
 .stuck-submit-btn {
-	background: rgba(0, 255, 136, 0.15);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	border: 1px solid var(--ghost-green);
 	color: var(--ghost-green);
 }
 
 .stuck-submit-btn:hover {
-	background: rgba(0, 255, 136, 0.25);
-	box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
+	box-shadow: 0 0 8px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
 }
 
 .stuck-cancel-btn {
@@ -2180,6 +2405,104 @@ body {
 .stuck-cancel-btn:hover {
 	border-color: var(--text-secondary);
 	color: var(--text-secondary);
+}
+
+/* ============================================================================
+   System Controls Accordion
+   ============================================================================ */
+
+.system-accordion {
+	width: 100%;
+	margin-top: 8px;
+}
+
+.system-accordion-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	padding: 8px 12px;
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.05);
+	border: 1px solid rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2);
+	border-radius: 6px;
+	color: var(--text-secondary);
+	font-family: inherit;
+	font-size: 10px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	min-height: 32px;
+	font-weight: 500;
+}
+
+.system-accordion-toggle:hover {
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+	box-shadow: 0 0 6px var(--ghost-glow);
+}
+
+.system-accordion-toggle.expanded {
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+	border-bottom-color: transparent;
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
+	color: var(--ghost-green);
+}
+
+.accordion-chevron {
+	margin-left: auto;
+	font-size: 9px;
+	opacity: 0.7;
+	transition: transform 0.2s ease;
+}
+
+.system-accordion-panel {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 6px;
+	padding: 10px;
+	background: rgba(0, 0, 0, 0.4);
+	border: 1px solid rgba(var(--ghost-green-rgb, 0, 255, 136), 0.2);
+	border-top: none;
+	border-radius: 0 0 6px 6px;
+	animation: fadeIn 0.2s ease;
+}
+
+.system-accordion-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	padding: 8px 10px;
+	background: rgba(0, 0, 0, 0.35);
+	border: 1px solid rgba(255, 255, 255, 0.15);
+	border-radius: 4px;
+	color: rgba(255, 255, 255, 0.7);
+	font-family: inherit;
+	font-size: 9px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.system-accordion-btn:hover {
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
+	box-shadow: 0 0 10px var(--ghost-glow);
+}
+
+.system-accordion-btn.change-key:hover {
+	border-color: var(--cold);
+	color: #fff;
+	background: rgba(68, 136, 255, 0.2);
+	box-shadow: 0 0 8px rgba(68, 136, 255, 0.3);
+}
+
+.system-accordion-btn.danger:hover {
+	border-color: #ff4444;
+	color: #fff;
+	background: rgba(255, 68, 68, 0.15);
+	box-shadow: 0 0 8px rgba(255, 68, 68, 0.3);
 }
 
 /* ============================================================================
@@ -2271,16 +2594,16 @@ body {
 /* Active State (Checked) - Using :has pseudo-class if supported, or generic active style */
 /* Since we don't know browser support for :has, we rely on React checked state or :checked + span */
 .setting-chip:has(input:checked) {
-	background: rgba(0, 255, 136, 0.15);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	border-color: var(--ghost-green);
-	box-shadow: 0 0 8px rgba(0, 255, 136, 0.1);
+	box-shadow: 0 0 8px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.1);
 }
 
 /* Fallback for older browsers (though :has is widely supported now)
    If :has fails, the chip just looks clicked via the span styling below */
 .setting-chip input:checked + .chip-content {
 	color: var(--ghost-green);
-	text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+	text-shadow: 0 0 5px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.3);
 }
 
 .chip-content {
@@ -2331,7 +2654,7 @@ body {
 	padding: 12px;
 	box-shadow:
 		0 12px 40px rgba(0, 0, 0, 0.6),
-		0 0 18px rgba(0, 255, 136, 0.15);
+		0 0 18px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	/* Custom Scrollbar for modal */
 	scrollbar-width: thin;
 	scrollbar-color: var(--ghost-green) rgba(0, 0, 0, 0.3);
@@ -2377,7 +2700,7 @@ body {
 	padding: 8px;
 	border-radius: 6px;
 	background: rgba(0, 0, 0, 0.4);
-	border: 1px solid rgba(0, 255, 136, 0.15);
+	border: 1px solid rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	font-size: 9px;
 	line-height: 1.3;
 	color: var(--text-dim);
@@ -2408,7 +2731,7 @@ body {
 	padding: 6px 10px;
 	font-size: 9px;
 	font-family: "Courier New", monospace;
-	background: rgba(0, 255, 136, 0.15);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.15);
 	border: 1px solid var(--ghost-green);
 	border-radius: 4px;
 	color: var(--ghost-green);
@@ -2417,8 +2740,8 @@ body {
 }
 
 .ghost-modal-btn:hover:not(:disabled) {
-	background: rgba(0, 255, 136, 0.25);
-	box-shadow: 0 0 10px rgba(0, 255, 136, 0.25);
+	background: rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
+	box-shadow: 0 0 10px rgba(var(--ghost-green-rgb, 0, 255, 136), 0.25);
 }
 
 .ghost-modal-btn:disabled {

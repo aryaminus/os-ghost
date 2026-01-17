@@ -367,3 +367,102 @@ IntelligentModeSettings.defaultProps = {
 	onToggleGuardrails: null,
 	disabled: false,
 };
+
+/**
+ * System Controls Accordion - collapsible panel for system buttons.
+ *
+ * @param {Object} props - Component props
+ * @param {Function} props.onExtension - Extension button handler
+ * @param {Function} props.onPrivacy - Privacy button handler
+ * @param {Function} props.onChangeKey - Change Key button handler
+ * @param {Function} props.onReset - Reset Game button handler
+ * @returns {JSX.Element} Accordion with system control buttons
+ */
+export const SystemControlsAccordion = React.memo(
+	({ onExtension, onPrivacy, onChangeKey, onReset }) => {
+		const [expanded, setExpanded] = useState(false);
+
+		const toggleExpanded = useCallback(() => {
+			setExpanded((prev) => !prev);
+		}, []);
+
+		return (
+			<div className="system-accordion">
+				<button
+					type="button"
+					className={`system-accordion-toggle ${expanded ? "expanded" : ""}`}
+					onClick={toggleExpanded}
+					onMouseDown={stopPropagation}
+					aria-expanded={expanded}
+					aria-controls="system-accordion-panel"
+				>
+					<span aria-hidden="true">🔧</span> System Settings
+					<span className="accordion-chevron" aria-hidden="true">
+						{expanded ? "▲" : "▼"}
+					</span>
+				</button>
+
+				{expanded && (
+					<div
+						id="system-accordion-panel"
+						className="system-accordion-panel"
+						role="group"
+						aria-label="System settings"
+					>
+						<button
+							type="button"
+							className="system-accordion-btn"
+							onMouseDown={stopPropagation}
+							onClick={onExtension}
+						>
+							<span aria-hidden="true">🔌</span> Extension
+						</button>
+
+						<button
+							type="button"
+							className="system-accordion-btn"
+							onMouseDown={stopPropagation}
+							onClick={onPrivacy}
+						>
+							<span aria-hidden="true">🔒</span> Privacy
+						</button>
+
+						<button
+							type="button"
+							className="system-accordion-btn change-key"
+							onMouseDown={stopPropagation}
+							onClick={onChangeKey}
+						>
+							<span aria-hidden="true">🔑</span> Change Key
+						</button>
+
+						<button
+							type="button"
+							className="system-accordion-btn danger"
+							onMouseDown={stopPropagation}
+							onClick={onReset}
+						>
+							<span aria-hidden="true">🗑️</span> Reset Game
+						</button>
+					</div>
+				)}
+			</div>
+		);
+	}
+);
+
+SystemControlsAccordion.displayName = "SystemControlsAccordion";
+
+SystemControlsAccordion.propTypes = {
+	onExtension: PropTypes.func,
+	onPrivacy: PropTypes.func,
+	onChangeKey: PropTypes.func,
+	onReset: PropTypes.func,
+};
+
+SystemControlsAccordion.defaultProps = {
+	onExtension: null,
+	onPrivacy: null,
+	onChangeKey: null,
+	onReset: null,
+};

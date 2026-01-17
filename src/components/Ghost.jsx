@@ -21,6 +21,7 @@ import {
 	DialogueFeedback,
 	StuckButton,
 	IntelligentModeSettings,
+	SystemControlsAccordion,
 } from "./FeedbackButtons";
 
 /**
@@ -635,8 +636,8 @@ const Ghost = () => {
 	);
 
 	const canHint = useMemo(
-		() => !!gameState.puzzleId && !isBusy,
-		[gameState.puzzleId, isBusy]
+		() => !!gameState.puzzleId && !!gameState.hintAvailable && !isBusy,
+		[gameState.puzzleId, gameState.hintAvailable, isBusy]
 	);
 
 	// Memoize mode derivations to avoid recalculation
@@ -715,13 +716,50 @@ const Ghost = () => {
 		[quickAsk.prompt]
 	);
 
-	// Determine clue text to display
+	// Determine clue text to display - context-aware based on current state
 	const clueText = useMemo(() => {
+		// If there's an active clue, show it
 		if (gameState.clue) return gameState.clue;
-		return gameState.puzzleId
-			? "Loading puzzle..."
-			: "Waiting for signal...";
-	}, [gameState.clue, gameState.puzzleId]);
+		
+		// If loading a puzzle
+		if (gameState.puzzleId) return "Loading puzzle...";
+		
+		// In Companion Auto mode, show status-based messages
+		if (isCompanionMode && autonomySettings?.autoPuzzleFromCompanion) {
+			if (privacy.settings?.read_only_mode) {
+				return "Read-only mode active. Toggle 🛡️ to enable watching.";
+			}
+			if (!hasFullPrivacyConsent) {
+				return "Privacy consent needed. Click Privacy in settings.";
+			}
+			if (extensionConnected) {
+				return "Connected. Browse the web to generate mysteries...";
+			}
+			return "Monitoring your screen for interesting content...";
+		}
+		
+		// Game mode or manual companion mode
+		if (extensionConnected) {
+			return "Extension connected. Browse a page to begin.";
+		}
+		
+		return "Waiting for signal... browse the web to begin.";
+	}, [gameState.clue, gameState.puzzleId, isCompanionMode, autonomySettings?.autoPuzzleFromCompanion, privacy.settings?.read_only_mode, hasFullPrivacyConsent, extensionConnected]);
+
+	// Compute display dialogue - use clueText for initial/context messages, otherwise gameState.dialogue
+	const displayDialogue = useMemo(() => {
+		// If there's no dialogue at all, use clueText
+		if (!gameState.dialogue) return clueText;
+		
+		// If dialogue is the initial placeholder and we have a more contextual clueText
+		const initialPlaceholder = "Waiting for signal... browse the web to begin.";
+		if (gameState.dialogue === initialPlaceholder && !gameState.puzzleId) {
+			return clueText;
+		}
+		
+		// Otherwise use the actual dialogue
+		return gameState.dialogue;
+	}, [gameState.dialogue, gameState.puzzleId, clueText]);
 
 	useEffect(() => {
 		// Wait for initial check (null)
@@ -737,7 +775,7 @@ const Ghost = () => {
 
 	return (
 		<div
-			className={`ghost-container ${privacy.settings?.read_only_mode ? "read-only-mode" : ""}`}
+			className={`ghost-container ${privacy.settings?.read_only_mode ? "read-only-mode" : ""} ${isCompanionMode ? "companion-mode" : "game-mode"}`}
 			onMouseDown={handleDrag}
 			role="application"
 			aria-label="Ghost game interface"
@@ -923,45 +961,6 @@ const Ghost = () => {
 			{/* Proximity Indicator - Always visible */}
 			<ProximityBar proximity={gameState.proximity} />
 
-			{/* System Status - Compact by default */}
-			<SystemStatusBanner
-				status={systemStatus}
-				extensionConnected={extensionConnected}
-				isExpanded={statusExpanded}
-				onToggleExpand={setStatusExpanded}
-				readOnlyMode={!!privacy.settings?.read_only_mode}
-				hasConsent={hasFullPrivacyConsent}
-			/>
-
-			{/* Quick Actions - Always visible when configured */}
-			{gameState.apiKeyConfigured && (
-				<div className="quick-actions" role="group" aria-label="Quick actions">
-					<button
-						type="button"
-						className="quick-action-btn primary"
-						disabled={!canAnalyze}
-						onMouseDown={stopPropagation}
-						onClick={withStopPropagation(handleAnalyze)}
-						aria-disabled={!canAnalyze}
-					>
-						<span aria-hidden="true">🔍</span> Analyze Screen
-					</button>
-					<button
-						type="button"
-						className="quick-action-btn"
-						disabled={!canHint}
-						onMouseDown={stopPropagation}
-						onClick={withStopPropagation(showHint)}
-						aria-disabled={!canHint}
-					>
-						<span aria-hidden="true">💡</span> Get Hint
-					</button>
-					<div className="quick-actions-help">
-						Tip: click the ghost to analyze or reveal hints.
-					</div>
-				</div>
-			)}
-
 			{/* Quick Ask - Minimal prompt/response */}
 			{gameState.apiKeyConfigured && (
 				<div className="quick-ask" role="region" aria-label="Quick ask">
@@ -1034,9 +1033,21 @@ const Ghost = () => {
 									aria-pressed={
 										!!autonomySettings?.autoPuzzleFromCompanion
 									}
-									title="Auto-create puzzles in Companion mode"
+									title={isCompanionMode 
+										? "Auto-monitor screen and create puzzles" 
+										: "Switch to Companion mode to enable Auto"}
 								>
 									Auto
+								</button>
+								<button
+									type="button"
+									className={`mode-toggle-btn shield ${privacy.settings?.read_only_mode ? "active" : ""}`}
+									onMouseDown={stopPropagation}
+									onClick={toggleReadOnly}
+									aria-pressed={!!privacy.settings?.read_only_mode}
+									title="Read-only: Disable all capture and automation"
+								>
+									🛡️
 								</button>
 							</div>
 						</div>
@@ -1055,7 +1066,7 @@ const Ghost = () => {
 					</div>
 
 					{/* Dialogue Box */}
-					{gameState.dialogue && (
+					{displayDialogue && (
 						<div
 							className={`dialogue-box state-${gameState.state}`}
 							role="status"
@@ -1075,28 +1086,29 @@ const Ghost = () => {
 									</div>
 								)}
 								<TypewriterText
-									text={gameState.dialogue}
+									text={displayDialogue}
 									speed={TYPEWRITER_SPEED}
 								/>
 							</div>
 							{/* HITL Feedback Buttons */}
 							{gameState.state === "idle" && (
 								<DialogueFeedback
-									content={gameState.dialogue}
+									content={displayDialogue}
 									onFeedback={submitFeedback}
 								/>
 							)}
 						</div>
 					)}
 
-					{/* Companion Behavior Suggestion */}
+					{/* Companion Behavior Suggestion - only show Create Puzzle when Auto is OFF */}
 					{companionBehavior && (
 						<div className="companion-suggestion" role="status">
 							<div className="suggestion-message">
 								<span aria-hidden="true">💭</span>{" "}
 								{companionBehavior.suggestion}
 							</div>
-							{companionBehavior.behavior_type === "puzzle" && (
+							{companionBehavior.behavior_type === "puzzle" &&
+								!autonomySettings?.autoPuzzleFromCompanion && (
 								<button
 									type="button"
 									className="suggestion-action-btn"
@@ -1112,50 +1124,92 @@ const Ghost = () => {
 						</div>
 					)}
 
-					{/* Dynamic Puzzle Trigger */}
-					{gameState.state === "idle" && !gameState.puzzleId && (
+					{/* Dynamic Action Buttons - Context-aware based on mode and state */}
+					{gameState.state === "idle" && (
 						<div
 							className="action-wrapper"
 							role="group"
-							aria-label="Puzzle actions"
+							aria-label="Actions"
 						>
-							<button
-								type="button"
-								className="action-btn"
-								onMouseDown={stopPropagation}
-								onClick={withStopPropagation(
-									handleTriggerDynamicPuzzle
-								)}
-							>
-								<span aria-hidden="true">🌀</span> Investigate
-								This Signal
-							</button>
-							<button
-								type="button"
-								className="action-btn secondary"
-								onMouseDown={stopPropagation}
-								onClick={withStopPropagation(
-									handleGenerateAdaptivePuzzle
-								)}
-							>
-								<span aria-hidden="true">🧠</span> Puzzle From
-								My Observations
-							</button>
-						</div>
-					)}
+							{/* No active puzzle - show exploration actions */}
+							{!gameState.puzzleId && (
+								<>
+									{/* Game mode OR Companion without Auto: Show manual actions */}
+									{(!isCompanionMode || !autonomySettings?.autoPuzzleFromCompanion) && (
+										<>
+											{/* Analyze Screen - primary action for manual triggering */}
+											<button
+												type="button"
+												className="action-btn primary"
+												disabled={!canAnalyze}
+												onMouseDown={stopPropagation}
+												onClick={withStopPropagation(handleAnalyze)}
+												aria-disabled={!canAnalyze}
+											>
+												<span aria-hidden="true">🔍</span> Analyze Screen
+											</button>
 
-					{/* Prove Finding Button */}
-					{gameState.puzzleId && gameState.state !== "celebrate" && (
-						<div className="action-wrapper">
-							<button
-								type="button"
-								className="action-btn verify-btn"
-								onMouseDown={stopPropagation}
-								onClick={withStopPropagation(handleVerifyProof)}
-								style={VERIFY_BUTTON_STYLE}
-							>
-								<span aria-hidden="true">📸</span> Prove Finding
-							</button>
+											{/* Secondary action based on mode */}
+											<button
+												type="button"
+												className="action-btn secondary"
+												onMouseDown={stopPropagation}
+												onClick={withStopPropagation(
+													isCompanionMode
+														? handleGenerateAdaptivePuzzle
+														: handleTriggerDynamicPuzzle
+												)}
+											>
+												<span aria-hidden="true">{isCompanionMode ? "🧠" : "🌀"}</span>{" "}
+												{isCompanionMode ? "Create Puzzle" : "Start Mystery"}
+											</button>
+										</>
+									)}
+
+									{/* Companion + Auto mode: Show context-aware status */}
+									{isCompanionMode && autonomySettings?.autoPuzzleFromCompanion && (
+										<div className={`auto-status-indicator ${privacy.settings?.read_only_mode ? "readonly" : !hasFullPrivacyConsent ? "warning" : ""}`}>
+											<span className={`auto-pulse ${privacy.settings?.read_only_mode || !hasFullPrivacyConsent ? "paused" : ""}`} aria-hidden="true"></span>
+											<span>
+												{privacy.settings?.read_only_mode
+													? "Read-only mode active"
+													: !hasFullPrivacyConsent
+														? "Consent required to watch"
+														: extensionConnected
+															? "Watching your browsing..."
+															: "Watching via screenshots..."}
+											</span>
+										</div>
+									)}
+								</>
+							)}
+
+							{/* Active puzzle - show hint and verify actions */}
+							{gameState.puzzleId && (
+								<>
+									<button
+										type="button"
+										className={`action-btn ${canHint ? "" : "disabled"}`}
+										disabled={!canHint}
+										onMouseDown={stopPropagation}
+										onClick={withStopPropagation(showHint)}
+										aria-disabled={!canHint}
+										title={!gameState.hintAvailable ? "Hint is charging..." : "Get a hint"}
+									>
+										<span aria-hidden="true">{canHint ? "💡" : "⏳"}</span>{" "}
+										{canHint ? "Get Hint" : "Hint Charging..."}
+									</button>
+
+									<button
+										type="button"
+										className="action-btn verify-btn"
+										onMouseDown={stopPropagation}
+										onClick={withStopPropagation(handleVerifyProof)}
+									>
+										<span aria-hidden="true">📸</span> Prove Finding
+									</button>
+								</>
+							)}
 						</div>
 					)}
 
@@ -1186,53 +1240,13 @@ const Ghost = () => {
 						onToggleGuardrails={handleToggleGuardrails}
 					/>
 
-					<div className="system-controls-grid">
-						<button
-							type="button"
-							className="system-btn secondary"
-							onMouseDown={stopPropagation}
-							onClick={() => openDialog("extension")}
-						>
-							Extension
-						</button>
-
-						<button
-							type="button"
-							className="system-btn secondary"
-							onMouseDown={stopPropagation}
-							onClick={openPrivacyModal}
-						>
-							Privacy
-						</button>
-
-						<button
-							type="button"
-							className={`system-btn ${privacy.settings?.read_only_mode ? "active" : ""}`}
-							onMouseDown={stopPropagation}
-							onClick={toggleReadOnly}
-							title="Read-only mode disables screen capture and autonomous actions"
-						>
-							Read-Only
-						</button>
-
-						<button
-							type="button"
-							className="system-btn change-key"
-							onMouseDown={stopPropagation}
-							onClick={() => openDialog("key")}
-						>
-							Change Key
-						</button>
-
-						<button
-							type="button"
-							className="system-btn danger"
-							onMouseDown={stopPropagation}
-							onClick={() => openDialog("reset")}
-						>
-							Reset Game
-						</button>
-					</div>
+					{/* System Controls Accordion */}
+					<SystemControlsAccordion
+						onExtension={() => openDialog("extension")}
+						onPrivacy={openPrivacyModal}
+						onChangeKey={() => openDialog("key")}
+						onReset={() => openDialog("reset")}
+					/>
 				</div>
 			)}
 		</div>

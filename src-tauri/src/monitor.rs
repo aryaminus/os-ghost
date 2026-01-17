@@ -106,6 +106,10 @@ pub async fn start_monitor_loop(
             tracing::debug!("Monitor: capture consent not granted; skipping");
             continue;
         }
+        if !privacy.ai_analysis_consent {
+            tracing::debug!("Monitor: AI analysis consent not granted; skipping");
+            continue;
+        }
 
         // Only run autonomous companion monitoring in Companion mode.
         let mode = {
