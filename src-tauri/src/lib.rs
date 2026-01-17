@@ -31,7 +31,9 @@ use memory::LongTermMemory;
 use ollama_client::OllamaClient;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
+use std::str::FromStr;
 use window::GhostWindow;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 /// Default puzzles for the game
 fn default_puzzles() -> Vec<Puzzle> {
@@ -150,8 +152,41 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // Register global shortcut for quick toggle
+            let app_handle = app.handle().clone();
+            match Shortcut::from_str("CmdOrCtrl+Shift+G") {
+                Ok(shortcut) => {
+                    if let Err(e) = app_handle.global_shortcut().register(shortcut.clone()) {
+                        tracing::warn!("Failed to register global shortcut: {}", e);
+                    }
+
+                    let app_handle_for_shortcut = app_handle.clone();
+                    if let Err(e) = app_handle.global_shortcut().on_shortcut(
+                        shortcut,
+                        move |_, _, _| {
+                            if let Some(window) =
+                                app_handle_for_shortcut.get_webview_window("main")
+                            {
+                                let visible = window.is_visible().unwrap_or(true);
+                                if visible {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        },
+                    ) {
+                        tracing::warn!("Failed to set shortcut handler: {}", e);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Invalid global shortcut: {}", e);
+                }
+            }
             // Load puzzles (wrapped in RwLock for dynamic puzzle registration)
             let puzzles = std::sync::RwLock::new(default_puzzles());
             tracing::info!(
@@ -350,6 +385,7 @@ pub fn run() {
             // Adaptive behavior commands
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,
+            ipc::quick_ask,
             // Ollama configuration commands
             ipc::get_ollama_config,
             ipc::set_ollama_config,

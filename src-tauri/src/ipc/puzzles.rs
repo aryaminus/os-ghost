@@ -195,6 +195,7 @@ pub async fn start_investigation(
     }
 
     let redacted_url = crate::privacy::redact_pii(&url);
+    let redacted_title = crate::privacy::redact_pii(&title);
     let redacted_content = crate::privacy::redact_pii(&content);
 
     // Fetch recent history for context
@@ -217,7 +218,12 @@ pub async fn start_investigation(
 
     // Call AI
     let dynamic = ai_router
-        .generate_dynamic_puzzle(&redacted_url, &title, &redacted_content, &history_context)
+        .generate_dynamic_puzzle(
+            &redacted_url,
+            &redacted_title,
+            &redacted_content,
+            &history_context,
+        )
         .await
         .map_err(|e| format!("Failed to generate puzzle: {}", e))?;
 
@@ -245,6 +251,7 @@ pub async fn generate_puzzle_from_history(
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<GeneratedPuzzle, String> {
     let redacted_url = crate::privacy::redact_pii(&seed_url);
+    let redacted_title = crate::privacy::redact_pii(&seed_title);
 
     // Build history context from recent history
     let history_context = recent_history
@@ -263,7 +270,13 @@ pub async fn generate_puzzle_from_history(
     // Build top sites context
     let top_sites_context = top_sites
         .iter()
-        .map(|s| format!("- {} ({})", s.title, s.url))
+        .map(|s| {
+            format!(
+                "- {} ({})",
+                crate::privacy::redact_pii(&s.title),
+                crate::privacy::redact_pii(&s.url)
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -275,7 +288,7 @@ pub async fn generate_puzzle_from_history(
     tracing::info!("Generating puzzle from history with seed: {}", redacted_url);
 
     let dynamic = ai_router
-        .generate_dynamic_puzzle(&redacted_url, &seed_title, "", &combined_context)
+        .generate_dynamic_puzzle(&redacted_url, &redacted_title, "", &combined_context)
         .await
         .map_err(|e| format!("Failed to generate puzzle: {}", e))?;
 

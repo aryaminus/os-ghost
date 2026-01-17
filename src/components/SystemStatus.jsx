@@ -81,6 +81,8 @@ const getStatusMessage = (status) => {
 const SystemStatusBanner = ({
 	status,
 	extensionConnected,
+	readOnlyMode = false,
+	hasConsent = false,
 	isExpanded = false,
 	onToggleExpand,
 	flat = false,
@@ -352,6 +354,23 @@ const SystemStatusBanner = ({
 						</span>
 					</div>
 
+					{/* Consent/Mode Status */}
+					<div className="status-row">
+						<span className="status-label">
+							<span aria-hidden="true">
+								{readOnlyMode ? "🛡️" : hasConsent ? "✅" : "⚠️"}
+							</span>{" "}
+							Consent
+						</span>
+						<span className="status-value">
+							{readOnlyMode
+								? "Read-only"
+								: hasConsent
+									? "Granted"
+									: "Required"}
+						</span>
+					</div>
+
 					{/* Action Buttons */}
 					<div
 						className="status-actions"
@@ -424,6 +443,8 @@ SystemStatusBanner.propTypes = {
 		extensionConnected: PropTypes.bool,
 	}).isRequired,
 	extensionConnected: PropTypes.bool,
+	readOnlyMode: PropTypes.bool,
+	hasConsent: PropTypes.bool,
 	isExpanded: PropTypes.bool,
 	onToggleExpand: PropTypes.func,
 	flat: PropTypes.bool,
@@ -431,6 +452,8 @@ SystemStatusBanner.propTypes = {
 
 SystemStatusBanner.defaultProps = {
 	extensionConnected: false,
+	readOnlyMode: false,
+	hasConsent: false,
 	isExpanded: false,
 	onToggleExpand: undefined,
 	flat: false,

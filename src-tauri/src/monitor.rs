@@ -8,10 +8,11 @@ use crate::memory::{ActivityEntry, LongTermMemory, SessionMemory};
 use crate::utils::{clean_json_response, current_timestamp};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::Duration;
 
 const MONITOR_INTERVAL_SECS: u64 = 60;
+const MONITOR_IDLE_SECS: u64 = 15 * 60;
 
 /// Detected application category
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -87,8 +88,20 @@ pub async fn start_monitor_loop(
         // Wait for next tick
         interval.tick().await;
 
+        // Pause monitoring when window is hidden
+        if let Some(window) = app.get_webview_window("main") {
+            if let Ok(false) = window.is_visible() {
+                tracing::debug!("Monitor: window hidden; skipping");
+                continue;
+            }
+        }
+
         // Respect privacy consent (no capture / no AI without user opt-in)
         let privacy = crate::privacy::PrivacySettings::load();
+        if privacy.read_only_mode {
+            tracing::debug!("Monitor: read-only mode enabled; skipping");
+            continue;
+        }
         if !privacy.capture_consent {
             tracing::debug!("Monitor: capture consent not granted; skipping");
             continue;
@@ -108,6 +121,24 @@ pub async fn start_monitor_loop(
 
         if mode != Some(crate::memory::AppMode::Companion) {
             tracing::debug!("Monitor: not in companion mode; skipping");
+            continue;
+        }
+
+        // Skip when user idle for too long
+        let last_activity = {
+            let sess_guard = match session.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    tracing::warn!("Session memory mutex poisoned, recovering");
+                    poisoned.into_inner()
+                }
+            };
+            sess_guard.load().ok().map(|s| s.last_activity).unwrap_or(0)
+        };
+
+        let now = current_timestamp();
+        if last_activity > 0 && now.saturating_sub(last_activity) > MONITOR_IDLE_SECS {
+            tracing::debug!("Monitor: user idle; skipping");
             continue;
         }
 

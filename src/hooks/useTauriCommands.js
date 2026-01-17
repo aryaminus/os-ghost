@@ -909,7 +909,12 @@ export function useGhostGame() {
 		} catch (err) {
 			if (isMountedRef.current) {
 				console.error("[Ghost] capture_and_analyze failed:", err);
-				setGameState((prev) => ({ ...prev, state: "idle" }));
+				const errorMsg = typeof err === "string" ? err : err?.message || "Analysis failed";
+				setGameState((prev) => ({ 
+					...prev, 
+					state: "idle",
+					dialogue: `Error: ${errorMsg}` 
+				}));
 			}
 			return null;
 		} finally {

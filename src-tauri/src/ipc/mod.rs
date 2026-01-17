@@ -427,6 +427,33 @@ pub async fn generate_contextual_dialogue(
         .map_err(|e| e.to_string())
 }
 
+/// Quick ask - minimal prompt/response for fast assistance
+#[tauri::command]
+pub async fn quick_ask(
+    prompt: String,
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
+    ai_router: State<'_, Arc<SmartAiRouter>>,
+) -> Result<String, String> {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return Err("Prompt cannot be empty".to_string());
+    }
+
+    let state = session.load().unwrap_or_default();
+    let redacted_url = crate::privacy::redact_pii(&state.current_url);
+    let redacted_title = crate::privacy::redact_pii(&state.current_title);
+
+    let full_prompt = format!(
+        "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\nUser question: {}\n\nContext (if relevant):\n- Current URL: {}\n- Page title: {}",
+        trimmed, redacted_url, redacted_title
+    );
+
+    ai_router
+        .generate_text(&full_prompt)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ============================================================================
 // Original IPC Commands
 // ============================================================================
@@ -462,6 +489,9 @@ pub async fn capture_and_analyze(
 ) -> Result<String, String> {
     // Enforce explicit user consent
     let privacy = crate::privacy::PrivacySettings::load();
+    if privacy.read_only_mode {
+        return Err("Read-only mode enabled".to_string());
+    }
     if !privacy.capture_consent {
         return Err("Screen capture consent not granted".to_string());
     }
@@ -499,6 +529,9 @@ pub async fn verify_screenshot_proof(
 ) -> Result<crate::gemini_client::VerificationResult, String> {
     // Enforce explicit user consent
     let privacy = crate::privacy::PrivacySettings::load();
+    if privacy.read_only_mode {
+        return Err("Read-only mode enabled".to_string());
+    }
     if !privacy.capture_consent {
         return Err("Screen capture consent not granted".to_string());
     }
@@ -912,6 +945,10 @@ pub async fn start_background_checks(
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<String, String> {
+    let privacy = crate::privacy::PrivacySettings::load();
+    if privacy.read_only_mode {
+        return Err("Read-only mode enabled".to_string());
+    }
     // Lookup pattern
     let target_url_pattern = {
         let puzzles = puzzles.read().map_err(|e| format!("Lock error: {}", e))?;
@@ -1125,6 +1162,10 @@ pub async fn enable_autonomous_mode(
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
     autonomous_task: State<'_, AutonomousTask>,
 ) -> Result<String, String> {
+    let privacy = crate::privacy::PrivacySettings::load();
+    if privacy.read_only_mode {
+        return Err("Read-only mode enabled".to_string());
+    }
     // 1. Cancel previous task if running
     {
         let mut task_guard = autonomous_task.0.lock().await;

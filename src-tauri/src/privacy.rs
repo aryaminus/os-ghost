@@ -16,6 +16,9 @@ pub struct PrivacySettings {
     pub ai_analysis_consent: bool,
     /// User has read the privacy notice
     pub privacy_notice_acknowledged: bool,
+    /// Read-only mode (no screen capture or automation)
+    #[serde(default)]
+    pub read_only_mode: bool,
     /// Timestamp of consent
     pub consent_timestamp: Option<u64>,
 }
@@ -54,7 +57,10 @@ impl PrivacySettings {
 
     /// Check if all required consents are given
     pub fn has_full_consent(&self) -> bool {
-        self.capture_consent && self.ai_analysis_consent && self.privacy_notice_acknowledged
+        self.capture_consent
+            && self.ai_analysis_consent
+            && self.privacy_notice_acknowledged
+            && !self.read_only_mode
     }
 }
 
@@ -70,11 +76,13 @@ pub fn update_privacy_settings(
     capture_consent: bool,
     ai_analysis_consent: bool,
     privacy_notice_acknowledged: bool,
+    read_only_mode: bool,
 ) -> Result<PrivacySettings, String> {
     let mut settings = PrivacySettings::load();
     settings.capture_consent = capture_consent;
     settings.ai_analysis_consent = ai_analysis_consent;
     settings.privacy_notice_acknowledged = privacy_notice_acknowledged;
+    settings.read_only_mode = read_only_mode;
     settings.consent_timestamp = Some(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

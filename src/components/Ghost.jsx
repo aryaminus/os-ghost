@@ -310,6 +310,13 @@ const Ghost = () => {
 	const [activeDialog, setActiveDialog] = useState(null); // extension | privacy | key | reset
 	const [intelligentSettings, setIntelligentSettings] = useState(null);
 	const [puzzleStartTime, setPuzzleStartTime] = useState(null);
+	const [statusExpanded, setStatusExpanded] = useState(false);
+	const [quickAsk, setQuickAsk] = useState({
+		prompt: "",
+		response: "",
+		isLoading: false,
+		error: "",
+	});
 
 	// Privacy / consent (required for background monitoring + screenshots)
 	const [privacy, setPrivacy] = useState({
@@ -320,6 +327,7 @@ const Ghost = () => {
 		captureConsent: false,
 		aiConsent: false,
 		noticeAck: false,
+		readOnly: false,
 	});
 
 	// Fetch intelligent mode settings on mount
@@ -334,7 +342,8 @@ const Ghost = () => {
 		return (
 			privacy.settings.capture_consent &&
 			privacy.settings.ai_analysis_consent &&
-			privacy.settings.privacy_notice_acknowledged
+			privacy.settings.privacy_notice_acknowledged &&
+			!privacy.settings.read_only_mode
 		);
 	}, [privacy.settings]);
 
@@ -357,6 +366,7 @@ const Ghost = () => {
 					captureConsent: !!settings.capture_consent,
 					aiConsent: !!settings.ai_analysis_consent,
 					noticeAck: !!settings.privacy_notice_acknowledged,
+					readOnly: !!settings.read_only_mode,
 				});
 
 				// Auto-open privacy dialog if not acknowledged (first time user)
@@ -438,6 +448,7 @@ const Ghost = () => {
 				captureConsent: privacyForm.captureConsent,
 				aiAnalysisConsent: privacyForm.aiConsent,
 				privacyNoticeAcknowledged: privacyForm.noticeAck,
+				readOnlyMode: privacyForm.readOnly,
 			},
 			null
 		);
@@ -453,6 +464,7 @@ const Ghost = () => {
 		privacyForm.aiConsent,
 		privacyForm.captureConsent,
 		privacyForm.noticeAck,
+		privacyForm.readOnly,
 	]);
 
 	const openPrivacyModal = useCallback(() => {
@@ -462,6 +474,7 @@ const Ghost = () => {
 				captureConsent: !!privacy.settings.capture_consent,
 				aiConsent: !!privacy.settings.ai_analysis_consent,
 				noticeAck: !!privacy.settings.privacy_notice_acknowledged,
+				readOnly: !!privacy.settings.read_only_mode,
 			});
 		}
 		setActiveDialog("privacy");
@@ -480,6 +493,32 @@ const Ghost = () => {
 	const handleNoticeAckChange = useCallback((e) => {
 		setPrivacyForm((prev) => ({ ...prev, noticeAck: e.target.checked }));
 	}, []);
+	const handleReadOnlyChange = useCallback((e) => {
+		setPrivacyForm((prev) => ({ ...prev, readOnly: e.target.checked }));
+	}, []);
+
+	const toggleReadOnly = useCallback(async () => {
+		if (!privacy.settings) return;
+		const updated = await safeInvoke(
+			"update_privacy_settings",
+			{
+				captureConsent: privacy.settings.capture_consent,
+				aiAnalysisConsent: privacy.settings.ai_analysis_consent,
+				privacyNoticeAcknowledged:
+					privacy.settings.privacy_notice_acknowledged,
+				readOnlyMode: !privacy.settings.read_only_mode,
+			},
+			null
+		);
+
+		if (updated) {
+			setPrivacy((prev) => ({ ...prev, settings: updated }));
+			setPrivacyForm((prev) => ({
+				...prev,
+				readOnly: !!updated.read_only_mode,
+			}));
+		}
+	}, [privacy.settings]);
 
 	/**
 	 * Handle click on Ghost - memoized for performance.
@@ -502,6 +541,14 @@ const Ghost = () => {
 		openPrivacyModal,
 		showHint,
 	]);
+
+	const handleAnalyze = useCallback(() => {
+		if (!hasFullPrivacyConsent) {
+			openPrivacyModal();
+			return;
+		}
+		captureAndAnalyze();
+	}, [captureAndAnalyze, hasFullPrivacyConsent, openPrivacyModal]);
 
 	/**
 	 * Handle keyboard interaction on Ghost sprite.
@@ -574,6 +621,24 @@ const Ghost = () => {
 		[gameState.state]
 	);
 
+	const isBusy = useMemo(
+		() =>
+			gameState.state === "thinking" ||
+			gameState.state === "searching" ||
+			gameState.state === "celebrate",
+		[gameState.state]
+	);
+
+	const canAnalyze = useMemo(
+		() => gameState.apiKeyConfigured && !isBusy,
+		[gameState.apiKeyConfigured, isBusy]
+	);
+
+	const canHint = useMemo(
+		() => !!gameState.puzzleId && !isBusy,
+		[gameState.puzzleId, isBusy]
+	);
+
 	// Memoize mode derivations to avoid recalculation
 	const currentMode = useMemo(
 		() => systemStatus?.currentMode || "game",
@@ -609,6 +674,47 @@ const Ghost = () => {
 		}));
 	}, [setAutonomySettings]);
 
+	const handleQuickAskChange = useCallback((e) => {
+		setQuickAsk((prev) => ({ ...prev, prompt: e.target.value, error: "", response: "" }));
+	}, []);
+
+	const handleQuickAskSubmit = useCallback(
+		async (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			if (!quickAsk.prompt.trim()) {
+				setQuickAsk((prev) => ({
+					...prev,
+					error: "Please enter a question.",
+				}));
+				return;
+			}
+
+			setQuickAsk((prev) => ({ ...prev, isLoading: true, error: "", response: "" }));
+			try {
+				const response = await invoke("quick_ask", {
+					prompt: quickAsk.prompt.trim(),
+				});
+				setQuickAsk((prev) => ({
+					...prev,
+					response,
+					isLoading: false,
+					prompt: "", // Clear prompt on success
+				}));
+			} catch (err) {
+				const message = typeof err === "string" ? err : err?.message || "Quick ask failed";
+				setQuickAsk((prev) => ({
+					...prev,
+					isLoading: false,
+					error: message.includes("API") || message.includes("key") 
+						? "API key required. Configure it first."
+						: "Quick ask failed. Try again.",
+				}));
+			}
+		},
+		[quickAsk.prompt]
+	);
+
 	// Determine clue text to display
 	const clueText = useMemo(() => {
 		if (gameState.clue) return gameState.clue;
@@ -631,7 +737,7 @@ const Ghost = () => {
 
 	return (
 		<div
-			className="ghost-container"
+			className={`ghost-container ${privacy.settings?.read_only_mode ? "read-only-mode" : ""}`}
 			onMouseDown={handleDrag}
 			role="application"
 			aria-label="Ghost game interface"
@@ -679,6 +785,14 @@ const Ghost = () => {
 									/>
 									I have read this notice
 								</label>
+									<label className="privacy-checkbox">
+										<input
+											type="checkbox"
+											checked={privacyForm.readOnly}
+											onChange={handleReadOnlyChange}
+										/>
+										Read-only mode (disable capture & automation)
+									</label>
 
 								<div className="ghost-modal-actions">
 									<button
@@ -716,6 +830,8 @@ const Ghost = () => {
 								<SystemStatusBanner
 									status={systemStatus}
 									extensionConnected={extensionConnected}
+									readOnlyMode={!!privacy.settings?.read_only_mode}
+									hasConsent={hasFullPrivacyConsent}
 									flat
 								/>
 								<div className="ghost-modal-actions">
@@ -806,6 +922,82 @@ const Ghost = () => {
 
 			{/* Proximity Indicator - Always visible */}
 			<ProximityBar proximity={gameState.proximity} />
+
+			{/* System Status - Compact by default */}
+			<SystemStatusBanner
+				status={systemStatus}
+				extensionConnected={extensionConnected}
+				isExpanded={statusExpanded}
+				onToggleExpand={setStatusExpanded}
+				readOnlyMode={!!privacy.settings?.read_only_mode}
+				hasConsent={hasFullPrivacyConsent}
+			/>
+
+			{/* Quick Actions - Always visible when configured */}
+			{gameState.apiKeyConfigured && (
+				<div className="quick-actions" role="group" aria-label="Quick actions">
+					<button
+						type="button"
+						className="quick-action-btn primary"
+						disabled={!canAnalyze}
+						onMouseDown={stopPropagation}
+						onClick={withStopPropagation(handleAnalyze)}
+						aria-disabled={!canAnalyze}
+					>
+						<span aria-hidden="true">🔍</span> Analyze Screen
+					</button>
+					<button
+						type="button"
+						className="quick-action-btn"
+						disabled={!canHint}
+						onMouseDown={stopPropagation}
+						onClick={withStopPropagation(showHint)}
+						aria-disabled={!canHint}
+					>
+						<span aria-hidden="true">💡</span> Get Hint
+					</button>
+					<div className="quick-actions-help">
+						Tip: click the ghost to analyze or reveal hints.
+					</div>
+				</div>
+			)}
+
+			{/* Quick Ask - Minimal prompt/response */}
+			{gameState.apiKeyConfigured && (
+				<div className="quick-ask" role="region" aria-label="Quick ask">
+					<div className="quick-ask-header">⚡ Quick Ask</div>
+					<form className="quick-ask-form" onSubmit={handleQuickAskSubmit}>
+						<input
+							type="text"
+							className="quick-ask-input"
+							value={quickAsk.prompt}
+							onChange={handleQuickAskChange}
+							placeholder="Ask a quick question..."
+							disabled={quickAsk.isLoading}
+							onMouseDown={stopPropagation}
+							aria-label="Quick ask input"
+						/>
+						<button
+							type="submit"
+							className="quick-ask-submit"
+							disabled={quickAsk.isLoading}
+							onMouseDown={stopPropagation}
+						>
+							{quickAsk.isLoading ? "⏳" : "→"}
+						</button>
+					</form>
+					{quickAsk.error && (
+						<div className="quick-ask-error" role="alert">
+							{quickAsk.error}
+						</div>
+					)}
+					{quickAsk.response && (
+						<div className="quick-ask-response" role="status">
+							{quickAsk.response}
+						</div>
+					)}
+				</div>
+			)}
 
 			{/* Game UI Section - Shows when API key is configured (extension is now optional) */}
 			{gameState.apiKeyConfigured && (
@@ -1011,6 +1203,16 @@ const Ghost = () => {
 							onClick={openPrivacyModal}
 						>
 							Privacy
+						</button>
+
+						<button
+							type="button"
+							className={`system-btn ${privacy.settings?.read_only_mode ? "active" : ""}`}
+							onMouseDown={stopPropagation}
+							onClick={toggleReadOnly}
+							title="Read-only mode disables screen capture and autonomous actions"
+						>
+							Read-Only
 						</button>
 
 						<button

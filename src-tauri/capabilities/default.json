@@ -16,9 +16,12 @@
 		"core:window:allow-set-title",
 		"core:window:allow-center",
 		"core:window:allow-start-dragging",
+		"core:window:allow-is-visible",
 		"opener:default",
 		"shell:allow-open",
-
+		"global-shortcut:allow-register",
+		"global-shortcut:allow-unregister",
+		"global-shortcut:allow-is-registered",
 		"fs:allow-read-text-file",
 		"fs:allow-write-text-file",
 		"updater:default"
