@@ -27,7 +27,7 @@ tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Optimize tokio features - only include what we need
-tokio = { version = "1.35", features = ["rt-multi-thread", "time", "fs", "sync", "macros"] }
+tokio = { version = "1.35", features = ["rt-multi-thread", "time", "fs", "sync", "macros", "process"] }
 reqwest = { version = "0.12", features = ["json"] }
 base64 = "0.22"
 regex = "1"
@@ -48,6 +48,8 @@ tempfile = "3"
 tokio-util = "0.7"  # For CancellationToken
 # Time handling - disabled default features to avoid WASM/js-sys bloat in Tauri desktop app
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+# Lazy static for global action queue
+lazy_static = "1.4"
 
 # SQLite for Chrome history reading
 rusqlite = { version = "0.32", features = ["bundled"] }

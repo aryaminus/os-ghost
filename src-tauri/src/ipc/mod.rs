@@ -1253,3 +1253,196 @@ pub async fn enable_autonomous_mode(
 
     Ok("Autonomous mode started - listen for 'autonomous_progress' events".to_string())
 }
+
+// ============================================================================
+// Model Capabilities & Token Usage (P1/P2 from Audit)
+// ============================================================================
+
+/// Model capabilities for graceful degradation
+#[derive(Debug, Serialize, Clone)]
+pub struct ModelCapabilities {
+    /// Primary provider being used ("Gemini", "Ollama", "None")
+    pub provider: String,
+    /// Vision capability available
+    pub has_vision: bool,
+    /// Tool calling capability available
+    pub has_tool_calling: bool,
+    /// Estimated context window size
+    pub context_window: u32,
+    /// Warnings/recommendations for user
+    pub warnings: Vec<String>,
+    /// Whether Ollama is available as fallback
+    pub ollama_available: bool,
+    /// Whether Gemini is configured
+    pub gemini_configured: bool,
+}
+
+/// Get model capabilities for graceful degradation (P1)
+#[tauri::command]
+pub async fn get_model_capabilities(
+    ai_router: State<'_, Arc<SmartAiRouter>>,
+) -> Result<ModelCapabilities, String> {
+    let provider = ai_router.active_provider();
+    let has_gemini = ai_router.has_gemini();
+    let has_ollama = ai_router.has_ollama();
+    
+    let mut warnings = Vec::new();
+    
+    // Determine capabilities based on provider
+    let (has_vision, has_tool_calling, context_window) = match provider {
+        crate::ai_provider::ProviderType::Gemini => {
+            // Gemini 2.0 Flash capabilities
+            (true, true, 1_000_000)
+        }
+        crate::ai_provider::ProviderType::Ollama => {
+            // Ollama capabilities depend on model - check vision model availability
+            let vision_available = ai_router.has_ollama(); // Simplified check
+            if !vision_available {
+                warnings.push("Ollama vision model not detected. Run: ollama pull llama3.2-vision".to_string());
+            }
+            (vision_available, false, 8192) // Most Ollama models have smaller context
+        }
+        crate::ai_provider::ProviderType::None => {
+            warnings.push("No AI provider available. Configure Gemini API key or start Ollama.".to_string());
+            (false, false, 0)
+        }
+    };
+    
+    // Add warnings for degraded functionality
+    if !has_gemini && has_ollama {
+        warnings.push("Using local Ollama only. Some features may be limited.".to_string());
+    }
+    if !has_tool_calling {
+        warnings.push("Tool calling not available with current provider.".to_string());
+    }
+    if context_window < 32000 {
+        warnings.push(format!("Context window is {}k tokens. Complex puzzles may be affected.", context_window / 1000));
+    }
+    
+    Ok(ModelCapabilities {
+        provider: provider.to_string(),
+        has_vision,
+        has_tool_calling,
+        context_window,
+        warnings,
+        ollama_available: has_ollama,
+        gemini_configured: has_gemini,
+    })
+}
+
+/// Token usage tracking for cost visibility (P2)
+#[derive(Debug, Serialize, Clone)]
+pub struct TokenUsage {
+    /// Gemini API calls this session
+    pub gemini_calls: u64,
+    /// Ollama API calls this session
+    pub ollama_calls: u64,
+    /// Estimated Gemini tokens (rough: 1 call ≈ 500 tokens avg)
+    pub estimated_gemini_tokens: u64,
+    /// Estimated cost in USD (Gemini 2.0 Flash: ~$0.075/1M input, $0.30/1M output)
+    pub estimated_cost_usd: f64,
+}
+
+/// Get token usage for cost visibility (P2)
+#[tauri::command]
+pub fn get_token_usage(
+    ai_router: State<'_, Arc<SmartAiRouter>>,
+) -> TokenUsage {
+    let (gemini_calls, ollama_calls) = ai_router.get_call_counts();
+    
+    // Rough estimate: average 500 tokens per call (250 input + 250 output)
+    let estimated_gemini_tokens = gemini_calls * 500;
+    
+    // Gemini 2.0 Flash pricing (as of 2024):
+    // Input: $0.075 per 1M tokens, Output: $0.30 per 1M tokens
+    // Blended average: ~$0.19 per 1M tokens
+    let estimated_cost_usd = (estimated_gemini_tokens as f64 / 1_000_000.0) * 0.19;
+    
+    TokenUsage {
+        gemini_calls,
+        ollama_calls,
+        estimated_gemini_tokens,
+        estimated_cost_usd,
+    }
+}
+
+/// Reset token usage counters (start of new session)
+#[tauri::command]
+pub fn reset_token_usage(
+    ai_router: State<'_, Arc<SmartAiRouter>>,
+) {
+    ai_router.reset_call_counts();
+}
+
+// ============================================================================
+// Unified Polling (Consolidates multiple frontend polling intervals)
+// ============================================================================
+
+/// Unified status for all agent-related polling
+/// Combines pending actions, preview, rollback, and token usage
+/// This reduces frontend polling from 3 intervals to 1
+#[derive(Debug, Serialize, Clone)]
+pub struct AgentPollStatus {
+    /// Pending actions requiring confirmation
+    pub pending_actions: Vec<crate::actions::PendingAction>,
+    /// Active action preview (if any)
+    pub action_preview: Option<crate::action_preview::ActionPreview>,
+    /// Rollback/undo status
+    pub rollback_status: crate::rollback::RollbackStatus,
+    /// Token usage stats
+    pub token_usage: TokenUsage,
+    /// Timestamp of poll (for staleness detection)
+    pub timestamp_ms: u64,
+}
+
+/// Unified polling endpoint for agent status
+/// Frontend should call this once every ~1.5s instead of multiple intervals
+#[tauri::command]
+pub fn poll_agent_status(
+    ai_router: State<'_, Arc<SmartAiRouter>>,
+) -> AgentPollStatus {
+    // Get pending actions
+    crate::actions::ACTION_QUEUE.cleanup_expired();
+    let pending_actions = crate::actions::ACTION_QUEUE.get_pending();
+    
+    // Get action preview
+    let action_preview = crate::action_preview::get_preview_manager()
+        .and_then(|m| m.get_active_preview());
+    
+    // Get rollback status
+    let rollback_status = crate::rollback::get_rollback_manager()
+        .map(|m| m.get_status())
+        .unwrap_or_else(|| crate::rollback::RollbackStatus {
+            can_undo: false,
+            can_redo: false,
+            undo_description: None,
+            redo_description: None,
+            stack_size: 0,
+            recent_actions: vec![],
+        });
+    
+    // Get token usage
+    let (gemini_calls, ollama_calls) = ai_router.get_call_counts();
+    let estimated_gemini_tokens = gemini_calls * 500;
+    let estimated_cost_usd = (estimated_gemini_tokens as f64 / 1_000_000.0) * 0.19;
+    let token_usage = TokenUsage {
+        gemini_calls,
+        ollama_calls,
+        estimated_gemini_tokens,
+        estimated_cost_usd,
+    };
+    
+    // Get timestamp
+    let timestamp_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    
+    AgentPollStatus {
+        pending_actions,
+        action_preview,
+        rollback_status,
+        token_usage,
+        timestamp_ms,
+    }
+}

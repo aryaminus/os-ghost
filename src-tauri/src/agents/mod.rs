@@ -19,7 +19,9 @@
 //! - **Lifecycle Hooks**: Agent trait includes initialize(), shutdown(), health_check()
 //! - **Security**: Blocked patterns in GuardrailAgent are NEVER bypassed by gaming allowlist
 
+pub mod callbacks;
 pub mod critic;
+pub mod events;
 pub mod guardrail;
 pub mod narrator;
 pub mod observer;
@@ -27,6 +29,7 @@ pub mod orchestrator;
 pub mod planner;
 pub mod traits;
 pub mod verifier;
+pub mod watchdog;
 
 pub use critic::CriticAgent;
 pub use guardrail::{GuardrailAgent, SafetyEvaluation, ContentType};
@@ -35,4 +38,14 @@ pub use planner::PlannerAgent;
 pub use traits::{
     Agent, AgentContext, AgentError, AgentMode, AgentOutput, AgentPriority, AgentResult, NextAction,
     PlanningContext, RateLimiter, ReflectionFeedback, SearchStrategy, SubGoal,
+};
+pub use events::{
+    AgentEvent, EventActions, EventContent, EventAuthor, EventPriority, EventStream,
+};
+pub use callbacks::{
+    AgentCallback, CallbackContext, CallbackRegistry, LlmRequest, LlmResponse, 
+    LoggingCallback, ModelCallback, PolicyCallback, ToolCallback, ToolCall, ToolResult, TokenUsage,
+};
+pub use watchdog::{
+    WatchdogAgent, WatchdogReport, Threat, ThreatType, SuggestedAction, PatternDetectors,
 };

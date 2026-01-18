@@ -239,6 +239,10 @@ pub enum NextAction {
     GeneratePuzzle,
     /// Stop processing
     Stop,
+    /// Abort the entire pipeline (security threat)
+    Abort,
+    /// Pause and wait for user confirmation
+    PauseForConfirmation,
 }
 
 /// Core agent trait - all agents implement this

@@ -54,6 +54,7 @@ When using AI-powered features in the desktop app:
 
 - **Disable Anytime**: You can disable or remove the Extension at any time via your browser's extensions management page
 - **Desktop App Required**: Data collection only occurs when the OS Ghost desktop app is running
+- **Read-only Mode**: When read-only mode is enabled in the desktop app, OS Ghost will not issue navigation or other side-effect actions
 - **No Tracking**: We do not use any analytics or tracking services
 
 ## Children's Privacy

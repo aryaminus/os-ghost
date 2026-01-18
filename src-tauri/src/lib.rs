@@ -2,6 +2,8 @@
 //! A screen-aware meta-game where an AI entity lives in your desktop
 
 // Core modules
+pub mod action_preview;
+pub mod actions;
 pub mod ai_provider;
 pub mod bridge;
 pub mod capture;
@@ -10,8 +12,10 @@ pub mod gemini_client;
 pub mod history;
 pub mod ipc;
 pub mod monitor;
+pub mod monitoring;
 pub mod ollama_client;
 pub mod privacy;
+pub mod rollback;
 pub mod utils;
 pub mod window;
 
@@ -159,7 +163,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             match Shortcut::from_str("CmdOrCtrl+Shift+G") {
                 Ok(shortcut) => {
-                    if let Err(e) = app_handle.global_shortcut().register(shortcut.clone()) {
+                    if let Err(e) = app_handle.global_shortcut().register(shortcut) {
                         tracing::warn!("Failed to register global shortcut: {}", e);
                     }
 
@@ -404,6 +408,41 @@ pub fn run() {
             privacy::can_capture_screen,
             privacy::can_analyze_with_ai,
             privacy::get_privacy_notice,
+            // Action confirmation commands
+            actions::get_pending_actions,
+            actions::approve_action,
+            actions::deny_action,
+            actions::get_action_history,
+            actions::clear_pending_actions,
+            actions::execute_approved_action,
+            // Action preview commands
+            actions::get_active_preview,
+            actions::approve_preview,
+            actions::deny_preview,
+            actions::update_preview_param,
+            // Undo/Rollback commands
+            actions::get_rollback_status,
+            actions::undo_action,
+            actions::redo_action,
+            // Sandbox commands (file system & shell access)
+            mcp::sandbox::get_sandbox_settings,
+            mcp::sandbox::set_sandbox_trust_level,
+            mcp::sandbox::add_sandbox_read_path,
+            mcp::sandbox::remove_sandbox_read_path,
+            mcp::sandbox::add_sandbox_write_path,
+            mcp::sandbox::remove_sandbox_write_path,
+            mcp::sandbox::enable_shell_category,
+            mcp::sandbox::disable_shell_category,
+            mcp::sandbox::sandbox_read_file,
+            mcp::sandbox::sandbox_write_file,
+            mcp::sandbox::sandbox_list_dir,
+            mcp::sandbox::sandbox_execute_shell,
+            // Model capabilities & token usage (P1/P2)
+            ipc::get_model_capabilities,
+            ipc::get_token_usage,
+            ipc::reset_token_usage,
+            // Unified polling (replaces multiple frontend intervals)
+            ipc::poll_agent_status,
             // Intelligent mode commands
             ipc::get_intelligent_mode,
             ipc::set_intelligent_mode,

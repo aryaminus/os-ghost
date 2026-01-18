@@ -7,6 +7,49 @@ use std::path::PathBuf;
 
 const PRIVACY_FILE: &str = "privacy_settings.json";
 
+/// Autonomy levels for companion actions
+/// Controls how much the companion can do without user confirmation
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AutonomyLevel {
+    /// Read-only observer: no actions, only watch and narrate
+    #[default]
+    Observer,
+    /// Suggests actions, user must confirm each one
+    Suggester,
+    /// Executes with confirmation for high-risk actions only
+    Supervised,
+    /// Full autonomy within guardrails (future, not yet enabled)
+    Autonomous,
+}
+
+impl AutonomyLevel {
+    /// Check if this level requires confirmation for a given action
+    pub fn requires_confirmation(&self, is_high_risk: bool) -> bool {
+        match self {
+            AutonomyLevel::Observer => true, // Always blocked anyway
+            AutonomyLevel::Suggester => true, // Always confirm
+            AutonomyLevel::Supervised => is_high_risk, // Only high-risk
+            AutonomyLevel::Autonomous => false, // No confirmation (future)
+        }
+    }
+
+    /// Check if actions are allowed at all
+    pub fn allows_actions(&self) -> bool {
+        !matches!(self, AutonomyLevel::Observer)
+    }
+
+    /// Human-readable description
+    pub fn description(&self) -> &'static str {
+        match self {
+            AutonomyLevel::Observer => "Observer: Watch only, no actions",
+            AutonomyLevel::Suggester => "Suggester: Proposes actions, you confirm each",
+            AutonomyLevel::Supervised => "Supervised: Auto-executes safe actions, confirms risky ones",
+            AutonomyLevel::Autonomous => "Autonomous: Full control within guardrails",
+        }
+    }
+}
+
 /// Privacy settings stored locally
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PrivacySettings {
@@ -19,6 +62,9 @@ pub struct PrivacySettings {
     /// Read-only mode (no screen capture or automation)
     #[serde(default)]
     pub read_only_mode: bool,
+    /// Autonomy level for companion actions
+    #[serde(default)]
+    pub autonomy_level: AutonomyLevel,
     /// Timestamp of consent
     pub consent_timestamp: Option<u64>,
 }
@@ -77,12 +123,25 @@ pub fn update_privacy_settings(
     ai_analysis_consent: bool,
     privacy_notice_acknowledged: bool,
     read_only_mode: bool,
+    autonomy_level: Option<String>,
 ) -> Result<PrivacySettings, String> {
     let mut settings = PrivacySettings::load();
     settings.capture_consent = capture_consent;
     settings.ai_analysis_consent = ai_analysis_consent;
     settings.privacy_notice_acknowledged = privacy_notice_acknowledged;
     settings.read_only_mode = read_only_mode;
+    
+    // Parse autonomy level if provided
+    if let Some(level_str) = autonomy_level {
+        settings.autonomy_level = match level_str.as_str() {
+            "observer" => AutonomyLevel::Observer,
+            "suggester" => AutonomyLevel::Suggester,
+            "supervised" => AutonomyLevel::Supervised,
+            "autonomous" => AutonomyLevel::Autonomous,
+            _ => AutonomyLevel::Observer,
+        };
+    }
+    
     settings.consent_timestamp = Some(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -124,14 +183,26 @@ This game uses the following features that access your data:
    - Used to track puzzle progress
    - History data stays on your device
 
-3. AI ANALYSIS
+3. BROWSER ACTIONS
+   - The companion can request browser navigation or visual highlights
+   - These are cosmetic/gameplay actions only
+   - Read-only mode disables all browser actions
+
+4. AI ANALYSIS
    - Screenshots may be sent to Google Gemini for analysis
    - Google's privacy policy applies to AI processing
    - No personal data is stored by this game
 
+5. AUTONOMY LEVELS
+   - Observer: Ghost watches and narrates only, no actions taken
+   - Suggester: Ghost proposes actions, you confirm each one
+   - Supervised: Ghost auto-executes safe actions, confirms risky ones
+   - Autonomous: Full control within guardrails (future feature)
+
 RECOMMENDATIONS:
 - Close sensitive applications before using screen capture
 - Do not capture screens with passwords, banking info, etc.
+- Start with Observer or Suggester mode until you trust the system
 - The game works without AI features if you decline
 
 By continuing, you consent to these data practices.

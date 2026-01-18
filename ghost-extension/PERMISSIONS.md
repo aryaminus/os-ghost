@@ -12,6 +12,7 @@ This document explains why each permission is required for the OS Ghost Bridge C
 
 - Send page navigation events to the desktop app
 - Receive commands to trigger cosmetic visual effects
+- Receive optional navigation commands for gameplay flows
 - Establish connection status monitoring
 
 ### `storage`

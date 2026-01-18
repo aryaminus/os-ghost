@@ -15,6 +15,7 @@ import PropTypes from "prop-types";
 import { invoke } from "@tauri-apps/api/core";
 import { safeInvoke } from "../utils/data";
 import { useGhostGame } from "../hooks/useTauriCommands";
+import { useActionManagement } from "../hooks/useActionManagement";
 import ApiKeyInput from "./ApiKeyInput";
 import SystemStatusBanner from "./SystemStatus";
 import {
@@ -329,7 +330,45 @@ const Ghost = () => {
 		aiConsent: false,
 		noticeAck: false,
 		readOnly: false,
+		autonomyLevel: "observer",
 	});
+	const {
+		pendingActions,
+		actionPreview,
+		rollbackStatus,
+		tokenUsage,
+		modelCapabilities,
+		sandboxSettings,
+		actionHistory,
+		showActionHistory,
+		showSandboxSettings,
+		editingParam,
+		setEditingParam,
+		approveAction,
+		denyAction,
+		approvePreview,
+		denyPreview,
+		editPreviewParam,
+		undoAction,
+		redoAction,
+		fetchActionHistory,
+		closeActionHistory,
+		openSandboxSettings,
+		closeSandboxSettings,
+		setTrustLevel,
+		toggleShellCategory,
+		addReadPath,
+		removeReadPath,
+		addWritePath,
+		removeWritePath,
+	} = useActionManagement(
+		privacy.settings?.autonomy_level || "observer",
+		!!gameState.apiKeyConfigured
+	);
+
+	const [readPathInput, setReadPathInput] = useState("");
+	const [writePathInput, setWritePathInput] = useState("");
+	const [sandboxPathError, setSandboxPathError] = useState("");
 
 	// Fetch intelligent mode settings on mount
 	useEffect(() => {
@@ -368,6 +407,7 @@ const Ghost = () => {
 					aiConsent: !!settings.ai_analysis_consent,
 					noticeAck: !!settings.privacy_notice_acknowledged,
 					readOnly: !!settings.read_only_mode,
+					autonomyLevel: settings.autonomy_level || "observer",
 				});
 
 				// Auto-open privacy dialog if not acknowledged (first time user)
@@ -446,10 +486,11 @@ const Ghost = () => {
 		const updated = await safeInvoke(
 			"update_privacy_settings",
 			{
-				captureConsent: privacyForm.captureConsent,
-				aiAnalysisConsent: privacyForm.aiConsent,
-				privacyNoticeAcknowledged: privacyForm.noticeAck,
-				readOnlyMode: privacyForm.readOnly,
+				capture_consent: privacyForm.captureConsent,
+				ai_analysis_consent: privacyForm.aiConsent,
+				privacy_notice_acknowledged: privacyForm.noticeAck,
+				read_only_mode: privacyForm.readOnly,
+				autonomy_level: privacyForm.autonomyLevel,
 			},
 			null
 		);
@@ -466,6 +507,7 @@ const Ghost = () => {
 		privacyForm.captureConsent,
 		privacyForm.noticeAck,
 		privacyForm.readOnly,
+		privacyForm.autonomyLevel,
 	]);
 
 	const openPrivacyModal = useCallback(() => {
@@ -476,6 +518,7 @@ const Ghost = () => {
 				aiConsent: !!privacy.settings.ai_analysis_consent,
 				noticeAck: !!privacy.settings.privacy_notice_acknowledged,
 				readOnly: !!privacy.settings.read_only_mode,
+				autonomyLevel: privacy.settings.autonomy_level || "observer",
 			});
 		}
 		setActiveDialog("privacy");
@@ -497,17 +540,107 @@ const Ghost = () => {
 	const handleReadOnlyChange = useCallback((e) => {
 		setPrivacyForm((prev) => ({ ...prev, readOnly: e.target.checked }));
 	}, []);
+	const handleAutonomyLevelChange = useCallback((e) => {
+		setPrivacyForm((prev) => ({ ...prev, autonomyLevel: e.target.value }));
+	}, []);
+
+	const handleShowActionHistory = useCallback(() => {
+		fetchActionHistory();
+	}, [fetchActionHistory]);
+
+	const handleShowSandboxSettings = useCallback(() => {
+		openSandboxSettings();
+	}, [openSandboxSettings]);
+
+	const handleSetTrustLevel = useCallback(async (level) => {
+		await setTrustLevel(level);
+	}, [setTrustLevel]);
+
+	const handleToggleShellCategory = useCallback(async (category, enabled) => {
+		await toggleShellCategory(category, enabled);
+	}, [toggleShellCategory]);
+
+	const handleAddReadPath = useCallback(async () => {
+		const path = readPathInput.trim();
+		if (!path) return;
+		const result = await addReadPath(path);
+		if (result?.success) {
+			setReadPathInput("");
+			setSandboxPathError("");
+		} else {
+			setSandboxPathError(result?.error || "Failed to add read path.");
+		}
+	}, [addReadPath, readPathInput]);
+
+	const handleAddWritePath = useCallback(async () => {
+		const path = writePathInput.trim();
+		if (!path) return;
+		const result = await addWritePath(path);
+		if (result?.success) {
+			setWritePathInput("");
+			setSandboxPathError("");
+		} else {
+			setSandboxPathError(result?.error || "Failed to add write path.");
+		}
+	}, [addWritePath, writePathInput]);
+
+	const handleRemoveReadPath = useCallback(async (path) => {
+		const result = await removeReadPath(path);
+		if (result?.success) {
+			setSandboxPathError("");
+		} else {
+			setSandboxPathError(result?.error || "Failed to remove read path.");
+		}
+	}, [removeReadPath]);
+
+	const handleRemoveWritePath = useCallback(async (path) => {
+		const result = await removeWritePath(path);
+		if (result?.success) {
+			setSandboxPathError("");
+		} else {
+			setSandboxPathError(result?.error || "Failed to remove write path.");
+		}
+	}, [removeWritePath]);
+
+	const handleApproveAction = useCallback(async (actionId) => {
+		await approveAction(actionId);
+	}, [approveAction]);
+
+	const handleDenyAction = useCallback(async (actionId) => {
+		await denyAction(actionId);
+	}, [denyAction]);
+
+	const handleApprovePreview = useCallback(async () => {
+		await approvePreview();
+	}, [approvePreview]);
+
+	const handleDenyPreview = useCallback(async (reason) => {
+		await denyPreview(reason);
+	}, [denyPreview]);
+
+	const handleEditPreviewParam = useCallback(async (paramName, value) => {
+		await editPreviewParam(paramName, value);
+	}, [editPreviewParam]);
+
+	const handleUndo = useCallback(async () => {
+		await undoAction();
+	}, [undoAction]);
+
+	const handleRedo = useCallback(async () => {
+		await redoAction();
+	}, [redoAction]);
 
 	const toggleReadOnly = useCallback(async () => {
 		if (!privacy.settings) return;
 		const updated = await safeInvoke(
 			"update_privacy_settings",
 			{
-				captureConsent: privacy.settings.capture_consent,
-				aiAnalysisConsent: privacy.settings.ai_analysis_consent,
-				privacyNoticeAcknowledged:
+				capture_consent: privacy.settings.capture_consent,
+				ai_analysis_consent: privacy.settings.ai_analysis_consent,
+				privacy_notice_acknowledged:
 					privacy.settings.privacy_notice_acknowledged,
-				readOnlyMode: !privacy.settings.read_only_mode,
+				read_only_mode: !privacy.settings.read_only_mode,
+				autonomy_level: privacy.settings.autonomy_level || "observer",
 			},
 			null
 		);
@@ -832,6 +965,42 @@ const Ghost = () => {
 										Read-only mode (disable capture & automation)
 									</label>
 
+								{/* Autonomy Level Selector */}
+								<div className="autonomy-level-section">
+									<div className="autonomy-level-label">Action Autonomy Level:</div>
+									<select
+										className="autonomy-level-select"
+										value={privacyForm.autonomyLevel}
+										onChange={handleAutonomyLevelChange}
+										disabled={privacyForm.readOnly}
+									>
+										<option value="observer">👁️ Observer - Watch only, no actions</option>
+										<option value="suggester">💬 Suggester - Proposes actions, you confirm each</option>
+										<option value="supervised">⚡ Supervised - Auto-executes safe, confirms risky</option>
+										<option value="autonomous">🤖 Autonomous - Full control within guardrails</option>
+									</select>
+									<div className="autonomy-level-hint">
+										{privacyForm.readOnly 
+											? "Read-only mode overrides autonomy level"
+											: privacyForm.autonomyLevel === "observer"
+												? "Ghost will only observe and narrate"
+												: privacyForm.autonomyLevel === "suggester"
+													? "Ghost will ask before any browser action"
+													: privacyForm.autonomyLevel === "supervised"
+														? "Ghost will auto-execute safe actions, confirm risky ones"
+														: "⚠️ Full autonomy - Ghost will execute all actions within guardrails"
+										}
+									</div>
+									{privacyForm.autonomyLevel === "autonomous" && (
+										<div className="autonomy-warning">
+											<span aria-hidden="true">⚠️</span>
+											<strong>Warning:</strong> Autonomous mode gives the Ghost full control 
+											to execute browser actions without confirmation. Safety guardrails 
+											and watchdog monitoring remain active.
+										</div>
+									)}
+								</div>
+
 								<div className="ghost-modal-actions">
 									<button
 										type="button"
@@ -942,6 +1111,205 @@ const Ghost = () => {
 				</div>
 			)}
 
+			{/* Pending Action Confirmation Panel */}
+			{pendingActions.length > 0 && (
+				<div className="pending-actions-panel" role="alertdialog" aria-label="Pending actions">
+					<div className="pending-actions-header">
+						<span aria-hidden="true">⚡</span> Action Confirmation
+						<span className="pending-count">{pendingActions.length}</span>
+					</div>
+					{pendingActions.map((action) => (
+						<div key={action.id} className={`pending-action-item risk-${action.risk_level}`}>
+							<div className="action-description">{action.description}</div>
+							{action.reason && (
+								<div className="action-reason">Reason: {action.reason}</div>
+							)}
+							<div className="action-buttons">
+								<button
+									type="button"
+									className="action-approve-btn"
+									onClick={() => handleApproveAction(action.id)}
+									onMouseDown={stopPropagation}
+								>
+									✓ Allow
+								</button>
+								<button
+									type="button"
+									className="action-deny-btn"
+									onClick={() => handleDenyAction(action.id)}
+									onMouseDown={stopPropagation}
+								>
+									✕ Deny
+								</button>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+
+			{/* Action Preview Panel - Rich streaming preview with editing */}
+			{actionPreview && (
+				<div className="action-preview-panel" role="alertdialog" aria-label="Action preview">
+					<div className="preview-header">
+						<span className="preview-icon" aria-hidden="true">👁️</span>
+						<span className="preview-title">Action Preview</span>
+						<span className={`preview-risk risk-${actionPreview.action?.risk_level?.toLowerCase() || 'low'}`}>
+							{actionPreview.action?.risk_level || 'Low'} Risk
+						</span>
+					</div>
+					
+					<div className="preview-state">
+						{actionPreview.state === 'loading' && <span className="loading-indicator">⏳ Loading preview...</span>}
+						{actionPreview.state === 'streaming' && (
+							<div className="streaming-progress">
+								<div className="progress-bar" style={{ width: `${(actionPreview.progress || 0) * 100}%` }} />
+								<span className="progress-text">{Math.round((actionPreview.progress || 0) * 100)}%</span>
+							</div>
+						)}
+						{actionPreview.state === 'ready' && <span className="ready-indicator">✓ Ready for approval</span>}
+						{actionPreview.state === 'editing' && <span className="editing-indicator">✏️ Editing parameters...</span>}
+					</div>
+
+					<div className="preview-action-details">
+						<div className="action-type">{actionPreview.action?.action_type}</div>
+						<div className="action-desc">{actionPreview.action?.description}</div>
+					</div>
+
+					{/* Visual Preview */}
+					{actionPreview.visual_preview && (
+						<div className="visual-preview">
+							{actionPreview.visual_preview.preview_type === 'url_card' && (
+								<div className="url-card">
+									<span className="url-icon">🔗</span>
+									<span className="url-text">{actionPreview.visual_preview.content}</span>
+								</div>
+							)}
+							{actionPreview.visual_preview.preview_type === 'text_selection' && (
+								<div className="text-selection-preview">
+									<span className="highlight-icon">✨</span>
+									<mark className="preview-highlight">{actionPreview.visual_preview.content}</mark>
+								</div>
+							)}
+						</div>
+					)}
+
+					{/* Editable Parameters */}
+					{actionPreview.editable_params && Object.keys(actionPreview.editable_params).length > 0 && (
+						<div className="editable-params">
+							<div className="params-header">Edit before executing:</div>
+							{Object.entries(actionPreview.editable_params).map(([name, param]) => (
+								<div key={name} className="param-row">
+									<label className="param-label">{param.label}:</label>
+									{editingParam === name ? (
+										<input
+											type={param.param_type === 'url' ? 'url' : param.param_type === 'number' ? 'number' : 'text'}
+											className="param-input"
+											defaultValue={param.value}
+											autoFocus
+											onBlur={(e) => {
+												const nextValue =
+													param.param_type === "number" || param.param_type === "duration"
+														? Number(e.target.value)
+														: e.target.value;
+												handleEditPreviewParam(name, nextValue);
+											}}
+											onKeyDown={(e) => {
+												if (e.key === 'Enter') {
+													const nextValue =
+														param.param_type === "number" || param.param_type === "duration"
+															? Number(e.target.value)
+															: e.target.value;
+													handleEditPreviewParam(name, nextValue);
+												} else if (e.key === 'Escape') {
+													setEditingParam(null);
+												}
+											}}
+											onMouseDown={stopPropagation}
+										/>
+									) : (
+										<span 
+											className="param-value" 
+											onClick={() => setEditingParam(name)}
+											onMouseDown={stopPropagation}
+											title="Click to edit"
+										>
+											{typeof param.value === 'string' ? param.value : JSON.stringify(param.value)}
+											<span className="edit-icon" aria-hidden="true">✏️</span>
+										</span>
+									)}
+								</div>
+							))}
+						</div>
+					)}
+
+					{/* Reversibility indicator */}
+					{actionPreview.is_reversible && (
+						<div className="reversibility-notice">
+							<span className="undo-icon" aria-hidden="true">↩️</span>
+							{actionPreview.rollback_description || 'This action can be undone'}
+						</div>
+					)}
+
+					{/* Estimated duration */}
+					{actionPreview.estimated_duration_ms && (
+						<div className="duration-estimate">
+							Est. duration: {actionPreview.estimated_duration_ms}ms
+						</div>
+					)}
+
+					<div className="preview-actions">
+						<button
+							type="button"
+							className="preview-approve-btn"
+							onClick={handleApprovePreview}
+							onMouseDown={stopPropagation}
+							disabled={actionPreview.state === 'loading'}
+						>
+							✓ Execute
+						</button>
+						<button
+							type="button"
+							className="preview-deny-btn"
+							onClick={() => handleDenyPreview('User denied')}
+							onMouseDown={stopPropagation}
+						>
+							✕ Cancel
+						</button>
+					</div>
+				</div>
+			)}
+
+			{/* Undo/Redo Controls */}
+			{(rollbackStatus.can_undo || rollbackStatus.can_redo) && (
+				<div className="undo-redo-controls" role="toolbar" aria-label="Undo/Redo controls">
+					<button
+						type="button"
+						className="undo-btn"
+						onClick={handleUndo}
+						onMouseDown={stopPropagation}
+						disabled={!rollbackStatus.can_undo}
+						title={rollbackStatus.undo_description || 'Undo'}
+					>
+						<span aria-hidden="true">↩️</span> Undo
+					</button>
+					<button
+						type="button"
+						className="redo-btn"
+						onClick={handleRedo}
+						onMouseDown={stopPropagation}
+						disabled={!rollbackStatus.can_redo}
+						title={rollbackStatus.redo_description || 'Redo'}
+					>
+						Redo <span aria-hidden="true">↪️</span>
+					</button>
+					{rollbackStatus.stack_size > 0 && (
+						<span className="undo-stack-count" title={`${rollbackStatus.stack_size} actions in history`}>
+							({rollbackStatus.stack_size})
+						</span>
+					)}
+				</div>
+			)}
+
 			{/* Ghost Sprite */}
 
 			<div
@@ -1049,6 +1417,21 @@ const Ghost = () => {
 								>
 									🛡️
 								</button>
+								{/* Autonomy Level Indicator */}
+								<span
+									className={`autonomy-badge level-${privacy.settings?.autonomy_level || "observer"}`}
+									title={`Autonomy: ${
+										privacy.settings?.autonomy_level === "suggester" ? "Suggester - confirms actions"
+										: privacy.settings?.autonomy_level === "supervised" ? "Supervised - auto-executes safe"
+										: privacy.settings?.autonomy_level === "autonomous" ? "Autonomous"
+										: "Observer - watch only"
+									}`}
+								>
+									{privacy.settings?.autonomy_level === "suggester" ? "💬"
+									: privacy.settings?.autonomy_level === "supervised" ? "⚡"
+									: privacy.settings?.autonomy_level === "autonomous" ? "🤖"
+									: "👁️"}
+								</span>
 							</div>
 						</div>
 						<p className="clue-text">{clueText}</p>
@@ -1221,6 +1604,290 @@ const Ghost = () => {
 						/>
 					)}
 				</>
+			)}
+
+			{/* Model Capabilities Warning Banner */}
+			{modelCapabilities?.warnings?.length > 0 && (
+				<div className="capabilities-warning" role="alert">
+					<span aria-hidden="true">⚠️</span>
+					<div className="capabilities-warning-text">
+						{modelCapabilities.warnings.map((w, i) => (
+							<div key={i}>{w}</div>
+						))}
+					</div>
+				</div>
+			)}
+
+			{/* Token Usage Display */}
+			{gameState.apiKeyConfigured && tokenUsage && (
+				<div className="token-usage-bar" role="status" aria-label="API usage">
+					<span className="token-usage-label">Usage:</span>
+					<span className="token-usage-stat gemini" title="Gemini API calls">
+						🔮 {tokenUsage.gemini_calls || 0}
+					</span>
+					<span className="token-usage-stat ollama" title="Ollama calls">
+						🦙 {tokenUsage.ollama_calls || 0}
+					</span>
+					{tokenUsage.estimated_cost_usd > 0 && (
+						<span className="token-usage-cost" title="Estimated cost">
+							💰 ${tokenUsage.estimated_cost_usd.toFixed(4)}
+						</span>
+					)}
+					<button
+						type="button"
+						className="token-usage-history-btn"
+						onClick={handleShowActionHistory}
+						onMouseDown={stopPropagation}
+						title="View action history"
+					>
+						📋
+					</button>
+					<button
+						type="button"
+						className="token-usage-history-btn sandbox-btn"
+						onClick={handleShowSandboxSettings}
+						onMouseDown={stopPropagation}
+						title="Sandbox settings"
+					>
+						🛡️
+					</button>
+				</div>
+			)}
+
+			{/* Action History Modal */}
+			{showActionHistory && (
+				<div className="ghost-modal-overlay" onMouseDown={closeActionHistory}>
+					<div
+						className="ghost-modal action-history-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Action history"
+						onMouseDown={stopPropagation}
+					>
+						<div className="ghost-modal-title">
+							<span aria-hidden="true">📋</span> Action History
+						</div>
+						<div className="action-history-list">
+							{actionHistory.length === 0 ? (
+								<div className="action-history-empty">No actions recorded yet</div>
+							) : (
+								actionHistory.map((action) => (
+									<div
+										key={action.id}
+										className={`action-history-item status-${action.status}`}
+									>
+										<div className="action-history-header">
+											<span className={`action-status-badge ${action.status}`}>
+												{action.status === "approved" || action.status === "executed"
+													? "✓"
+													: action.status === "denied" || action.status === "failed"
+														? "✕"
+														: "⏳"}
+											</span>
+											<span className="action-type">{action.action_type}</span>
+											<span className="action-time">
+												{new Date((action.created_at || 0) * 1000).toLocaleTimeString()}
+											</span>
+										</div>
+										<div className="action-description">{action.description}</div>
+										{action.target && (
+											<div className="action-target">Target: {action.target}</div>
+										)}
+									</div>
+								))
+							)}
+						</div>
+						<div className="ghost-modal-actions">
+							<button
+								type="button"
+								className="ghost-modal-btn secondary"
+								onMouseDown={stopPropagation}
+									onClick={closeActionHistory}
+							>
+								Close
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Sandbox Settings Modal */}
+			{showSandboxSettings && (
+				<div className="ghost-modal-overlay" onMouseDown={closeSandboxSettings}>
+					<div
+						className="ghost-modal sandbox-settings-modal"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Sandbox settings"
+						onMouseDown={stopPropagation}
+					>
+						<div className="ghost-modal-title">
+							<span aria-hidden="true">🛡️</span> Sandbox Settings
+						</div>
+						
+						{sandboxSettings && (
+							<div className="sandbox-settings-content">
+								{/* Trust Level Section */}
+								<div className="sandbox-section">
+									<div className="sandbox-section-title">Trust Level</div>
+									<div className="trust-level-info">
+										<span className="trust-score">Score: {sandboxSettings.trust_score}/100</span>
+									</div>
+									<select
+										className="trust-level-select"
+										value={sandboxSettings.trust_level}
+										onChange={(e) => handleSetTrustLevel(e.target.value)}
+									>
+										<option value="untrusted">🔒 Untrusted - No file/shell access</option>
+										<option value="read_only">📖 Read Only - Read files only</option>
+										<option value="limited">⚠️ Limited - Safe operations only</option>
+										<option value="elevated">🔓 Elevated - Most operations</option>
+										<option value="full">⚡ Full - All operations (dangerous)</option>
+									</select>
+								</div>
+
+								{/* Shell Categories Section */}
+								<div className="sandbox-section">
+									<div className="sandbox-section-title">Allowed Shell Commands</div>
+									<div className="shell-categories-grid">
+										{[
+											{ value: "read_info", label: "📊 Read Info", desc: "whoami, date, etc." },
+											{ value: "search", label: "🔍 Search", desc: "find, grep, locate" },
+											{ value: "package_info", label: "📦 Package Info", desc: "npm list, pip list" },
+											{ value: "git_read", label: "📚 Git Read", desc: "git status, log, diff" },
+											{ value: "git_write", label: "✍️ Git Write", desc: "git add, commit, push" },
+											{ value: "file_manipulation", label: "📁 File Ops", desc: "mkdir, cp, mv" },
+											{ value: "file_deletion", label: "🗑️ File Delete", desc: "rm, rmdir" },
+											{ value: "network", label: "🌐 Network", desc: "curl, wget, ping" },
+											{ value: "process_management", label: "⚙️ Processes", desc: "kill, pkill" },
+											{ value: "system_admin", label: "🔧 System Admin", desc: "sudo, chmod" },
+											{ value: "arbitrary", label: "💀 Arbitrary", desc: "Any command" },
+										].map((cat) => (
+											<label key={cat.value} className="shell-category-item">
+												<input
+													type="checkbox"
+													checked={sandboxSettings.allowed_shell_categories?.includes(cat.value) || false}
+													onChange={(e) => handleToggleShellCategory(cat.value, e.target.checked)}
+												/>
+												<span className="category-label">{cat.label}</span>
+												<span className="category-desc">{cat.desc}</span>
+											</label>
+										))}
+									</div>
+								</div>
+
+								{/* Path Allowlists Section */}
+								<div className="sandbox-section">
+									<div className="sandbox-section-title">Path Allowlists</div>
+									<div className="path-lists">
+										<div className="path-list-group">
+											<div className="path-list-header">📖 Read Paths</div>
+											<div className="path-input-row">
+												<input
+													className="path-input"
+													placeholder="/Users/you/Projects"
+													value={readPathInput}
+													onChange={(e) => setReadPathInput(e.target.value)}
+													onKeyDown={(e) => {
+														if (e.key === "Enter") handleAddReadPath();
+													}}
+												/>
+												<button
+													type="button"
+													className="path-action-btn"
+													onClick={handleAddReadPath}
+												>
+													Add
+												</button>
+											</div>
+											<div className="path-list-items">
+												{sandboxSettings.read_allowlist?.length > 0 ? (
+													sandboxSettings.read_allowlist.map((path, i) => (
+														<div key={i} className="path-item-row">
+															<div className="path-item">{path}</div>
+															<button
+																type="button"
+																className="path-remove-btn"
+																onClick={() => handleRemoveReadPath(path)}
+																aria-label={`Remove read path ${path}`}
+															>
+																✕
+															</button>
+														</div>
+													))
+												) : (
+													<div className="path-item empty">No paths configured</div>
+												)}
+											</div>
+										</div>
+										<div className="path-list-group">
+											<div className="path-list-header">✍️ Write Paths</div>
+											<div className="path-input-row">
+												<input
+													className="path-input"
+													placeholder="/Users/you/Projects"
+													value={writePathInput}
+													onChange={(e) => setWritePathInput(e.target.value)}
+													onKeyDown={(e) => {
+														if (e.key === "Enter") handleAddWritePath();
+													}}
+												/>
+												<button
+													type="button"
+													className="path-action-btn"
+													onClick={handleAddWritePath}
+												>
+													Add
+												</button>
+											</div>
+											<div className="path-list-items">
+												{sandboxSettings.write_allowlist?.length > 0 ? (
+													sandboxSettings.write_allowlist.map((path, i) => (
+														<div key={i} className="path-item-row">
+															<div className="path-item">{path}</div>
+															<button
+																type="button"
+																className="path-remove-btn"
+																onClick={() => handleRemoveWritePath(path)}
+																aria-label={`Remove write path ${path}`}
+															>
+																✕
+															</button>
+														</div>
+													))
+												) : (
+													<div className="path-item empty">No paths configured</div>
+												)}
+											</div>
+										</div>
+									</div>
+									{sandboxPathError && (
+										<div className="sandbox-error">{sandboxPathError}</div>
+									)}
+								</div>
+
+								{/* Warning for elevated permissions */}
+								{(sandboxSettings.trust_level === "elevated" || sandboxSettings.trust_level === "full") && (
+									<div className="sandbox-warning">
+										⚠️ <strong>Warning:</strong> Elevated permissions allow file modifications and shell commands.
+										The ghost can modify your system. Proceed with caution.
+									</div>
+								)}
+							</div>
+						)}
+
+						<div className="ghost-modal-actions">
+							<button
+								type="button"
+								className="ghost-modal-btn secondary"
+								onMouseDown={stopPropagation}
+								onClick={closeSandboxSettings}
+							>
+								Close
+							</button>
+						</div>
+					</div>
+				</div>
 			)}
 
 			{/* SYSTEM CONTROLS FOOTER - Always visible when key is configured */}

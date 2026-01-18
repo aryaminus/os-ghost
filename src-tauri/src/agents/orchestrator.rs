@@ -6,12 +6,20 @@
 //! - **Reflection**: CriticAgent validates Narrator output in a Generator-Critic loop
 //! - **Self-Correction**: LoopWorkflow tracks failed approaches for plan revision
 //!
+//! ADK Integration:
+//! - **Callbacks**: Before/after hooks for agent execution
+//! - **Monitoring**: InvocationMetrics for each orchestration cycle
+//! - **Events**: EventStream for observability
+//! - **ScopedState**: Temp state cleared at start of each invocation
+//!
 //! MCP Integration (Chapter 10):
 //! - Supports dynamic tool discovery via `get_available_tools()`
 //! - Can invoke browser tools through MCP interface
 //! - Resources are accessible via MCP URIs
 
+use super::callbacks::{CallbackContext, CallbackRegistry};
 use super::critic::CriticAgent;
+use super::events::{AgentEvent, EventActions, EventStream};
 use super::guardrail::GuardrailAgent;
 use super::narrator::NarratorAgent;
 use super::observer::ObserverAgent;
@@ -20,9 +28,11 @@ use super::traits::{
     Agent, AgentContext, AgentMode, AgentOutput, AgentResult, NextAction, PlanningContext,
 };
 use super::verifier::VerifierAgent;
+use super::watchdog::WatchdogAgent;
 use crate::ai_provider::SmartAiRouter;
 use crate::mcp::{McpServer, ResourceDescriptor, ToolDescriptor};
 use crate::memory::{LongTermMemory, SessionMemory};
+use crate::monitoring::{InvocationMetrics, MetricsCollector};
 use crate::workflow::{
     loop_agent::create_adaptive_loop, parallel::create_parallel_checks,
     planning::create_intelligent_pipeline, reflection::create_narrator_with_reflection,
@@ -30,9 +40,10 @@ use crate::workflow::{
     Workflow,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+use tokio::sync::Mutex as AsyncMutex;
 
 /// Shared session memory types
 pub type SharedLongTermMemory = Arc<Mutex<LongTermMemory>>;
@@ -43,6 +54,15 @@ const AUTONOMOUS_LOOP_MAX_ITERATIONS: usize = 5;
 const AUTONOMOUS_LOOP_DELAY_MS: u64 = 2000;
 const PLANNED_LOOP_MAX_ITERATIONS: usize = 10;
 const PLANNED_LOOP_DELAY_MS: u64 = 1500;
+
+/// Atomic counter for unique invocation IDs
+static INVOCATION_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Generate a unique invocation ID
+fn generate_invocation_id() -> String {
+    let counter = INVOCATION_COUNTER.fetch_add(1, Ordering::SeqCst);
+    format!("inv_{}", counter)
+}
 
 /// The main orchestrator that coordinates all agents
 /// Enhanced with Planning, Reflection, and Guardrails capabilities
@@ -60,6 +80,8 @@ pub struct AgentOrchestrator {
     planner: Arc<PlannerAgent>,
     critic: Arc<CriticAgent>,
     guardrail: Arc<GuardrailAgent>,
+    /// Security watchdog agent
+    watchdog: Arc<WatchdogAgent>,
     /// AI router reference for telemetry access
     ai_router: Arc<SmartAiRouter>,
     /// Memory stores
@@ -68,6 +90,10 @@ pub struct AgentOrchestrator {
     /// Agent mode - consolidated runtime toggle (thread-safe via AtomicU8)
     /// 0 = Legacy, 1 = Standard, 2 = Full, 3 = Minimal
     mode: AtomicU8,
+    /// ADK-style callback registry for lifecycle hooks
+    callbacks: Arc<AsyncMutex<CallbackRegistry>>,
+    /// ADK-style metrics collector for monitoring
+    metrics: Arc<MetricsCollector>,
 }
 
 /// Result of a full orchestration cycle
@@ -105,6 +131,7 @@ impl AgentOrchestrator {
         let critic = Arc::new(CriticAgent::new(Arc::clone(&ai_router)));
         // Semantic PII detection is disabled by default; will be enabled dynamically in Full mode
         let guardrail = Arc::new(GuardrailAgent::new(Arc::clone(&ai_router)));
+        let watchdog = Arc::new(WatchdogAgent::new(Arc::clone(&ai_router)));
 
         // Build legacy workflow pipeline: Observer -> Verifier -> Narrator
         let workflow = create_puzzle_pipeline(observer.clone(), verifier.clone(), narrator.clone());
@@ -134,11 +161,28 @@ impl AgentOrchestrator {
             planner,
             critic,
             guardrail,
+            watchdog,
             ai_router,
             session,
             long_term,
             mode: AtomicU8::new(AgentMode::Standard as u8), // Default to Standard mode
+            callbacks: Arc::new(AsyncMutex::new(CallbackRegistry::new())),
+            metrics: Arc::new(MetricsCollector::default()),
         })
+    }
+
+    // -------------------------------------------------------------------------
+    // ADK-Style Accessors
+    // -------------------------------------------------------------------------
+
+    /// Get the callback registry for registering lifecycle hooks
+    pub fn callbacks(&self) -> Arc<AsyncMutex<CallbackRegistry>> {
+        Arc::clone(&self.callbacks)
+    }
+
+    /// Get the metrics collector for monitoring
+    pub fn metrics(&self) -> Arc<MetricsCollector> {
+        Arc::clone(&self.metrics)
     }
 
     // -------------------------------------------------------------------------
@@ -239,11 +283,57 @@ impl AgentOrchestrator {
     /// Run the full agent pipeline
     /// Uses intelligent planning workflow if enabled, otherwise legacy sequential
     /// Applies guardrails for input/output safety filtering
+    /// 
+    /// ADK Integration:
+    /// - Clears temp: scoped state at start of each invocation
+    /// - Runs before/after agent callbacks
+    /// - Records InvocationMetrics for monitoring
     pub async fn process(
         &self,
         context: &AgentContext,
         mcp_server: Option<&crate::mcp::BrowserMcpServer>,
     ) -> AgentResult<OrchestrationResult> {
+        let invocation_id = generate_invocation_id();
+        let start_time = Instant::now();
+        let workflow_name = if self.use_intelligent_mode() { "planning" } else { "sequential" };
+        
+        // ADK: Clear temp-scoped state at start of each invocation
+        if let Ok(session) = self.session.lock() {
+            if let Err(e) = session.clear_temp_state() {
+                tracing::debug!("Failed to clear temp state: {}", e);
+            }
+        }
+
+        // ADK: Run before_agent callbacks
+        let callback_context = CallbackContext::new(context.clone(), "Orchestrator", &invocation_id);
+        if let Some(override_output) = {
+            let registry = self.callbacks.lock().await;
+            registry.run_before_agent(&callback_context).await
+        } {
+            let override_message = override_output.result.clone();
+            let override_confidence = override_output.confidence;
+            let override_next_action = override_output.next_action.clone();
+            let elapsed_ms = start_time.elapsed().as_millis() as u64;
+            let metrics = InvocationMetrics::new(&invocation_id, "Orchestrator")
+                .complete_success(elapsed_ms, override_confidence);
+            self.metrics.record(metrics);
+
+            return Ok(OrchestrationResult {
+                message: override_message,
+                proximity: override_confidence,
+                solved: matches!(override_next_action.as_ref(), Some(NextAction::PuzzleSolved)),
+                show_hint: override_next_action.as_ref().and_then(|action| {
+                    if let NextAction::ShowHint(idx) = action {
+                        Some(*idx)
+                    } else {
+                        None
+                    }
+                }),
+                ghost_state: "idle".to_string(),
+                agent_outputs: vec![override_output],
+            });
+        }
+
         // Apply input guardrails if enabled
         if self.use_guardrails() {
             // Check current URL and content for safety
@@ -257,6 +347,10 @@ impl AgentOrchestrator {
                 .await?;
             if !url_safety.is_safe {
                 tracing::warn!("Guardrail blocked URL: {}", context.current_url);
+                // Record blocked metrics
+                let metrics = InvocationMetrics::new(&invocation_id, "Orchestrator")
+                    .complete_failure(start_time.elapsed().as_millis() as u64, "guardrail_blocked");
+                self.metrics.record(metrics);
                 return Ok(OrchestrationResult {
                     message: "The ghost senses something... unsettling. Let's move elsewhere."
                         .to_string(),
@@ -269,23 +363,87 @@ impl AgentOrchestrator {
             }
         }
 
+        // Security watchdog (lightweight patterns). Run when guardrails are enabled.
+        let mut outputs: Vec<AgentOutput> = Vec::new();
+        if self.use_guardrails() {
+            if let Ok(watchdog_output) = self.watchdog.process(context).await {
+                outputs.push(watchdog_output.clone());
+                if let Some(next_action) = watchdog_output.next_action.as_ref() {
+                    match next_action {
+                        NextAction::Abort => {
+                            let elapsed_ms = start_time.elapsed().as_millis() as u64;
+                            let metrics = InvocationMetrics::new(&invocation_id, "watchdog")
+                                .complete_failure(elapsed_ms, "watchdog_blocked");
+                            self.metrics.record(metrics);
+                            return Ok(OrchestrationResult {
+                                message: "The ghost senses a security risk and refuses to proceed.".to_string(),
+                                proximity: 0.0,
+                                solved: false,
+                                show_hint: None,
+                                ghost_state: "cautious".to_string(),
+                                agent_outputs: vec![watchdog_output.clone()],
+                            });
+                        }
+                        NextAction::PauseForConfirmation => {
+                            let elapsed_ms = start_time.elapsed().as_millis() as u64;
+                            let metrics = InvocationMetrics::new(&invocation_id, "watchdog")
+                                .complete_failure(elapsed_ms, "watchdog_confirmation_required");
+                            self.metrics.record(metrics);
+                            return Ok(OrchestrationResult {
+                                message: "Potential risk detected. Please review before continuing.".to_string(),
+                                proximity: 0.0,
+                                solved: false,
+                                show_hint: None,
+                                ghost_state: "cautious".to_string(),
+                                agent_outputs: vec![watchdog_output.clone()],
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
         // Choose workflow based on mode
-        let outputs = if self.use_intelligent_mode() {
+        let mut workflow_outputs = if self.use_intelligent_mode() {
             tracing::debug!("Using intelligent planning workflow");
             self.planning_workflow.execute(context).await?
         } else {
             tracing::debug!("Using legacy sequential workflow");
             self.workflow.execute(context).await?
         };
+        outputs.append(&mut workflow_outputs);
 
         let mut solved = false;
         let mut show_hint = None;
         let mut proximity = 0.0;
         let mut message = String::new();
         let mut planning_context: Option<PlanningContext> = None;
+        let mut requires_confirmation = false;
+        let mut abort_requested = false;
+        let mut event_stream = EventStream::new(&invocation_id);
 
         // Extract results from outputs
         for output in &outputs {
+            // Create an ADK-style event for this output
+            let mut actions = EventActions::default();
+            if let Some(delta) = output.data.get("state_delta").and_then(|v| v.as_object()) {
+                for (key, value) in delta {
+                    actions.state_delta.insert(key.clone(), value.clone());
+                }
+            }
+            if let Some(next_action) = &output.next_action {
+                match next_action {
+                    NextAction::Abort => actions.terminate = true,
+                    NextAction::PauseForConfirmation => actions.escalate = true,
+                    _ => {}
+                }
+            }
+            event_stream.push(
+                AgentEvent::text(&output.agent_name, &invocation_id, output.result.clone())
+                    .with_actions(actions),
+            );
+
             // Check for tool calls and execute them if MCP is available
             if let Some(tool_call) = output.data.get("tool_call") {
                 if let Some(server) = mcp_server {
@@ -321,6 +479,8 @@ impl AgentOrchestrator {
                 match action {
                     NextAction::PuzzleSolved => solved = true,
                     NextAction::ShowHint(idx) => show_hint = Some(*idx),
+                    NextAction::PauseForConfirmation => requires_confirmation = true,
+                    NextAction::Abort => abort_requested = true,
                     _ => {}
                 }
             }
@@ -330,6 +490,46 @@ impl AgentOrchestrator {
             if output.agent_name == "Narrator" {
                 message = output.result.clone();
             }
+        }
+
+        // Apply any state deltas collected from events
+        let state_delta = event_stream.collect_state_deltas();
+        if !state_delta.is_empty() {
+            if let Ok(session) = self.session.lock() {
+                if let Err(e) = session.apply_state_delta(&state_delta) {
+                    tracing::warn!("Failed to apply state delta: {}", e);
+                }
+            }
+        }
+
+        // If any agent requested abort/confirmation, short-circuit response
+        if abort_requested {
+            let elapsed_ms = start_time.elapsed().as_millis() as u64;
+            let metrics = InvocationMetrics::new(&invocation_id, workflow_name)
+                .complete_failure(elapsed_ms, "aborted");
+            self.metrics.record(metrics);
+            return Ok(OrchestrationResult {
+                message: "The ghost detected a critical risk and halted the attempt.".to_string(),
+                proximity: 0.0,
+                solved: false,
+                show_hint: None,
+                ghost_state: "cautious".to_string(),
+                agent_outputs: outputs,
+            });
+        }
+        if requires_confirmation {
+            let elapsed_ms = start_time.elapsed().as_millis() as u64;
+            let metrics = InvocationMetrics::new(&invocation_id, workflow_name)
+                .complete_failure(elapsed_ms, "confirmation_required");
+            self.metrics.record(metrics);
+            return Ok(OrchestrationResult {
+                message: "The ghost needs confirmation before continuing.".to_string(),
+                proximity: 0.0,
+                solved: false,
+                show_hint: None,
+                ghost_state: "cautious".to_string(),
+                agent_outputs: outputs,
+            });
         }
 
         // Apply reflection if enabled and we have a narrator message
@@ -398,14 +598,53 @@ impl AgentOrchestrator {
             }
         }
 
-        Ok(OrchestrationResult {
+        // ADK: Record invocation metrics
+        let elapsed_ms = start_time.elapsed().as_millis() as u64;
+        let metrics = InvocationMetrics::new(&invocation_id, workflow_name)
+            .complete_success(elapsed_ms, proximity);
+        self.metrics.record(metrics);
+
+        // ADK: Run after_agent callbacks
+        let result = OrchestrationResult {
             message,
             proximity,
             solved,
             show_hint,
             ghost_state,
             agent_outputs: outputs,
-        })
+        };
+        
+        if let Some(override_output) = {
+            let registry = self.callbacks.lock().await;
+            let output = AgentOutput {
+                agent_name: "Orchestrator".to_string(),
+                result: result.message.clone(),
+                confidence: result.proximity,
+                next_action: if result.solved { Some(NextAction::PuzzleSolved) } else { None },
+                data: HashMap::new(),
+            };
+            registry.run_after_agent(&callback_context, &output).await
+        } {
+            let override_message = override_output.result.clone();
+            let override_confidence = override_output.confidence;
+            let override_next_action = override_output.next_action.clone();
+            return Ok(OrchestrationResult {
+                message: override_message,
+                proximity: override_confidence,
+                solved: matches!(override_next_action.as_ref(), Some(NextAction::PuzzleSolved)),
+                show_hint: override_next_action.as_ref().and_then(|action| {
+                    if let NextAction::ShowHint(idx) = action {
+                        Some(*idx)
+                    } else {
+                        None
+                    }
+                }),
+                ghost_state: "idle".to_string(),
+                agent_outputs: vec![override_output],
+            });
+        }
+
+        Ok(result)
     }
 
     /// Run parallel background checks (Safety + Analysis)

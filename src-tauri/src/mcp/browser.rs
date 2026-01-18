@@ -16,6 +16,9 @@
 
 use super::traits::*;
 use super::types::*;
+use crate::action_preview::{VisualPreview, VisualPreviewType};
+use crate::actions::{ActionRiskLevel, PendingAction, ACTION_QUEUE};
+use crate::privacy::PrivacySettings;
 use async_trait::async_trait;
 use serde_json::json;
 use std::collections::HashMap;
@@ -75,6 +78,11 @@ impl BrowserState {
             page.title = title.clone();
             page.body_text = body_text.clone();
             page.timestamp = timestamp;
+        }
+
+        if let Some(rollback) = crate::rollback::get_rollback_manager() {
+            let title_opt = if title.is_empty() { None } else { Some(title.as_str()) };
+            rollback.update_page_state(&url, title_opt);
         }
 
         // Notify subscribers
@@ -666,24 +674,192 @@ impl McpServer for BrowserMcpServer {
 
     async fn invoke_tool(&self, request: ToolRequest) -> ToolResponse {
         let start = std::time::Instant::now();
+        let arguments = request.arguments.clone();
 
         match self.find_tool(&request.tool_name) {
-            Some(tool) => match tool.execute(request.arguments).await {
-                Ok(data) => ToolResponse {
-                    request_id: request.request_id,
-                    success: true,
-                    data,
-                    error: None,
-                    execution_time_ms: start.elapsed().as_millis() as u64,
-                },
-                Err(e) => ToolResponse {
-                    request_id: request.request_id,
-                    success: false,
-                    data: json!(null),
-                    error: Some(e.to_string()),
-                    execution_time_ms: start.elapsed().as_millis() as u64,
-                },
-            },
+            Some(tool) => {
+                let descriptor = tool.descriptor();
+                
+                // Check privacy and autonomy settings for side-effect tools
+                if descriptor.is_side_effect {
+                    let privacy = PrivacySettings::load();
+                    
+                    // Read-only mode blocks all side effects
+                    if privacy.read_only_mode {
+                        return ToolResponse {
+                            request_id: request.request_id,
+                            success: false,
+                            data: json!(null),
+                            error: Some(
+                                "Read-only mode enabled; side-effect tools are disabled"
+                                    .to_string(),
+                            ),
+                            execution_time_ms: start.elapsed().as_millis() as u64,
+                        };
+                    }
+                    
+                    // Check autonomy level
+                    if !privacy.autonomy_level.allows_actions() {
+                        return ToolResponse {
+                            request_id: request.request_id,
+                            success: false,
+                            data: json!(null),
+                            error: Some(
+                                "Observer mode: actions are disabled. Change autonomy level to enable."
+                                    .to_string(),
+                            ),
+                            execution_time_ms: start.elapsed().as_millis() as u64,
+                        };
+                    }
+                    
+                    // Determine risk level based on action type
+                    let risk_level = match descriptor.name.as_str() {
+                        "browser.navigate" => ActionRiskLevel::High,
+                        "browser.inject_effect" | "browser.highlight_text" => ActionRiskLevel::Low,
+                        _ => ActionRiskLevel::Medium,
+                    };
+                    
+                    // Check if confirmation is required
+                    if privacy.autonomy_level.requires_confirmation(risk_level.is_high_risk()) {
+                        // Get target description for the action
+                        let target = match descriptor.name.as_str() {
+                            "browser.navigate" => request.arguments
+                                .get("url")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown URL")
+                                .to_string(),
+                            "browser.inject_effect" => request.arguments
+                                .get("effect")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("effect")
+                                .to_string(),
+                            "browser.highlight_text" => request.arguments
+                                .get("text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("text")
+                                .to_string(),
+                            _ => "action".to_string(),
+                        };
+                        
+                        let description = match descriptor.name.as_str() {
+                            "browser.navigate" => format!("Navigate browser to: {}", target),
+                            "browser.inject_effect" => format!("Apply visual effect: {}", target),
+                            "browser.highlight_text" => format!("Highlight text: {}", target),
+                            _ => format!("Execute: {}", descriptor.name),
+                        };
+                        
+                        // Create pending action for user confirmation
+                        let preview_target = target.clone();
+                        let pending = PendingAction::new(
+                            descriptor.name.clone(),
+                            description,
+                            target.clone(),
+                            risk_level,
+                            None, // reason could come from agent context
+                            Some(request.arguments.clone()),
+                        );
+
+                        // Create an action preview for richer UX (if manager available)
+                        let preview_id = if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+                            let preview = manager.start_preview(&pending);
+
+                            match descriptor.name.as_str() {
+                                "browser.navigate" => {
+                                    manager.set_visual_preview(
+                                        &preview.id,
+                                        VisualPreview {
+                                            preview_type: VisualPreviewType::UrlCard,
+                                            content: preview_target.clone(),
+                                            width: None,
+                                            height: None,
+                                            alt_text: format!("Navigate to {}", preview_target),
+                                        },
+                                    );
+                                }
+                                "browser.highlight_text" => {
+                                    manager.set_visual_preview(
+                                        &preview.id,
+                                        VisualPreview {
+                                            preview_type: VisualPreviewType::TextSelection,
+                                            content: preview_target.clone(),
+                                            width: None,
+                                            height: None,
+                                            alt_text: format!("Highlight '{}'", preview_target),
+                                        },
+                                    );
+                                }
+                                _ => {}
+                            }
+
+                            manager.update_progress(&preview.id, 1.0);
+                            Some(preview.id)
+                        } else {
+                            None
+                        };
+
+                        let action_id = ACTION_QUEUE.add(pending);
+                        
+                        return ToolResponse {
+                            request_id: request.request_id,
+                            success: false,
+                            data: json!({
+                                "status": "pending_confirmation",
+                                "action_id": action_id,
+                                "preview_id": preview_id,
+                                "message": "Action requires user confirmation"
+                            }),
+                            error: None,
+                            execution_time_ms: start.elapsed().as_millis() as u64,
+                        };
+                    }
+                }
+
+                match tool.execute(arguments.clone()).await {
+                    Ok(data) => {
+                        if descriptor.is_side_effect {
+                            if let Some(rollback) = crate::rollback::get_rollback_manager() {
+                                match descriptor.name.as_str() {
+                                    "browser.navigate" => {
+                                        if let Some(url) = arguments.get("url").and_then(|v| v.as_str()) {
+                                            rollback.record_navigation(&request.request_id, url, None);
+                                        }
+                                    }
+                                    "browser.inject_effect" => {
+                                        if let Some(effect) = arguments.get("effect").and_then(|v| v.as_str()) {
+                                            let duration = arguments
+                                                .get("duration")
+                                                .and_then(|v| v.as_u64())
+                                                .unwrap_or(1000);
+                                            rollback.record_effect(&request.request_id, effect, duration);
+                                        }
+                                    }
+                                    "browser.highlight_text" => {
+                                        if let Some(text) = arguments.get("text").and_then(|v| v.as_str()) {
+                                            rollback.record_highlight(&request.request_id, text);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+
+                        ToolResponse {
+                            request_id: request.request_id,
+                            success: true,
+                            data,
+                            error: None,
+                            execution_time_ms: start.elapsed().as_millis() as u64,
+                        }
+                    }
+                    Err(e) => ToolResponse {
+                        request_id: request.request_id,
+                        success: false,
+                        data: json!(null),
+                        error: Some(e.to_string()),
+                        execution_time_ms: start.elapsed().as_millis() as u64,
+                    },
+                }
+            }
             None => ToolResponse {
                 request_id: request.request_id,
                 success: false,
