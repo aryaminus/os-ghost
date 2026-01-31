@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use crate::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 
 /// Blocked patterns that should never appear in outputs (JAILBREAKS / HARMFUL)
 const BLOCKED_PATTERNS: &[&str] = &[
@@ -604,6 +605,12 @@ impl Agent for GuardrailAgent {
         let next_action = if evaluation.is_safe {
             Some(NextAction::Continue)
         } else {
+            record_timeline_event(
+                "Guardrail blocked content",
+                Some(evaluation.reasoning.clone()),
+                TimelineEntryType::Guardrail,
+                TimelineStatus::Denied,
+            );
             Some(NextAction::Stop) // Block processing of unsafe content
         };
 

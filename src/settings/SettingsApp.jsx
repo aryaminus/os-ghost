@@ -10,6 +10,7 @@ import KeysSection from "./sections/KeysSection";
 import AutonomySection from "./sections/AutonomySection";
 import SandboxSection from "./sections/SandboxSection";
 import DeveloperSection from "./sections/DeveloperSection";
+import IntegrationsSection from "./sections/IntegrationsSection";
 
 const DEFAULT_SETTINGS_STATE = {
   privacy: null,
@@ -20,6 +21,12 @@ const DEFAULT_SETTINGS_STATE = {
   sandboxSettings: null,
   systemSettings: null,
   captureSettings: null,
+  schedulerSettings: null,
+  pairingStatus: null,
+  permissionDiagnostics: null,
+  recentTimeline: [],
+  calendarSettings: null,
+  notes: [],
 };
 
 const SECTIONS = Object.freeze([
@@ -29,6 +36,7 @@ const SECTIONS = Object.freeze([
   { id: "keys", label: "Keys & Models" },
   { id: "autonomy", label: "Autonomy" },
   { id: "sandbox", label: "Sandbox" },
+  { id: "integrations", label: "Integrations" },
   { id: "developer", label: "Developer" },
 ]);
 
@@ -59,9 +67,17 @@ const SettingsApp = () => {
             chromePath: state.system_status.chrome_path,
             extensionConnected: state.system_status.extension_connected,
             extensionOperational: state.system_status.extension_operational,
+            lastExtensionHeartbeat: state.system_status.last_extension_heartbeat,
+            extensionProtocolVersion: state.system_status.extension_protocol_version,
+            extensionVersion: state.system_status.extension_version,
+            extensionId: state.system_status.extension_id,
+            extensionCapabilities: state.system_status.extension_capabilities,
+            mcpBrowserConnected: state.system_status.mcp_browser_connected,
+            lastPageUpdate: state.system_status.last_page_update,
             apiKeyConfigured: state.system_status.api_key_configured,
             apiKeySource: state.system_status.api_key_source,
             lastKnownUrl: state.system_status.last_known_url,
+            activeProvider: state.system_status.active_provider,
             currentMode: state.system_status.current_mode,
             preferredMode: state.system_status.preferred_mode,
             autoPuzzleFromCompanion: state.system_status.auto_puzzle_from_companion,
@@ -77,6 +93,12 @@ const SettingsApp = () => {
         sandboxSettings: state.sandbox_settings,
         systemSettings: state.system_settings,
         captureSettings: state.capture_settings,
+        schedulerSettings: state.scheduler_settings,
+        pairingStatus: state.pairing_status,
+        permissionDiagnostics: state.permission_diagnostics,
+        recentTimeline: state.recent_timeline || [],
+        calendarSettings: state.calendar_settings,
+        notes: state.notes || [],
       });
     }
     if (!hasLoadedRef.current) {
@@ -208,6 +230,12 @@ const SettingsApp = () => {
               )}
               {activeSection === "sandbox" && (
                 <SandboxSection
+                  settingsState={settingsState}
+                  onSettingsUpdated={handleSettingsUpdated}
+                />
+              )}
+              {activeSection === "integrations" && (
+                <IntegrationsSection
                   settingsState={settingsState}
                   onSettingsUpdated={handleSettingsUpdated}
                 />

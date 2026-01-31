@@ -12,6 +12,8 @@ const SETTINGS_FILE: &str = "system_settings.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemSettings {
+    #[serde(default)]
+    pub monitor_enabled: bool,
     pub monitor_interval_secs: u64,
     pub monitor_idle_secs: u64,
     pub monitor_allow_hidden: bool,
@@ -26,6 +28,7 @@ pub struct SystemSettings {
 impl Default for SystemSettings {
     fn default() -> Self {
         Self {
+            monitor_enabled: true,
             monitor_interval_secs: 60,
             monitor_idle_secs: 15 * 60,
             monitor_allow_hidden: false,
@@ -77,6 +80,7 @@ pub fn get_system_settings() -> SystemSettings {
 
 #[tauri::command]
 pub fn update_system_settings(
+    monitor_enabled: bool,
     monitor_interval_secs: u64,
     monitor_idle_secs: u64,
     monitor_allow_hidden: bool,
@@ -87,6 +91,7 @@ pub fn update_system_settings(
     global_shortcut_enabled: bool,
 ) -> Result<SystemSettings, String> {
     let mut settings = SystemSettings::load();
+    settings.monitor_enabled = monitor_enabled;
     settings.monitor_interval_secs = monitor_interval_secs.max(10).min(3600);
     settings.monitor_idle_secs = monitor_idle_secs.max(60).min(60 * 60 * 12);
     settings.monitor_allow_hidden = monitor_allow_hidden;
@@ -172,6 +177,14 @@ pub fn set_global_shortcut_enabled(
 
     let mut settings = settings;
     settings.global_shortcut_enabled = enabled;
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_monitor_enabled(enabled: bool) -> Result<SystemSettings, String> {
+    let mut settings = SystemSettings::load();
+    settings.monitor_enabled = enabled;
     settings.save().map_err(|e| e.to_string())?;
     Ok(settings)
 }

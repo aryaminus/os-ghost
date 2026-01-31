@@ -55,6 +55,36 @@ const GearIcon = () => (
   </svg>
 );
 
+const HistoryIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="butt" strokeLinejoin="miter">
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <path d="M12 8v5l3 2" />
+  </svg>
+);
+
+const KeyIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="butt" strokeLinejoin="miter">
+    <rect x="4" y="9" width="6" height="6" rx="1" />
+    <path d="M10 12h10" />
+    <path d="M16 10v4" />
+  </svg>
+);
+
+const LinkIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="butt" strokeLinejoin="miter">
+    <rect x="4" y="4" width="6" height="6" rx="1" />
+    <rect x="14" y="14" width="6" height="6" rx="1" />
+    <path d="M10 10l4 4" />
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6 6 18" />
+    <path d="M6 6 18 18" />
+  </svg>
+);
+
 /**
  * Status dot indicator
  */
@@ -112,7 +142,10 @@ const Ghost = () => {
     error: "",
     isLoading: false,
     isOpen: false,
+    includeContext: true,
   });
+  const [recentTimeline, setRecentTimeline] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   // Derived state
   const isCompanionMode = systemStatus?.currentMode === "companion";
@@ -123,6 +156,7 @@ const Ghost = () => {
     !!privacySettings?.privacy_notice_acknowledged &&
     !privacySettings?.read_only_mode;
   const extensionConnectedValue = extensionConnected || systemStatus?.extensionConnected;
+  const extensionHealthy = systemStatus?.extensionOperational ?? extensionConnectedValue;
   const keyConfigured = !!systemStatus?.apiKeyConfigured;
   const autoMode = !!autonomySettings?.autoPuzzleFromCompanion;
 
@@ -256,6 +290,44 @@ const Ghost = () => {
     return () => clearTimeout(id);
   }, [quickAsk.response]);
 
+  useEffect(() => {
+    let mounted = true;
+    const loadTimeline = async () => {
+      try {
+        const entries = await invoke("get_timeline", { limit: 6, offset: 0 });
+        if (mounted && Array.isArray(entries)) {
+          setRecentTimeline(entries);
+        }
+      } catch (err) {
+        console.error("Failed to load timeline", err);
+      }
+    };
+    loadTimeline();
+    const timer = setInterval(loadTimeline, 60000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const aggregatedTimeline = useMemo(() => {
+    const output = [];
+    for (const entry of recentTimeline) {
+      const last = output[output.length - 1];
+      if (
+        last &&
+        last.summary === entry.summary &&
+        last.reason === entry.reason &&
+        last.status === entry.status
+      ) {
+        last.count += 1;
+        continue;
+      }
+      output.push({ ...entry, count: 1 });
+    }
+    return output;
+  }, [recentTimeline]);
+
   // Handlers
   const openSettings = useCallback((section = "general") => {
     invoke("open_settings", { section });
@@ -288,6 +360,7 @@ const Ghost = () => {
       readOnlyMode: !privacySettings.read_only_mode,
       autonomyLevel: privacySettings.autonomy_level || "autonomous",
       redactPii: privacySettings.redact_pii !== false,
+      previewPolicy: privacySettings.preview_policy || "always",
     }, null);
     if (updated) setPrivacySettings(updated);
   }, [privacySettings]);
@@ -334,14 +407,24 @@ const Ghost = () => {
       if (!quickAsk.prompt.trim()) return;
       setQuickAsk((prev) => ({ ...prev, isLoading: true, error: "" }));
       try {
-        const response = await invoke("quick_ask", { prompt: quickAsk.prompt.trim() });
-        setQuickAsk({ prompt: "", response, error: "", isLoading: false, isOpen: false });
+        const response = await invoke("quick_ask", {
+          prompt: quickAsk.prompt.trim(),
+          includeContext: quickAsk.includeContext,
+        });
+        setQuickAsk({
+          prompt: "",
+          response,
+          error: "",
+          isLoading: false,
+          isOpen: false,
+          includeContext: quickAsk.includeContext,
+        });
       } catch (err) {
         const message = typeof err === "string" ? err : err?.message || "Quick ask failed";
         setQuickAsk((prev) => ({ ...prev, isLoading: false, error: message }));
       }
     },
-    [quickAsk.prompt]
+    [quickAsk.prompt, quickAsk.includeContext]
   );
 
   // Compute system status for display
@@ -350,8 +433,9 @@ const Ghost = () => {
     if (!hasConsent) return { status: "warning", label: "Consent needed" };
     if (readOnlyMode) return { status: "info", label: "Read-only" };
     if (!extensionConnectedValue) return { status: "warning", label: "No extension" };
+    if (!extensionHealthy) return { status: "warning", label: "Extension stale" };
     return { status: "ok", label: isCompanionMode ? "Companion" : "Game" };
-  }, [keyConfigured, hasConsent, readOnlyMode, extensionConnectedValue, isCompanionMode]);
+  }, [keyConfigured, hasConsent, readOnlyMode, extensionConnectedValue, extensionHealthy, isCompanionMode]);
 
   // Compute primary action based on state
   const primaryAction = useMemo(() => {
@@ -457,18 +541,48 @@ const Ghost = () => {
 
       {/* Main content: Sprite + Bubble */}
       <main className="ghost-body">
-        {/* ASCII Sprite */}
-        <button
-          type="button"
-          className={`ghost-sprite state-${gameState.state}`}
-          onClick={handleToggleMode}
-          aria-label={`Toggle mode. Currently ${isCompanionMode ? "companion" : "game"} mode.`}
-          title="Click to toggle mode"
-        >
-          <pre className="ascii-art" aria-hidden="true">
-            {GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle}
-          </pre>
-        </button>
+        <div className="ghost-sprite-column">
+          <button
+            type="button"
+            className={`ghost-sprite state-${gameState.state}`}
+            onClick={handleToggleMode}
+            aria-label={`Toggle mode. Currently ${isCompanionMode ? "companion" : "game"} mode.`}
+            title="Click to toggle mode"
+          >
+            <pre className="ascii-art" aria-hidden="true">
+              {GHOST_SPRITES[gameState.state] || GHOST_SPRITES.idle}
+            </pre>
+          </button>
+          <div className="ghost-side-actions">
+            <button
+              type="button"
+              className="ghost-icon-btn"
+              onClick={() => openSettings("integrations")}
+              aria-label="Open integrations"
+              title="Integrations"
+            >
+              <LinkIcon />
+            </button>
+            <button
+              type="button"
+              className="ghost-icon-btn"
+              onClick={() => openSettings("keys")}
+              aria-label="Open keys and models"
+              title="Keys & Models"
+            >
+              <KeyIcon />
+            </button>
+            <button
+              type="button"
+              className={`ghost-icon-btn ${showHistory ? "active" : ""}`}
+              onClick={() => setShowHistory((prev) => !prev)}
+              aria-label="Toggle recent activity"
+              title="Recent activity"
+            >
+              <HistoryIcon />
+            </button>
+          </div>
+        </div>
 
         {/* Speech Bubble */}
         <div className="dialogue-box" role="status" aria-live="polite">
@@ -496,6 +610,9 @@ const Ghost = () => {
           {/* Companion suggestion */}
           {companionBehavior?.suggestion && (
             <div className="companion-line">{companionBehavior.suggestion}</div>
+          )}
+          {companionBehavior?.trigger_context && (
+            <div className="companion-line subtle">Why: {companionBehavior.trigger_context}</div>
           )}
 
           {/* Quick Ask error */}
@@ -551,6 +668,16 @@ const Ghost = () => {
               >
                 {quickAsk.isLoading ? "..." : "Send"}
               </button>
+              <label className="quick-ask-toggle">
+                <input
+                  type="checkbox"
+                  checked={quickAsk.includeContext}
+                  onChange={(e) =>
+                    setQuickAsk((prev) => ({ ...prev, includeContext: e.target.checked }))
+                  }
+                />
+                <span>Include context</span>
+              </label>
             </form>
           )}
 
@@ -559,10 +686,63 @@ const Ghost = () => {
             <button
               type="button"
               className="mini-btn subtle"
-              onClick={() => setQuickAsk({ prompt: "", response: "", error: "", isLoading: false, isOpen: false })}
+              onClick={() => setQuickAsk({ prompt: "", response: "", error: "", isLoading: false, isOpen: false, includeContext: true })}
             >
               Clear response
             </button>
+          )}
+
+          {showHistory && (
+            <>
+              <button
+                type="button"
+                className="ghost-overlay"
+                onClick={() => setShowHistory(false)}
+                aria-label="Close recent activity"
+              />
+              <div
+                className="timeline-popover"
+                role="dialog"
+                aria-label="Recent activity"
+                onClick={(event) => event.stopPropagation()}
+              >
+              <div className="timeline-header">
+                <span>Recent activity</span>
+                <div className="timeline-actions">
+                  <button
+                    type="button"
+                    className="ghost-icon-btn compact"
+                    onClick={() => setShowHistory(false)}
+                    aria-label="Close recent activity"
+                    title="Close"
+                  >
+                    <CloseIcon />
+                  </button>
+                </div>
+              </div>
+              {aggregatedTimeline.length === 0 ? (
+                <div className="timeline-empty">No recent activity.</div>
+              ) : (
+                <div className="timeline-list">
+                  {aggregatedTimeline.map((entry) => (
+                    <div key={entry.id} className="timeline-item">
+                      <div className="timeline-summary">
+                        {entry.summary}
+                        {entry.count > 1 && (
+                          <span className="timeline-count">×{entry.count}</span>
+                        )}
+                      </div>
+                      {entry.reason && <div className="timeline-reason">{entry.reason}</div>}
+                      <div className="timeline-meta">
+                        <span>{new Date(entry.timestamp * 1000).toLocaleTimeString()}</span>
+                        <span className="timeline-status">{entry.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              </div>
+            </>
           )}
 
           {/* Feedback row - always visible when there's content */}

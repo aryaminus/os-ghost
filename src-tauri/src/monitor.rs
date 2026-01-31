@@ -82,6 +82,11 @@ pub async fn start_monitor_loop(
         // Wait for next tick
         tokio::time::sleep(Duration::from_secs(settings.monitor_interval_secs)).await;
 
+        if !settings.monitor_enabled {
+            tracing::debug!("Monitor: disabled in settings; skipping");
+            continue;
+        }
+
         // Pause monitoring when window is hidden
         if !settings.monitor_allow_hidden {
             if let Some(window) = app.get_webview_window("main") {

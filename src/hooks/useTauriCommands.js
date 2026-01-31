@@ -135,9 +135,17 @@ export function useGhostGame() {
 		chromePath: null,
 		extensionConnected: false,
 		extensionOperational: false,
+		lastExtensionHeartbeat: null,
+		extensionProtocolVersion: null,
+		extensionVersion: null,
+		extensionId: null,
+		extensionCapabilities: null,
+		mcpBrowserConnected: false,
+		lastPageUpdate: null,
 		apiKeyConfigured: false,
 		apiKeySource: "none", // "none" | "env" | "user"
 		lastKnownUrl: null,
+		activeProvider: null,
 		currentMode: "companion",
 		preferredMode: "companion",
 		autoPuzzleFromCompanion: true,
@@ -194,9 +202,17 @@ export function useGhostGame() {
 				chromePath: status.chrome_path,
 				extensionConnected: status.extension_connected,
 				extensionOperational: status.extension_operational,
+				lastExtensionHeartbeat: status.last_extension_heartbeat,
+				extensionProtocolVersion: status.extension_protocol_version,
+				extensionVersion: status.extension_version,
+				extensionId: status.extension_id,
+				extensionCapabilities: status.extension_capabilities,
+				mcpBrowserConnected: status.mcp_browser_connected,
+				lastPageUpdate: status.last_page_update,
 				apiKeyConfigured: status.api_key_configured,
 				apiKeySource: status.api_key_source || "none",
 				lastKnownUrl: status.last_known_url,
+				activeProvider: status.active_provider,
 				currentMode: status.current_mode,
 				preferredMode: status.preferred_mode,
 				autoPuzzleFromCompanion: status.auto_puzzle_from_companion,
@@ -554,6 +570,20 @@ export function useGhostGame() {
 					autoPuzzleFromCompanion:
 						status.auto_puzzle_from_companion ??
 						prev.autoPuzzleFromCompanion,
+					extensionConnected: status.extension_connected ?? prev.extensionConnected,
+					extensionOperational: status.extension_operational ?? prev.extensionOperational,
+					lastExtensionHeartbeat: status.last_extension_heartbeat ?? prev.lastExtensionHeartbeat,
+					extensionProtocolVersion:
+						status.extension_protocol_version ?? prev.extensionProtocolVersion,
+					extensionVersion: status.extension_version ?? prev.extensionVersion,
+					extensionId: status.extension_id ?? prev.extensionId,
+					extensionCapabilities:
+						status.extension_capabilities ?? prev.extensionCapabilities,
+					mcpBrowserConnected:
+						status.mcp_browser_connected ?? prev.mcpBrowserConnected,
+					lastPageUpdate: status.last_page_update ?? prev.lastPageUpdate,
+					lastKnownUrl: status.last_known_url ?? prev.lastKnownUrl,
+					activeProvider: status.active_provider ?? prev.activeProvider,
 					// Preserve extension connection state as it might be handled separately
 					// or merge if backend sends it authoritative
 				}));

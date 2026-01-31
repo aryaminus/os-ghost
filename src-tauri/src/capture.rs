@@ -108,6 +108,13 @@ pub fn capture_region(x: i32, y: i32, width: u32, height: u32) -> Result<String>
     Ok(base64_image)
 }
 
+pub fn check_screen_recording_permission() -> Result<(), String> {
+    match capture_primary_monitor() {
+        Ok(_) => Ok(()),
+        Err(err) => Err(format!("Screen recording blocked: {}", err)),
+    }
+}
+
 /// Tauri command to capture and return screenshot
 /// Captures the screen without hiding the window - the ghost appearing in the capture
 /// is acceptable and provides better UX than flashing the UI

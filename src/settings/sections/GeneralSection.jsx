@@ -27,6 +27,7 @@ const GeneralSection = ({
   const privacy = settingsState.privacy;
   const systemStatus = settingsState.systemStatus;
   const systemSettings = settingsState.systemSettings;
+  const recentTimeline = settingsState.recentTimeline || [];
   const [shortcutEnabled, setShortcutEnabled] = useState(
     !!settingsState.systemSettings?.global_shortcut_enabled
   );
@@ -34,6 +35,8 @@ const GeneralSection = ({
   const [shortcutValue, setShortcutValue] = useState(
     settingsState.systemSettings?.global_shortcut || "CmdOrCtrl+Shift+G"
   );
+  const [healthReport, setHealthReport] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
 
   useEffect(() => {
     setShortcutEnabled(!!settingsState.systemSettings?.global_shortcut_enabled);
@@ -49,6 +52,19 @@ const GeneralSection = ({
   const handleModeChange = async (event) => {
     await invoke("set_app_mode", { mode: event.target.value, persistPreference: true });
     onSettingsUpdated?.();
+  };
+
+  const runHealthCheck = async () => {
+    setHealthLoading(true);
+    try {
+      const report = await invoke("health_check");
+      setHealthReport(report);
+    } catch (err) {
+      console.error("Health check failed", err);
+      setHealthReport({ error: "Health check failed" });
+    } finally {
+      setHealthLoading(false);
+    }
   };
 
   return (
@@ -115,6 +131,20 @@ const GeneralSection = ({
               {systemStatus?.extensionConnected ? "Connected" : "Not connected"}
             </span>
           </div>
+          <div className="card-row">
+            <span className="card-label">Extension health</span>
+            <span
+              className={`status-pill ${systemStatus?.extensionOperational ? "ok" : "warn"}`}
+            >
+              {systemStatus?.extensionOperational ? "Healthy" : "Stale"}
+            </span>
+          </div>
+          <div className="card-row">
+            <span className="card-label">Browser MCP</span>
+            <span className={`status-pill ${systemStatus?.mcpBrowserConnected ? "ok" : "warn"}`}>
+              {systemStatus?.mcpBrowserConnected ? "Connected" : "Not connected"}
+            </span>
+          </div>
           <p className="card-note">
             Connect the browser extension for real-time context.
           </p>
@@ -143,6 +173,60 @@ const GeneralSection = ({
         <p className="card-note">
           Reveal advanced diagnostics, action queues, and sandbox tools.
         </p>
+      </div>
+
+      <div className="settings-card">
+        <div className="card-row">
+          <span className="card-label">Active provider</span>
+          <span className="card-value">{systemStatus?.activeProvider || "Unknown"}</span>
+        </div>
+        <p className="card-note">Provider selection updates automatically based on availability.</p>
+      </div>
+
+      <div className="settings-card">
+        <h3>System health</h3>
+        <p className="card-note">Run a quick diagnostics sweep.</p>
+        <div className="button-row">
+          <button type="button" className="ghost-button" onClick={runHealthCheck} disabled={healthLoading}>
+            {healthLoading ? "Checking…" : "Run health check"}
+          </button>
+        </div>
+        {healthReport?.error && <span className="status-pill error">{healthReport.error}</span>}
+        {healthReport?.system_status && (
+          <div className="list-grid">
+            <div className="list-item">
+              <strong>Extension</strong>
+              <span className="status-pill neutral">
+                {healthReport.system_status.extension_connected ? "Connected" : "Disconnected"}
+              </span>
+            </div>
+            <div className="list-item">
+              <strong>Screen recording</strong>
+              <span className="status-pill neutral">
+                {healthReport.permissions?.screen_recording?.status || "unknown"}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <h3>Recent activity</h3>
+        {recentTimeline.length === 0 ? (
+          <p className="card-note">No recent timeline entries.</p>
+        ) : (
+          <div className="list-grid">
+            {recentTimeline.map((entry) => (
+              <div key={entry.id} className="list-item">
+                <div>
+                  <strong>{entry.summary}</strong>
+                  {entry.reason && <div className="card-note">{entry.reason}</div>}
+                </div>
+                <span className="status-pill neutral">{entry.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="settings-card">
@@ -237,6 +321,7 @@ GeneralSection.propTypes = {
     privacy: PropTypes.object,
     systemStatus: PropTypes.object,
     systemSettings: PropTypes.object,
+    recentTimeline: PropTypes.array,
   }).isRequired,
   devModeEnabled: PropTypes.bool.isRequired,
   onToggleDevMode: PropTypes.func.isRequired,

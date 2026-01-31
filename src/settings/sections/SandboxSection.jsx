@@ -116,6 +116,15 @@ const SandboxSection = ({ settingsState, onSettingsUpdated }) => {
         <p className="card-note">
           Trust score: {sandbox.trust_score} · Safe ops: {sandbox.safe_operations_count}
         </p>
+        <div className="button-row">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => updateSandbox("apply_sandbox_baseline", {})}
+          >
+            Apply recommended baseline
+          </button>
+        </div>
       </div>
 
       <div className="settings-card">

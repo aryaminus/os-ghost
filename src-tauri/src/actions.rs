@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
+use crate::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 
 /// Unique action ID counter
 static ACTION_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -261,17 +262,35 @@ pub fn get_pending_actions() -> Vec<PendingAction> {
 /// Approve a pending action
 #[tauri::command]
 pub fn approve_action(action_id: u64) -> Result<PendingAction, String> {
-    ACTION_QUEUE
+    let action = ACTION_QUEUE
         .approve(action_id)
-        .ok_or_else(|| format!("Action {} not found or already processed", action_id))
+        .ok_or_else(|| format!("Action {} not found or already processed", action_id))?;
+
+    record_timeline_event(
+        &format!("Action approved: {}", action.action_type),
+        action.reason.clone(),
+        TimelineEntryType::Action,
+        TimelineStatus::Approved,
+    );
+
+    Ok(action)
 }
 
 /// Deny a pending action
 #[tauri::command]
 pub fn deny_action(action_id: u64) -> Result<PendingAction, String> {
-    ACTION_QUEUE
+    let action = ACTION_QUEUE
         .deny(action_id)
-        .ok_or_else(|| format!("Action {} not found or already processed", action_id))
+        .ok_or_else(|| format!("Action {} not found or already processed", action_id))?;
+
+    record_timeline_event(
+        &format!("Action denied: {}", action.action_type),
+        action.reason.clone(),
+        TimelineEntryType::Action,
+        TimelineStatus::Denied,
+    );
+
+    Ok(action)
 }
 
 /// Get action history (audit log)
@@ -391,12 +410,24 @@ pub async fn execute_approved_action(
         Ok(value) => value,
         Err(err) => {
             ACTION_QUEUE.mark_failed(action_id);
+            record_timeline_event(
+                &format!("Action failed: {}", action.action_type),
+                Some(err.clone()),
+                TimelineEntryType::Action,
+                TimelineStatus::Failed,
+            );
             return Err(err);
         }
     };
 
     // Mark as executed
     ACTION_QUEUE.mark_executed(action_id);
+    record_timeline_event(
+        &format!("Action executed: {}", action.action_type),
+        action.reason.clone(),
+        TimelineEntryType::Action,
+        TimelineStatus::Executed,
+    );
 
     Ok(result)
 }

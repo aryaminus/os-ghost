@@ -5,6 +5,7 @@ import { useActionManagement } from "../../hooks/useActionManagement";
 const DeveloperSection = ({ settingsState }) => {
   const autonomyLevel = settingsState.privacy?.autonomy_level || "observer";
   const apiKeyConfigured = !!settingsState.systemStatus?.apiKeyConfigured;
+  const recentTimeline = settingsState.recentTimeline || [];
 
   const {
     pendingActions,
@@ -28,6 +29,10 @@ const DeveloperSection = ({ settingsState }) => {
 
   const handleResetTokenUsage = async () => {
     await invoke("reset_token_usage");
+  };
+
+  const handleClearTimeline = async () => {
+    await invoke("clear_timeline");
   };
 
   return (
@@ -143,6 +148,30 @@ const DeveloperSection = ({ settingsState }) => {
         </div>
       </div>
 
+      <div className="settings-card">
+        <h3>Timeline</h3>
+        {recentTimeline.length === 0 ? (
+          <p className="card-note">No recent timeline entries.</p>
+        ) : (
+          <div className="list-grid">
+            {recentTimeline.map((entry) => (
+              <div key={entry.id} className="list-item">
+                <div>
+                  <strong>{entry.summary}</strong>
+                  {entry.reason && <div className="card-note">{entry.reason}</div>}
+                </div>
+                <span className="status-pill neutral">{entry.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="button-row">
+          <button type="button" className="ghost-button" onClick={handleClearTimeline}>
+            Clear timeline
+          </button>
+        </div>
+      </div>
+
       {modelCapabilities && (
         <div className="settings-card">
           <h3>Model capabilities</h3>
@@ -168,6 +197,7 @@ DeveloperSection.propTypes = {
   settingsState: PropTypes.shape({
     privacy: PropTypes.object,
     systemStatus: PropTypes.object,
+    recentTimeline: PropTypes.array,
   }).isRequired,
 };
 

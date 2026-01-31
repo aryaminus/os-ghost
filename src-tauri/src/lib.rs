@@ -10,12 +10,18 @@ pub mod capture;
 pub mod game_state;
 pub mod gemini_client;
 pub mod history;
+pub mod integrations;
 pub mod ipc;
 pub mod monitor;
 pub mod monitoring;
 pub mod ollama_client;
+pub mod pairing;
+pub mod permissions;
 pub mod privacy;
+pub mod system_status;
 pub mod system_settings;
+pub mod scheduler;
+pub mod timeline;
 pub mod rollback;
 pub mod utils;
 pub mod window;
@@ -29,12 +35,13 @@ pub mod workflow;
 pub mod mcp;
 
 use ai_provider::SmartAiRouter;
-use game_state::EffectQueue;
+use game_state::{EffectMessage, EffectQueue};
 use gemini_client::GeminiClient;
 use ipc::Puzzle;
 use memory::LongTermMemory;
 use ollama_client::OllamaClient;
 use std::sync::{Arc, Mutex};
+use std::sync::RwLock;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
 use std::str::FromStr;
@@ -256,6 +263,22 @@ pub fn run() {
                 .map_err(|e| e.to_string())?;
             let ghost_reset = MenuItem::with_id(app, "ghost_reset", "Reset Game", true, None::<&str>)
                 .map_err(|e| e.to_string())?;
+            let ghost_ping_extension = MenuItem::with_id(
+                app,
+                "ghost_ping_extension",
+                "Ping Extension",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let ghost_toggle_monitoring = MenuItem::with_id(
+                app,
+                "ghost_toggle_monitoring",
+                "Toggle Monitoring",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
             let ghost_submenu = Submenu::with_items(
                 app,
                 "Ghost",
@@ -267,6 +290,8 @@ pub fn run() {
                     &ghost_focus,
                     &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
                     &ghost_reset,
+                    &ghost_ping_extension,
+                    &ghost_toggle_monitoring,
                 ],
             )
             .map_err(|e| e.to_string())?;
@@ -328,6 +353,38 @@ pub fn run() {
                 "Privacy",
                 true,
                 &[&privacy_toggle, &privacy_settings],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let status_health = MenuItem::with_id(
+                app,
+                "status_health",
+                "Run Health Check",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let status_extensions = MenuItem::with_id(
+                app,
+                "status_extensions",
+                "Open Extensions",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let status_privacy = MenuItem::with_id(
+                app,
+                "status_privacy",
+                "Open Privacy",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let status_submenu = Submenu::with_items(
+                app,
+                "Status",
+                true,
+                &[&status_health, &status_extensions, &status_privacy],
             )
             .map_err(|e| e.to_string())?;
 
@@ -402,6 +459,7 @@ pub fn run() {
                     &mode_submenu,
                     &autonomy_submenu,
                     &privacy_submenu,
+                    &status_submenu,
                     &edit_submenu,
                     &window_submenu,
                 ],
@@ -477,6 +535,22 @@ pub fn run() {
                             let _ = crate::game_state::reset_game().await;
                         });
                     }
+                    "ghost_ping_extension" => {
+                        let effect_queue = app.state::<Arc<EffectQueue>>();
+                        effect_queue.push(EffectMessage {
+                            action: "ping".to_string(),
+                            effect: None,
+                            duration: None,
+                            text: None,
+                            url: None,
+                        });
+                    }
+                    "ghost_toggle_monitoring" => {
+                        let mut settings = system_settings::SystemSettings::load();
+                        settings.monitor_enabled = !settings.monitor_enabled;
+                        let _ = settings.save();
+                        emit_settings_update(app);
+                    }
                     "mode_companion" => {
                         let session = app.state::<Arc<memory::SessionMemory>>();
                         let _ = session.set_preferred_mode(memory::AppMode::Companion);
@@ -508,8 +582,18 @@ pub fn run() {
                             !settings.read_only_mode,
                             None,
                             None,
+                            None,
                         );
                         emit_settings_update(app);
+                    }
+                    "status_health" => {
+                        let _ = crate::ipc::open_settings(Some("general".to_string()), app.clone());
+                    }
+                    "status_extensions" => {
+                        let _ = crate::ipc::open_settings(Some("extensions".to_string()), app.clone());
+                    }
+                    "status_privacy" => {
+                        let _ = crate::ipc::open_settings(Some("privacy".to_string()), app.clone());
                     }
                     _ => {}
                 }
@@ -598,6 +682,11 @@ pub fn run() {
             // Register router for IPC commands
             app.manage(ai_router.clone());
 
+            // Initialize system status store
+            let status_store = Arc::new(RwLock::new(system_status::SystemStatusStore::default()));
+            system_status::init_system_status_store(status_store.clone());
+            app.manage(status_store);
+
             // Create shared memory instances (used by both Orchestrator and Monitor)
             // Note: We use std::sync::Mutex here because:
             // 1. The underlying sled database is already thread-safe
@@ -610,6 +699,7 @@ pub fn run() {
 
             let shared_ltm = Arc::new(Mutex::new(LongTermMemory::new(store.clone())));
             let shared_session = Arc::new(Mutex::new(memory::SessionMemory::new(store.clone())));
+            let notes_store = Arc::new(integrations::NotesStore::new(store.clone()));
 
             // Register session memory as managed state for IPC commands
             // Create a separate Arc for SessionMemory to be used directly by bridge
@@ -619,6 +709,7 @@ pub fn run() {
             // Register LongTermMemory as managed state for IPC commands (HITL feedback)
             let ltm_for_ipc = Arc::new(memory::LongTermMemory::new(store));
             app.manage(ltm_for_ipc);
+            app.manage(notes_store);
 
             // Create Orchestrator with shared memory (uses AI router)
             match crate::agents::AgentOrchestrator::new(
@@ -635,6 +726,10 @@ pub fn run() {
 
             // Initialize Autonomous Task State (for controlling background loops)
             app.manage(ipc::AutonomousTask(tokio::sync::Mutex::new(None)));
+
+            // Initialize scheduler state
+            let scheduler_state = Arc::new(RwLock::new(scheduler::SchedulerState::default()));
+            app.manage(scheduler_state.clone());
 
             // Initialize EffectQueue for browser visual effects
             app.manage(Arc::new(EffectQueue::default()));
@@ -696,6 +791,7 @@ pub fn run() {
 
             // Start System Status Checker Loop (Background Task)
             let status_handle = app.handle().clone();
+            let status_router = ai_router.clone();
             tauri::async_runtime::spawn(async move {
                 // Check every 30 seconds (less frequent than hints)
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
@@ -704,11 +800,26 @@ pub fn run() {
 
                 // Initial check immediate
                 let session = status_handle.state::<Arc<memory::SessionMemory>>();
+                if let Some(store) = crate::system_status::get_system_status_store() {
+                    if let Ok(mut guard) = store.write() {
+                        guard.active_provider = Some(status_router.active_provider().to_string());
+                    }
+                }
                 let status = ipc::detect_system_status(Some(session.as_ref()));
                 let _ = status_handle.emit("system_status_update", status);
 
                 loop {
                     interval.tick().await;
+                    let now = crate::utils::current_timestamp();
+                    if let Some(store) = crate::system_status::get_system_status_store() {
+                        if let Ok(mut guard) = store.write() {
+                            if let Some(last) = guard.last_extension_heartbeat {
+                                let timeout = crate::system_status::HEARTBEAT_TIMEOUT_SECS;
+                                guard.extension_operational = now.saturating_sub(last) <= timeout;
+                            }
+                            guard.active_provider = Some(status_router.active_provider().to_string());
+                        }
+                    }
                     let session = status_handle.state::<Arc<memory::SessionMemory>>();
                     let status = ipc::detect_system_status(Some(session.as_ref()));
                     // Always emit for now so UI is always in sync
@@ -717,6 +828,9 @@ pub fn run() {
                     }
                 }
             });
+
+            // Start scheduler loop
+            scheduler::start_scheduler_loop(app.handle().clone(), scheduler_state);
 
             // Start Native Messaging bridge for Chrome extension
             let app_handle = app.handle().clone();
@@ -745,6 +859,7 @@ pub fn run() {
             ipc::start_background_checks,
             ipc::enable_autonomous_mode,
             ipc::trigger_browser_effect,
+            ipc::request_extension_ping,
             // System detection commands
             ipc::detect_chrome,
             ipc::launch_chrome,
@@ -755,14 +870,38 @@ pub fn run() {
             ipc::get_autonomy_settings,
             ipc::set_autonomy_settings,
             ipc::get_settings_state,
+            ipc::health_check,
             system_settings::get_system_settings,
             system_settings::update_system_settings,
+            system_settings::set_monitor_enabled,
             system_settings::set_global_shortcut_enabled,
             system_settings::set_global_shortcut,
             // Adaptive behavior commands
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,
             ipc::quick_ask,
+            // Integrations: calendar + notes
+            integrations::get_calendar_settings,
+            integrations::update_calendar_settings,
+            integrations::get_upcoming_events,
+            integrations::list_notes,
+            integrations::add_note,
+            integrations::update_note,
+            integrations::delete_note,
+            // Scheduler commands
+            scheduler::get_scheduler_settings,
+            scheduler::update_scheduler_settings,
+            // Pairing commands
+            pairing::get_pairing_status,
+            pairing::create_pairing_code,
+            pairing::approve_pairing,
+            pairing::clear_pairing_code,
+            pairing::reject_pairing,
+            // Permission diagnostics
+            permissions::get_permission_diagnostics_command,
+            // Timeline commands
+            timeline::get_timeline,
+            timeline::clear_timeline,
             // Ollama configuration commands
             ipc::get_ollama_config,
             ipc::set_ollama_config,
@@ -811,6 +950,7 @@ pub fn run() {
             mcp::sandbox::disable_shell_category,
             mcp::sandbox::set_confirm_all_writes,
             mcp::sandbox::set_max_read_size,
+            mcp::sandbox::apply_sandbox_baseline,
             mcp::sandbox::sandbox_read_file,
             mcp::sandbox::sandbox_write_file,
             mcp::sandbox::sandbox_list_dir,

@@ -33,12 +33,28 @@ pub struct SystemStatus {
     pub extension_connected: bool,
     /// Extension is operational (responding to messages)
     pub extension_operational: bool,
+    /// Last heartbeat timestamp (unix seconds)
+    pub last_extension_heartbeat: Option<u64>,
+    /// Extension protocol version
+    pub extension_protocol_version: Option<String>,
+    /// Extension version
+    pub extension_version: Option<String>,
+    /// Extension ID
+    pub extension_id: Option<String>,
+    /// Extension capabilities
+    pub extension_capabilities: Option<serde_json::Value>,
+    /// MCP browser connection state
+    pub mcp_browser_connected: bool,
+    /// Last page update timestamp
+    pub last_page_update: Option<u64>,
     /// API key configured
     pub api_key_configured: bool,
     /// Source of the API key ("env", "user", "none")
     pub api_key_source: String,
     /// Last known browsing URL (from extension or history)
     pub last_known_url: Option<String>,
+    /// Active AI provider
+    pub active_provider: Option<String>,
     /// Current app mode
     pub current_mode: String,
     /// Preferred app mode
@@ -58,6 +74,19 @@ pub struct SettingsState {
     pub sandbox_settings: crate::mcp::sandbox::SandboxConfig,
     pub system_settings: crate::system_settings::SystemSettings,
     pub capture_settings: crate::capture::CaptureSettings,
+    pub scheduler_settings: crate::scheduler::SchedulerSettings,
+    pub pairing_status: crate::pairing::PairingState,
+    pub permission_diagnostics: crate::permissions::PermissionDiagnostics,
+    pub recent_timeline: Vec<crate::timeline::TimelineEntry>,
+    pub calendar_settings: crate::integrations::CalendarSettings,
+    pub notes: Vec<crate::integrations::Note>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct HealthReport {
+    pub timestamp: u64,
+    pub system_status: SystemStatus,
+    pub permissions: crate::permissions::PermissionDiagnostics,
 }
 
 fn mode_to_string(mode: crate::memory::AppMode) -> String {
@@ -68,6 +97,7 @@ fn mode_to_string(mode: crate::memory::AppMode) -> String {
 }
 
 pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory>) -> SystemStatus {
+    let status_snapshot = crate::system_status::get_status_snapshot();
     let chrome_path = find_chrome_path();
     let chrome_installed = chrome_path.is_some();
     let runtime = crate::utils::runtime_config();
@@ -80,29 +110,83 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
         "none".to_string()
     };
 
-    let (current_mode, preferred_mode, auto_puzzle_from_companion) = session
-        .and_then(|s| s.load().ok())
+    let session_state = session.and_then(|s| s.load().ok());
+
+    let (current_mode, preferred_mode, auto_puzzle_from_companion) = session_state
+        .as_ref()
         .map(|state| {
             (
-                mode_to_string(state.current_mode),
-                mode_to_string(state.preferred_mode),
+                mode_to_string(state.current_mode.clone()),
+                mode_to_string(state.preferred_mode.clone()),
                 state.auto_puzzle_from_companion,
             )
         })
         .unwrap_or_else(|| ("companion".to_string(), "companion".to_string(), true));
 
+    let last_known_url = status_snapshot
+        .as_ref()
+        .and_then(|s| s.last_known_url.clone())
+        .or_else(|| session_state.as_ref().map(|s| s.current_url.clone()))
+        .filter(|url| !url.is_empty());
+
     SystemStatus {
         chrome_path,
         chrome_installed,
-        extension_connected: false, // Will be updated by bridge events
-        extension_operational: false,
+        extension_connected: status_snapshot
+            .as_ref()
+            .map(|s| s.extension_connected)
+            .unwrap_or(false),
+        extension_operational: status_snapshot
+            .as_ref()
+            .map(|s| s.extension_operational)
+            .unwrap_or(false),
+        last_extension_heartbeat: status_snapshot
+            .as_ref()
+            .and_then(|s| s.last_extension_heartbeat),
+        extension_protocol_version: status_snapshot
+            .as_ref()
+            .and_then(|s| s.extension_protocol_version.clone()),
+        extension_version: status_snapshot
+            .as_ref()
+            .and_then(|s| s.extension_version.clone()),
+        extension_id: status_snapshot.as_ref().and_then(|s| s.extension_id.clone()),
+        extension_capabilities: status_snapshot
+            .as_ref()
+            .and_then(|s| s.extension_capabilities.clone()),
+        mcp_browser_connected: status_snapshot
+            .as_ref()
+            .map(|s| s.mcp_browser_connected)
+            .unwrap_or(false),
+        last_page_update: status_snapshot.as_ref().and_then(|s| s.last_page_update),
         api_key_configured,
         api_key_source,
-        last_known_url: None,
+        last_known_url,
+        active_provider: status_snapshot
+            .as_ref()
+            .and_then(|s| s.active_provider.clone()),
         current_mode,
         preferred_mode,
         auto_puzzle_from_companion,
     }
+}
+
+pub fn emit_system_status_update(app: &tauri::AppHandle) {
+    let session = app.state::<Arc<crate::memory::SessionMemory>>();
+    let status = detect_system_status(Some(session.as_ref()));
+    let _ = app.emit("system_status_update", status);
+}
+
+#[tauri::command]
+pub async fn health_check(
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
+) -> Result<HealthReport, String> {
+    let system_status = detect_system_status(Some(session.as_ref()));
+    let permissions = crate::permissions::get_permission_diagnostics().await;
+    Ok(HealthReport {
+        timestamp: crate::utils::current_timestamp(),
+        system_status,
+        permissions,
+    })
 }
 
 /// Detect Chrome/Chromium browser installation
@@ -150,6 +234,7 @@ pub fn open_settings(section: Option<String>, app: tauri::AppHandle) -> Result<(
 pub async fn get_settings_state(
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
     session: State<'_, Arc<crate::memory::SessionMemory>>,
+    notes_store: State<'_, Arc<crate::integrations::NotesStore>>,
 ) -> Result<SettingsState, String> {
     let privacy = crate::privacy::PrivacySettings::load();
     let privacy_notice = crate::privacy::PRIVACY_NOTICE.to_string();
@@ -167,6 +252,12 @@ pub async fn get_settings_state(
     let sandbox_settings = crate::mcp::sandbox::get_sandbox_settings();
     let system_settings = crate::system_settings::SystemSettings::load();
     let capture_settings = crate::capture::CaptureSettings::load();
+    let scheduler_settings = crate::scheduler::SchedulerSettings::load();
+    let pairing_status = crate::pairing::get_pairing_status();
+    let permission_diagnostics = crate::permissions::get_permission_diagnostics().await;
+    let recent_timeline = crate::timeline::get_recent_timeline(5);
+    let calendar_settings = crate::integrations::CalendarSettings::load();
+    let notes = notes_store.list_notes().unwrap_or_default();
 
     Ok(SettingsState {
         privacy,
@@ -177,6 +268,12 @@ pub async fn get_settings_state(
         sandbox_settings,
         system_settings,
         capture_settings,
+        scheduler_settings,
+        pairing_status,
+        permission_diagnostics,
+        recent_timeline,
+        calendar_settings,
+        notes,
     })
 }
 
@@ -184,7 +281,11 @@ pub async fn get_settings_state(
 #[tauri::command]
 pub fn open_external_url(url: String, app: tauri::AppHandle) -> Result<(), String> {
     let normalized = url.trim();
-    if !(normalized.starts_with("https://") || normalized.starts_with("http://")) {
+    let allowed = normalized.starts_with("https://")
+        || normalized.starts_with("http://")
+        || normalized.starts_with("x-apple.systempreferences:")
+        || normalized.starts_with("ms-settings:");
+    if !allowed {
         return Err("Unsupported URL scheme".to_string());
     }
     app.opener()
@@ -526,6 +627,7 @@ pub async fn generate_contextual_dialogue(
 #[tauri::command]
 pub async fn quick_ask(
     prompt: String,
+    include_context: Option<bool>,
     session: State<'_, Arc<crate::memory::SessionMemory>>,
     ai_router: State<'_, Arc<SmartAiRouter>>,
 ) -> Result<String, String> {
@@ -534,14 +636,21 @@ pub async fn quick_ask(
         return Err("Prompt cannot be empty".to_string());
     }
 
-    let state = session.load().unwrap_or_default();
-    let redacted_url = crate::privacy::redact_with_settings(&state.current_url);
-    let redacted_title = crate::privacy::redact_with_settings(&state.current_title);
-
-    let full_prompt = format!(
-        "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\nUser question: {}\n\nContext (if relevant):\n- Current URL: {}\n- Page title: {}",
-        trimmed, redacted_url, redacted_title
-    );
+    let include_context = include_context.unwrap_or(true);
+    let full_prompt = if include_context {
+        let state = session.load().unwrap_or_default();
+        let redacted_url = crate::privacy::redact_with_settings(&state.current_url);
+        let redacted_title = crate::privacy::redact_with_settings(&state.current_title);
+        format!(
+            "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\nUser question: {}\n\nContext (if relevant):\n- Current URL: {}\n- Page title: {}",
+            trimmed, redacted_url, redacted_title
+        )
+    } else {
+        format!(
+            "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\nUser question: {}",
+            trimmed
+        )
+    };
 
     ai_router
         .generate_text(&full_prompt)
@@ -570,6 +679,22 @@ pub fn trigger_browser_effect(
         effect: Some(effect),
         duration,
         text,
+        url: None,
+    };
+    effect_queue.push(msg);
+    Ok(())
+}
+
+/// Send a ping to the browser extension
+#[tauri::command]
+pub fn request_extension_ping(
+    effect_queue: State<'_, Arc<EffectQueue>>,
+) -> Result<(), String> {
+    let msg = EffectMessage {
+        action: "ping".to_string(),
+        effect: None,
+        duration: None,
+        text: None,
         url: None,
     };
     effect_queue.push(msg);

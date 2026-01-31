@@ -718,9 +718,19 @@ impl McpServer for BrowserMcpServer {
                         "browser.inject_effect" | "browser.highlight_text" => ActionRiskLevel::Low,
                         _ => ActionRiskLevel::Medium,
                     };
-                    
+
+                    // Preview policy control
+                    let preview_policy = privacy.preview_policy;
+                    let should_preview = match preview_policy {
+                        crate::privacy::PreviewPolicy::Always => true,
+                        crate::privacy::PreviewPolicy::HighRisk => risk_level.is_high_risk(),
+                        crate::privacy::PreviewPolicy::Off => false,
+                    };
+
                     // Check if confirmation is required
-                    if privacy.autonomy_level.requires_confirmation(risk_level.is_high_risk()) {
+                    if privacy.autonomy_level.requires_confirmation(risk_level.is_high_risk())
+                        || matches!(preview_policy, crate::privacy::PreviewPolicy::Always)
+                    {
                         // Get target description for the action
                         let target = match descriptor.name.as_str() {
                             "browser.navigate" => request.arguments
@@ -760,8 +770,9 @@ impl McpServer for BrowserMcpServer {
                         );
 
                         // Create an action preview for richer UX (if manager available)
-                        let preview_id = if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
-                            let preview = manager.start_preview(&pending);
+                        let preview_id = if should_preview {
+                            if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+                                let preview = manager.start_preview(&pending);
 
                             match descriptor.name.as_str() {
                                 "browser.navigate" => {
@@ -792,7 +803,10 @@ impl McpServer for BrowserMcpServer {
                             }
 
                             manager.update_progress(&preview.id, 1.0);
-                            Some(preview.id)
+                                Some(preview.id)
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         };

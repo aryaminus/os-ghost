@@ -25,16 +25,32 @@ const AUTONOMY_OPTIONS = [
   },
 ];
 
+const PREVIEW_POLICIES = [
+  { value: "always", label: "Always preview" },
+  { value: "high_risk", label: "Only high risk" },
+  { value: "off", label: "Off" },
+];
+
 const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
   const privacy = settingsState.privacy;
   const autonomySettings = settingsState.autonomySettings;
   const intelligentMode = settingsState.intelligentMode;
+  const schedulerSettings = settingsState.schedulerSettings;
 
-  const [autonomyLevel, setAutonomyLevel] = useState("autonomous");
+  const [autonomyLevel, setAutonomyLevel] = useState("observer");
+  const [previewPolicy, setPreviewPolicy] = useState("always");
   const [autoPuzzle, setAutoPuzzle] = useState(true);
   const [intelligent, setIntelligent] = useState(false);
   const [reflection, setReflection] = useState(false);
   const [guardrails, setGuardrails] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({
+    dailyBrief: true,
+    idleSuggestions: true,
+    focusSummary: false,
+    quietHoursEnabled: true,
+    quietStart: "22:00",
+    quietEnd: "07:00",
+  });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -42,7 +58,10 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
     if (privacy?.autonomy_level) {
       setAutonomyLevel(privacy.autonomy_level);
     }
-  }, [privacy?.autonomy_level]);
+    if (privacy?.preview_policy) {
+      setPreviewPolicy(privacy.preview_policy);
+    }
+  }, [privacy?.autonomy_level, privacy?.preview_policy]);
 
   useEffect(() => {
     if (typeof autonomySettings?.auto_puzzle_from_companion === "boolean") {
@@ -56,6 +75,18 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
     setReflection(!!intelligentMode.reflection);
     setGuardrails(!!intelligentMode.guardrails);
   }, [intelligentMode]);
+
+  useEffect(() => {
+    if (!schedulerSettings) return;
+    setScheduleForm({
+      dailyBrief: !!schedulerSettings.daily_brief_enabled,
+      idleSuggestions: !!schedulerSettings.idle_suggestions_enabled,
+      focusSummary: !!schedulerSettings.focus_summary_enabled,
+      quietHoursEnabled: !!schedulerSettings.quiet_hours_enabled,
+      quietStart: schedulerSettings.quiet_hours_start || "22:00",
+      quietEnd: schedulerSettings.quiet_hours_end || "07:00",
+    });
+  }, [schedulerSettings]);
 
   const selectedDescription = useMemo(() => {
     return AUTONOMY_OPTIONS.find((opt) => opt.value === autonomyLevel)?.description;
@@ -73,6 +104,7 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
         readOnlyMode: !!privacy.read_only_mode,
         autonomyLevel: autonomyLevel,
         redactPii: privacy.redact_pii !== false,
+        previewPolicy: previewPolicy,
       });
       setMessage("Autonomy updated.");
       onSettingsUpdated();
@@ -117,6 +149,30 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
     await invoke("set_guardrails_mode", { enabled: next });
   }, [guardrails]);
 
+  const handleScheduleChange = (key) => (event) => {
+    const value = event.target.type === "checkbox" ? event.target.checked : event.target.value;
+    setScheduleForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveSchedule = useCallback(async () => {
+    setMessage("");
+    try {
+      await invoke("update_scheduler_settings", {
+        dailyBriefEnabled: scheduleForm.dailyBrief,
+        idleSuggestionsEnabled: scheduleForm.idleSuggestions,
+        focusSummaryEnabled: scheduleForm.focusSummary,
+        quietHoursEnabled: scheduleForm.quietHoursEnabled,
+        quietHoursStart: scheduleForm.quietStart,
+        quietHoursEnd: scheduleForm.quietEnd,
+      });
+      setMessage("Scheduler updated.");
+      onSettingsUpdated();
+    } catch (err) {
+      console.error("Failed to update scheduler", err);
+      setMessage("Unable to update scheduler.");
+    }
+  }, [scheduleForm, onSettingsUpdated]);
+
   return (
     <section className="settings-section">
       <header className="section-header">
@@ -152,6 +208,27 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
       </div>
 
       <div className="settings-card">
+        <h3>Preview policy</h3>
+        <select
+          className="select-control"
+          value={previewPolicy}
+          onChange={(event) => setPreviewPolicy(event.target.value)}
+        >
+          {PREVIEW_POLICIES.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <p className="card-note">Controls when the system shows action previews.</p>
+        <div className="button-row">
+          <button type="button" className="ghost-button" onClick={handleSaveAutonomy}>
+            Save preview policy
+          </button>
+        </div>
+      </div>
+
+      <div className="settings-card">
         <h3>Companion behaviors</h3>
         <label className="checkbox-row">
           <input type="checkbox" checked={autoPuzzle} onChange={handleAutoPuzzleToggle} />
@@ -174,6 +251,57 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
           <span>Enable guardrails and security checks.</span>
         </label>
       </div>
+
+      <div className="settings-card">
+        <h3>Proactive routines</h3>
+        <label className="checkbox-row">
+          <input type="checkbox" checked={scheduleForm.dailyBrief} onChange={handleScheduleChange("dailyBrief")} />
+          <span>Daily brief summary.</span>
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={scheduleForm.idleSuggestions}
+            onChange={handleScheduleChange("idleSuggestions")}
+          />
+          <span>Idle-time suggestions.</span>
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={scheduleForm.focusSummary}
+            onChange={handleScheduleChange("focusSummary")}
+          />
+          <span>Focus session summaries.</span>
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={scheduleForm.quietHoursEnabled}
+            onChange={handleScheduleChange("quietHoursEnabled")}
+          />
+          <span>Respect quiet hours.</span>
+        </label>
+        <div className="input-row">
+          <input
+            className="text-input"
+            value={scheduleForm.quietStart}
+            onChange={handleScheduleChange("quietStart")}
+            placeholder="22:00"
+          />
+          <input
+            className="text-input"
+            value={scheduleForm.quietEnd}
+            onChange={handleScheduleChange("quietEnd")}
+            placeholder="07:00"
+          />
+        </div>
+        <div className="button-row">
+          <button type="button" className="ghost-button" onClick={handleSaveSchedule}>
+            Save routines
+          </button>
+        </div>
+      </div>
     </section>
   );
 };
@@ -183,6 +311,7 @@ AutonomySection.propTypes = {
     privacy: PropTypes.object,
     autonomySettings: PropTypes.object,
     intelligentMode: PropTypes.object,
+    schedulerSettings: PropTypes.object,
   }).isRequired,
   onSettingsUpdated: PropTypes.func.isRequired,
 };

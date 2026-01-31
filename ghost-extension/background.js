@@ -42,6 +42,8 @@ function warn(...args) {
 
 /** Native messaging host name */
 const NATIVE_HOST = "com.osghost.game";
+const PROTOCOL_VERSION = "1";
+const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 
 /** @type {chrome.runtime.Port|null} */
 let port = null;
@@ -54,6 +56,7 @@ let reconnectAttempts = 0;
 
 /** @type {number|null} */
 let reconnectTimerId = null;
+let heartbeatTimerId = null;
 
 /** @type {number|null} */
 let browsingContextTimerId = null;
@@ -212,6 +215,26 @@ function connectToNative() {
 		updateConnectionStatus(true);
 		reconnectAttempts = 0;
 
+		sendToNative({
+			type: "hello",
+			protocol_version: PROTOCOL_VERSION,
+			extension_version: EXTENSION_VERSION,
+			extension_id: chrome.runtime.id,
+			capabilities: {
+				history: !!chrome.history,
+				top_sites: !!chrome.topSites,
+				content: true,
+				effects: true,
+			},
+		});
+
+		if (heartbeatTimerId) {
+			clearInterval(heartbeatTimerId);
+		}
+		heartbeatTimerId = setInterval(() => {
+			sendToNative({ type: "heartbeat", timestamp: Date.now() });
+		}, 12000);
+
 		// Fetch content immediately upon connection
 		chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
 			if (tabs[0]) {
@@ -234,6 +257,10 @@ function connectToNative() {
 		port.onDisconnect.addListener(() => {
 			updateConnectionStatus(false);
 			port = null;
+			if (heartbeatTimerId) {
+				clearInterval(heartbeatTimerId);
+				heartbeatTimerId = null;
+			}
 			if (browsingContextTimerId) {
 				clearTimeout(browsingContextTimerId);
 				browsingContextTimerId = null;
@@ -276,7 +303,10 @@ function connectToNative() {
 function handleNativeMessage(message) {
 	log("Received from native:", message);
 
-	switch (message.action) {
+		switch (message.action) {
+			case "ping":
+				sendToNative({ type: "heartbeat", timestamp: Date.now() });
+				break;
 		case "inject_effect":
 			// Send effect to active tab's content script
 			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

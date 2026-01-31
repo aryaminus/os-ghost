@@ -18,8 +18,10 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
   const [success, setSuccess] = useState("");
   const [monitorMessage, setMonitorMessage] = useState("");
   const [captureMessage, setCaptureMessage] = useState("");
+  const permissionDiagnostics = settingsState.permissionDiagnostics;
 
   const [monitorForm, setMonitorForm] = useState({
+    enabled: true,
     intervalSecs: 60,
     idleSecs: 900,
     allowHidden: false,
@@ -45,6 +47,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
   useEffect(() => {
     if (!settingsState.systemSettings) return;
     setMonitorForm({
+      enabled: settingsState.systemSettings.monitor_enabled ?? true,
       intervalSecs: settingsState.systemSettings.monitor_interval_secs,
       idleSecs: settingsState.systemSettings.monitor_idle_secs,
       allowHidden: settingsState.systemSettings.monitor_allow_hidden,
@@ -91,6 +94,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
         readOnlyMode: formState.readOnly,
         autonomyLevel: settingsState.privacy.autonomy_level || "autonomous",
         redactPii: formState.redactPii,
+        previewPolicy: settingsState.privacy.preview_policy || "always",
       });
       setSuccess("Privacy settings updated.");
       onSettingsUpdated();
@@ -130,6 +134,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
     setMonitorMessage("");
     try {
       await invoke("update_system_settings", {
+        monitorEnabled: monitorForm.enabled,
         monitorIntervalSecs: monitorForm.intervalSecs,
         monitorIdleSecs: monitorForm.idleSecs,
         monitorAllowHidden: monitorForm.allowHidden,
@@ -178,9 +183,81 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
             {consentStatus}
           </span>
         </div>
+        {settingsState.privacy?.consent_timestamp && (
+          <div className="card-row">
+            <span className="card-label">Last updated</span>
+            <span className="card-value">
+              {new Date(settingsState.privacy.consent_timestamp * 1000).toLocaleString()}
+            </span>
+          </div>
+        )}
         <p className="card-note">
           Monitoring remains paused until consent is granted.
         </p>
+      </div>
+
+      <div className="settings-card">
+        <h3>Permission diagnostics</h3>
+        <div className="card-row">
+          <span className="card-label">Screen recording</span>
+          <span className={`status-pill ${permissionDiagnostics?.screen_recording?.status === "granted" ? "ok" : "warn"}`}>
+            {permissionDiagnostics?.screen_recording?.status || "unknown"}
+          </span>
+        </div>
+        <p className="card-note">
+          {permissionDiagnostics?.screen_recording?.message || "Run a capture to verify permissions."}
+        </p>
+        {permissionDiagnostics?.screen_recording?.action_url && (
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() =>
+              invoke("open_external_url", {
+                url: permissionDiagnostics.screen_recording.action_url,
+              })
+            }
+          >
+            Open System Settings
+          </button>
+        )}
+        <div className="card-row">
+          <span className="card-label">Accessibility</span>
+          <span className="status-pill neutral">
+            {permissionDiagnostics?.accessibility?.status || "unknown"}
+          </span>
+        </div>
+        {permissionDiagnostics?.accessibility?.action_url && (
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() =>
+              invoke("open_external_url", {
+                url: permissionDiagnostics.accessibility.action_url,
+              })
+            }
+          >
+            Open Accessibility Settings
+          </button>
+        )}
+        <div className="card-row">
+          <span className="card-label">Input monitoring</span>
+          <span className="status-pill neutral">
+            {permissionDiagnostics?.input_monitoring?.status || "unknown"}
+          </span>
+        </div>
+        {permissionDiagnostics?.input_monitoring?.action_url && (
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() =>
+              invoke("open_external_url", {
+                url: permissionDiagnostics.input_monitoring.action_url,
+              })
+            }
+          >
+            Open Input Monitoring Settings
+          </button>
+        )}
       </div>
 
       <div className="settings-card">
@@ -243,8 +320,16 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
         </div>
       </div>
 
-      <div className="settings-card">
+        <div className="settings-card">
         <h3>Monitoring cadence</h3>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={monitorForm.enabled}
+            onChange={handleMonitorChange("enabled")}
+          />
+          <span>Enable background monitoring.</span>
+        </label>
         <div className="input-row">
           <label className="card-label" htmlFor="monitor-interval">
             Capture interval (seconds)
@@ -384,6 +469,7 @@ PrivacySection.propTypes = {
     privacyNotice: PropTypes.string,
     systemSettings: PropTypes.object,
     captureSettings: PropTypes.object,
+    permissionDiagnostics: PropTypes.object,
   }).isRequired,
   onSettingsUpdated: PropTypes.func.isRequired,
 };

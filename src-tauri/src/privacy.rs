@@ -23,6 +23,19 @@ pub enum AutonomyLevel {
     Autonomous,
 }
 
+/// Preview policy for side-effect actions
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewPolicy {
+    /// Always show previews for side-effect actions
+    #[default]
+    Always,
+    /// Only show previews for high-risk actions
+    HighRisk,
+    /// Disable previews (not recommended)
+    Off,
+}
+
 impl AutonomyLevel {
     /// Check if this level requires confirmation for a given action
     pub fn requires_confirmation(&self, is_high_risk: bool) -> bool {
@@ -70,6 +83,9 @@ pub struct PrivacySettings {
     /// Redact PII before sending to AI
     #[serde(default)]
     pub redact_pii: bool,
+    /// Preview policy for side-effect actions
+    #[serde(default)]
+    pub preview_policy: PreviewPolicy,
     /// Timestamp of consent
     pub consent_timestamp: Option<u64>,
 }
@@ -81,8 +97,9 @@ impl Default for PrivacySettings {
             ai_analysis_consent: false,
             privacy_notice_acknowledged: false,
             read_only_mode: false,
-            autonomy_level: AutonomyLevel::Autonomous,
+            autonomy_level: AutonomyLevel::Observer,
             redact_pii: true,
+            preview_policy: PreviewPolicy::Always,
             consent_timestamp: None,
         }
     }
@@ -144,6 +161,7 @@ pub fn update_privacy_settings(
     read_only_mode: bool,
     autonomy_level: Option<String>,
     redact_pii: Option<bool>,
+    preview_policy: Option<String>,
 ) -> Result<PrivacySettings, String> {
     let mut settings = PrivacySettings::load();
     settings.capture_consent = capture_consent;
@@ -164,6 +182,15 @@ pub fn update_privacy_settings(
 
     if let Some(redact) = redact_pii {
         settings.redact_pii = redact;
+    }
+
+    if let Some(policy) = preview_policy {
+        settings.preview_policy = match policy.as_str() {
+            "always" => PreviewPolicy::Always,
+            "high_risk" => PreviewPolicy::HighRisk,
+            "off" => PreviewPolicy::Off,
+            _ => PreviewPolicy::Always,
+        };
     }
 
     settings.consent_timestamp = Some(

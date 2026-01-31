@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -9,11 +9,21 @@ const WEB_STORE_URL =
 const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState("");
+  const [pairingCode, setPairingCode] = useState("");
+  const [pairingExpires, setPairingExpires] = useState(null);
+  const [protocolMessage, setProtocolMessage] = useState("");
 
   const status = settingsState.systemStatus;
+  const pairing = settingsState.pairingStatus;
+
+  useEffect(() => {
+    setPairingCode(pairing?.pending_code || "");
+    setPairingExpires(pairing?.pending_expires_at || null);
+  }, [pairing?.pending_code, pairing?.pending_expires_at]);
 
   const handleRefresh = useCallback(async () => {
     setError("");
+    setProtocolMessage("");
     await onSettingsUpdated();
   }, [onSettingsUpdated]);
 
@@ -53,6 +63,56 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
     }
   }, []);
 
+  const handleGeneratePairing = useCallback(async () => {
+    setError("");
+    try {
+      const next = await invoke("create_pairing_code");
+      setPairingCode(next?.pending_code || "");
+      setPairingExpires(next?.pending_expires_at || null);
+      onSettingsUpdated();
+    } catch (err) {
+      console.error("Failed to create pairing code", err);
+      setError("Could not generate a pairing code.");
+    }
+  }, [onSettingsUpdated]);
+
+  const handleReconnect = useCallback(async () => {
+    setError("");
+    try {
+      await invoke("request_extension_ping");
+      await onSettingsUpdated();
+    } catch (err) {
+      console.error("Failed to ping extension", err);
+      setError("Unable to reach extension. Try launching Chrome.");
+    }
+  }, [onSettingsUpdated]);
+
+  const handleCheckProtocol = useCallback(() => {
+    const expected = "1";
+    if (!status?.extensionProtocolVersion) {
+      setProtocolMessage("No protocol handshake detected yet.");
+      return;
+    }
+    if (status.extensionProtocolVersion === expected) {
+      setProtocolMessage("Protocol OK.");
+    } else {
+      setProtocolMessage(`Protocol mismatch: expected ${expected}, got ${status.extensionProtocolVersion}.`);
+    }
+  }, [status?.extensionProtocolVersion]);
+
+  const handleClearPairing = useCallback(async () => {
+    setError("");
+    try {
+      const next = await invoke("clear_pairing_code");
+      setPairingCode(next?.pending_code || "");
+      setPairingExpires(next?.pending_expires_at || null);
+      onSettingsUpdated();
+    } catch (err) {
+      console.error("Failed to clear pairing code", err);
+      setError("Could not clear pairing code.");
+    }
+  }, [onSettingsUpdated]);
+
   return (
     <section className="settings-section">
       <header className="section-header">
@@ -73,6 +133,32 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
             {status?.extensionConnected ? "Connected" : "Not connected"}
           </span>
         </div>
+        <div className="card-row">
+          <span className="card-label">Operational</span>
+          <span className={`status-pill ${status?.extensionOperational ? "ok" : "warn"}`}>
+            {status?.extensionOperational ? "Healthy" : "Stale"}
+          </span>
+        </div>
+        {status?.extensionVersion && (
+          <div className="card-row">
+            <span className="card-label">Extension version</span>
+            <span className="card-value">{status.extensionVersion}</span>
+          </div>
+        )}
+        {status?.extensionProtocolVersion && (
+          <div className="card-row">
+            <span className="card-label">Protocol</span>
+            <span className="card-value">{status.extensionProtocolVersion}</span>
+          </div>
+        )}
+        {status?.lastExtensionHeartbeat && (
+          <div className="card-row">
+            <span className="card-label">Last heartbeat</span>
+            <span className="card-value">
+              {new Date(status.lastExtensionHeartbeat * 1000).toLocaleTimeString()}
+            </span>
+          </div>
+        )}
         <div className="button-row">
           {!status?.chromeInstalled && (
             <button type="button" className="primary-button" onClick={handleGetChrome}>
@@ -95,8 +181,62 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
           <button type="button" className="ghost-button" onClick={handleRefresh}>
             Refresh status
           </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => invoke("request_extension_ping")}
+          >
+            Ping extension
+          </button>
+          <button type="button" className="ghost-button" onClick={handleReconnect}>
+            Reconnect
+          </button>
+          <button type="button" className="ghost-button" onClick={handleCheckProtocol}>
+            Check protocol
+          </button>
         </div>
         {error && <span className="status-pill error">{error}</span>}
+        {protocolMessage && <span className="status-pill neutral">{protocolMessage}</span>}
+      </div>
+
+      <div className="settings-card">
+        <h3>Pairing</h3>
+        <p className="card-note">Pairing codes are required for future remote channels.</p>
+        <div className="button-row">
+          <button type="button" className="ghost-button" onClick={handleGeneratePairing}>
+            Generate code
+          </button>
+          <button type="button" className="ghost-button" onClick={handleClearPairing}>
+            Clear code
+          </button>
+        </div>
+        {pairingCode && (
+          <div className="card-row">
+            <span className="card-label">Pairing code</span>
+            <span className="card-value">{pairingCode}</span>
+          </div>
+        )}
+        {pairingExpires && (
+          <div className="card-row">
+            <span className="card-label">Expires</span>
+            <span className="card-value">{new Date(pairingExpires * 1000).toLocaleTimeString()}</span>
+          </div>
+        )}
+        {pairing?.trusted_sources?.length > 0 ? (
+          <div className="list-grid">
+            {pairing.trusted_sources.map((source) => (
+              <div key={`${source.source_type}-${source.id}`} className="list-item">
+                <div>
+                  <strong>{source.label}</strong>
+                  <div className="card-note">{source.source_type}</div>
+                </div>
+                <span className="status-pill neutral">Trusted</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="card-note">No trusted sources registered.</p>
+        )}
       </div>
 
       {!status?.extensionConnected && (
@@ -114,6 +254,7 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
 ExtensionsSection.propTypes = {
   settingsState: PropTypes.shape({
     systemStatus: PropTypes.object,
+    pairingStatus: PropTypes.object,
   }).isRequired,
   onSettingsUpdated: PropTypes.func.isRequired,
 };

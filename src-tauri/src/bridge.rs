@@ -9,8 +9,10 @@
 use crate::game_state::EffectQueue;
 use crate::mcp::browser::{BrowserMcpServer, BrowserState};
 use crate::mcp::{McpServer, ToolRequest};
+use crate::system_status;
+use crate::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -24,6 +26,18 @@ const MAX_CONNECTIONS: usize = 10;
 
 /// Global connection counter for limiting concurrent connections
 static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+static LAST_STATUS_EMIT: AtomicU64 = AtomicU64::new(0);
+const STATUS_EMIT_THROTTLE_SECS: u64 = 2;
+
+fn emit_status_throttled(app: &AppHandle) {
+    let now = crate::utils::current_timestamp();
+    let last = LAST_STATUS_EMIT.load(Ordering::SeqCst);
+    if now.saturating_sub(last) < STATUS_EMIT_THROTTLE_SECS {
+        return;
+    }
+    LAST_STATUS_EMIT.store(now, Ordering::SeqCst);
+    crate::ipc::emit_system_status_update(app);
+}
 
 /// Message received from Chrome extension (via native_bridge)
 #[derive(Debug, Deserialize)]
@@ -36,6 +50,10 @@ pub struct BrowserMessage {
     pub timestamp: Option<i64>,
     pub recent_history: Option<Vec<serde_json::Value>>,
     pub top_sites: Option<Vec<serde_json::Value>>,
+    pub protocol_version: Option<String>,
+    pub extension_version: Option<String>,
+    pub extension_id: Option<String>,
+    pub capabilities: Option<serde_json::Value>,
 }
 
 /// Response sent back to native_bridge
@@ -82,6 +100,22 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
         .state()
         .is_connected
         .store(true, Ordering::SeqCst);
+
+    system_status::update_status(|status| {
+        status.extension_connected = true;
+        status.mcp_browser_connected = true;
+        status.last_extension_heartbeat = Some(crate::utils::current_timestamp());
+        status.extension_operational = true;
+    });
+
+    emit_status_throttled(&app);
+
+    record_timeline_event(
+        "Extension connected",
+        None,
+        TimelineEntryType::System,
+        TimelineStatus::Info,
+    );
 
     // Emit connection event to frontend
     let _ = app.emit(
@@ -140,6 +174,38 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
             let mcp_state = mcp_ctx.mcp_server.state();
 
             match message.msg_type.as_str() {
+                "hello" => {
+                    let protocol = message.protocol_version.clone();
+                    let version = message.extension_version.clone();
+                    let extension_id = message.extension_id.clone();
+                    let capabilities = message.capabilities.clone();
+
+                    system_status::update_status(|status| {
+                        status.extension_protocol_version = protocol;
+                        status.extension_version = version;
+                        status.extension_id = extension_id.clone();
+                        status.extension_capabilities = capabilities;
+                    });
+
+                    emit_status_throttled(&app);
+
+                    if let Some(id) = extension_id {
+                        crate::pairing::ensure_trusted_source(
+                            &id,
+                            "extension",
+                            "Chrome Extension",
+                        );
+                    }
+                }
+                "heartbeat" => {
+                    let now = crate::utils::current_timestamp();
+                    system_status::update_status(|status| {
+                        status.last_extension_heartbeat = Some(now);
+                        status.extension_operational = true;
+                    });
+
+                    emit_status_throttled(&app);
+                }
                 "page_load" | "tab_changed" => {
                     let url = message.url.clone().unwrap_or_default();
                     let title = message.title.clone().unwrap_or_default();
@@ -156,6 +222,14 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                             tracing::warn!("Failed to update session page: {}", e);
                         }
                     }
+
+                    let now = crate::utils::current_timestamp();
+                    system_status::update_status(|status| {
+                        status.last_known_url = Some(url.clone());
+                        status.last_page_update = Some(now);
+                    });
+
+                    emit_status_throttled(&app);
 
                     // Emit to frontend (legacy event for backward compatibility)
                     let _ = app.emit(
@@ -194,6 +268,14 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                             tracing::error!("Failed to store content: {}", e);
                         }
                     }
+
+                    let now = crate::utils::current_timestamp();
+                    system_status::update_status(|status| {
+                        status.last_known_url = Some(url.clone());
+                        status.last_page_update = Some(now);
+                    });
+
+                    emit_status_throttled(&app);
 
                     // 2. Emit to frontend
                     let _ = app.emit(
@@ -289,6 +371,21 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
         .state()
         .is_connected
         .store(false, Ordering::SeqCst);
+
+    system_status::update_status(|status| {
+        status.extension_connected = false;
+        status.extension_operational = false;
+        status.mcp_browser_connected = false;
+    });
+
+    emit_status_throttled(&app);
+
+    record_timeline_event(
+        "Extension disconnected",
+        None,
+        TimelineEntryType::System,
+        TimelineStatus::Info,
+    );
 
     // Emit disconnection event to frontend
     let _ = app.emit(
