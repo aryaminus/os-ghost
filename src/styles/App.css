@@ -207,6 +207,154 @@ body {
 	border-color: var(--border-color);
 }
 
+/* ==========================================================================
+   Ghost Reflector UI (Settings-First)
+   ========================================================================== */
+
+.ghost-container {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	width: 100%;
+	height: 100%;
+	color: var(--text-primary);
+}
+
+.ghost-header {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.ghost-header-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.ghost-header-title {
+	font-size: 12px;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-secondary);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.ghost-header-subtitle {
+	font-size: 11px;
+	text-transform: none;
+	letter-spacing: 0;
+	color: var(--text-dim);
+}
+
+.ghost-settings-btn {
+	border: 1px solid var(--border-color);
+	background: rgba(0, 0, 0, 0.55);
+	color: var(--text-primary);
+	border-radius: 10px;
+	padding: 6px 10px;
+	font-size: 11px;
+	cursor: pointer;
+	transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.ghost-settings-btn:hover {
+	border-color: var(--ghost-green);
+	color: var(--ghost-green);
+}
+
+.status-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+	gap: 8px;
+}
+
+.status-card {
+	border: 1px solid var(--border-color);
+	background: rgba(0, 0, 0, 0.45);
+	color: var(--text-primary);
+	border-radius: 12px;
+	padding: 8px 10px;
+	text-align: left;
+	cursor: pointer;
+	transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.status-card:hover {
+	border-color: var(--ghost-green);
+	transform: translateY(-1px);
+}
+
+.status-label {
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-dim);
+	display: block;
+}
+
+.status-value {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.ghost-body {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	flex: 1;
+	justify-content: center;
+}
+
+.ghost-sprite {
+	font-size: 14px;
+	line-height: 1.1;
+	text-align: center;
+	margin: 0;
+	text-shadow: 0 0 10px var(--ghost-glow);
+}
+
+.dialogue-box {
+	background: rgba(0, 0, 0, 0.65);
+	border: 1px solid var(--border-color);
+	border-radius: 10px;
+	padding: 10px 12px;
+	width: 100%;
+	min-height: 60px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.dialogue-loading {
+	display: inline-block;
+	margin-top: 6px;
+	font-size: 11px;
+	color: var(--text-dim);
+}
+
+.ghost-footer {
+	padding-bottom: 4px;
+}
+
+.proximity-bar {
+	width: 100%;
+	height: 6px;
+	background: rgba(255, 255, 255, 0.08);
+	border-radius: 999px;
+	overflow: hidden;
+}
+
+.proximity-fill {
+	height: 100%;
+	background: linear-gradient(90deg, var(--cold), var(--warm), var(--hot));
+	transition: width 0.3s ease;
+}
+
 .app-container:has(.ghost-container.read-only-mode):hover {
 	box-shadow:
 		0 8px 32px rgba(0, 0, 0, 0.5),

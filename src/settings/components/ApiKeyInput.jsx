@@ -7,7 +7,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import { invoke } from "@tauri-apps/api/core";
-import { safeInvoke } from "../utils/data";
+import { safeInvoke } from "../../utils/data";
 
 /** Default Ollama status when unavailable */
 const DEFAULT_OLLAMA_STATUS = {
@@ -103,9 +103,6 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 		});
 	}, [updateOllamaMultiple]);
 
-	/**
-	 * Check Ollama server status.
-	 */
 	/**
 	 * Check Ollama server status.
 	 */
@@ -332,6 +329,15 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 	/** Prevent event propagation for drag handling */
 	const stopPropagation = (e) => e.stopPropagation();
 
+	const openExternal = useCallback(async (url) => {
+		try {
+			await invoke("open_external_url", { url });
+		} catch (err) {
+			console.error("Failed to open external link", err);
+			setError("Could not open link. Please try again.");
+		}
+	}, []);
+
 	return (
 		<div
 			className="api-key-container"
@@ -431,15 +437,13 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 					{error.includes("Using environment") ? "ℹ️" : "⚠️"} {error}
 				</div>
 			)}
-			<a
-				href="https://aistudio.google.com/apikey"
-				target="_blank"
-				rel="noopener noreferrer"
+			<button
+				type="button"
 				className="api-key-link"
-				onMouseDown={stopPropagation}
+				onClick={() => openExternal("https://aistudio.google.com/apikey")}
 			>
 				Get a free Gemini API key →
-			</a>
+			</button>
 
 			{/* Ollama Section Toggle */}
 			<button
@@ -458,14 +462,13 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 				<div id="ollama-section" className="ollama-section">
 					<p className="ollama-description">
 						Run AI locally without API costs. Requires{" "}
-						<a
-							href="https://ollama.com/download"
-							target="_blank"
-							rel="noopener noreferrer"
-							onMouseDown={stopPropagation}
+						<button
+							type="button"
+							className="api-key-link inline"
+							onClick={() => openExternal("https://ollama.com/download")}
 						>
 							Ollama
-						</a>{" "}
+						</button>{" "}
 						to be installed and running.
 					</p>
 
@@ -572,9 +575,7 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 							disabled={ollama.saving}
 							onMouseDown={stopPropagation}
 						>
-							{ollama.saving
-								? "Resetting..."
-								: "Reset to Defaults"}
+							{ollama.saving ? "Resetting..." : "Reset to Defaults"}
 						</button>
 						<button
 							type="button"
@@ -593,13 +594,13 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 						<strong>Quick Setup:</strong>
 						<ol>
 							<li>
-								<a
-									href="https://ollama.com/download"
-									target="_blank"
-									rel="noopener noreferrer"
+								<button
+									type="button"
+									className="api-key-link inline"
+									onClick={() => openExternal("https://ollama.com/download")}
 								>
 									Download Ollama
-								</a>
+								</button>
 							</li>
 							<li>
 								Run:{" "}
@@ -626,10 +627,12 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 
 ApiKeyInput.propTypes = {
 	onKeySet: PropTypes.func,
+	apiKeySource: PropTypes.string,
 };
 
 ApiKeyInput.defaultProps = {
 	onKeySet: undefined,
+	apiKeySource: "none",
 };
 
 export default React.memo(ApiKeyInput);
