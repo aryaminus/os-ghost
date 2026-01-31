@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OS Ghost Bridge",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Connect Chrome to The OS Ghost - an AI-powered meta-game where puzzles emerge from your browsing.",
   "homepage_url": "https://github.com/aryaminus/os-ghost",
   "permissions": [
