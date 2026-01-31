@@ -1,15 +1,6 @@
 name: Desktop App Release
 on:
     workflow_dispatch:
-        inputs:
-            skip_signing:
-                description: "Skip macOS code signing"
-                required: false
-                default: "true"
-                type: choice
-                options:
-                    - "true"
-                    - "false"
     push:
         tags:
             - "app-v*"
@@ -65,7 +56,7 @@ jobs:
               run: npm ci
 
             - name: Import Apple Developer Certificate
-              if: matrix.platform == 'macos-latest' && inputs.skip_signing == 'false'
+              if: matrix.platform == 'macos-latest'
               env:
                   APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
                   APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -97,7 +88,7 @@ jobs:
                   security find-identity -v -p codesigning build.keychain
 
             - name: Extract Signing Identity
-              if: matrix.platform == 'macos-latest' && inputs.skip_signing == 'false'
+              if: matrix.platform == 'macos-latest'
               id: cert
               run: |
                   echo "=== All certificates in keychain ==="
@@ -162,12 +153,13 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
                   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-                  # --- macOS Code Signing (uncomment to enable) ---
-                  # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-                  # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-                  # APPLE_SIGNING_IDENTITY: ${{ steps.cert.outputs.APPLE_SIGNING_IDENTITY || secrets.APPLE_SIGNING_IDENTITY }}
-                  # APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-                  # APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+                  # --- macOS Code Signing / Notarization ---
+                  APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+                  APPLE_SIGNING_IDENTITY: ${{ (matrix.platform == 'macos-latest') && steps.cert.outputs.APPLE_SIGNING_IDENTITY || '' }}
+                  APPLE_ID: ${{ secrets.APPLE_ID }}
+                  APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+                  APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
                   # --- Windows Code Signing (uncomment to enable) ---
                   # AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
                   # AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
