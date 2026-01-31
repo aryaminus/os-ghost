@@ -35,6 +35,7 @@ use ipc::Puzzle;
 use memory::LongTermMemory;
 use ollama_client::OllamaClient;
 use std::sync::{Arc, Mutex};
+use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::{Emitter, Manager};
 use std::str::FromStr;
 use window::GhostWindow;
@@ -160,6 +161,46 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // App menu for Settings + toggle
+            let settings_item = MenuItem::with_id(
+                app,
+                "system_settings",
+                "System Settings",
+                true,
+                None::<&str>,
+            )
+                .map_err(|e| e.to_string())?;
+            let toggle_item = MenuItem::with_id(
+                app,
+                "toggle_ghost",
+                "Toggle Ghost",
+                true,
+                None::<&str>,
+            )
+                .map_err(|e| e.to_string())?;
+            let submenu = Submenu::with_items(app, "OS Ghost", true, &[&settings_item, &toggle_item])
+                .map_err(|e| e.to_string())?;
+            let menu = Menu::with_items(app, &[&submenu]).map_err(|e| e.to_string())?;
+            app.set_menu(menu).map_err(|e| e.to_string())?;
+
+            app.on_menu_event(|app, event| match event.id().as_ref() {
+                "system_settings" => {
+                    let _ = crate::ipc::open_settings(Some("general".to_string()), app.clone());
+                }
+                "toggle_ghost" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let visible = window.is_visible().unwrap_or(true);
+                        if visible {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }
+                _ => {}
+            });
+
             // Register global shortcut for quick toggle (if enabled)
             let app_handle = app.handle().clone();
             let settings = system_settings::SystemSettings::load();

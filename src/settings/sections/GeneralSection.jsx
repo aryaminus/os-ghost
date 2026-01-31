@@ -146,6 +146,20 @@ const GeneralSection = ({
       </div>
 
       <div className="settings-card">
+        <h3>Reset game</h3>
+        <p className="card-note">Wipe puzzle progress and reset ghost memory.</p>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={async () => {
+            await invoke("reset_game");
+          }}
+        >
+          Reset progress
+        </button>
+      </div>
+
+      <div className="settings-card">
         <div className="card-row">
           <span className="card-label">Global shortcut</span>
           <button
