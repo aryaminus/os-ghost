@@ -56,7 +56,7 @@ impl NarratorAgent {
         let mood = GhostMood::from_proximity(context.proximity);
 
         // Redact PII from title before sending to API
-        let redacted_title = crate::privacy::redact_pii(&context.current_title);
+        let redacted_title = crate::privacy::redact_with_settings(&context.current_title);
 
         // Chain-of-Thought prompt structure:
         // 1. Analyze the situation

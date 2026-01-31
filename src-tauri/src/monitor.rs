@@ -11,9 +11,6 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::Duration;
 
-const MONITOR_INTERVAL_SECS: u64 = 60;
-const MONITOR_IDLE_SECS: u64 = 15 * 60;
-
 /// Detected application category
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -79,20 +76,19 @@ pub async fn start_monitor_loop(
     let mut recent_categories: Vec<AppCategory> = Vec::new();
     let mut consecutive_idle_count = 0;
 
-    // Use interval for consistent timing (prevents drift)
-    let mut interval = tokio::time::interval(Duration::from_secs(MONITOR_INTERVAL_SECS));
-    // Skip missed ticks if the computer was sleeping or busy
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
     loop {
+        let settings = crate::system_settings::SystemSettings::load();
+
         // Wait for next tick
-        interval.tick().await;
+        tokio::time::sleep(Duration::from_secs(settings.monitor_interval_secs)).await;
 
         // Pause monitoring when window is hidden
-        if let Some(window) = app.get_webview_window("main") {
-            if let Ok(false) = window.is_visible() {
-                tracing::debug!("Monitor: window hidden; skipping");
-                continue;
+        if !settings.monitor_allow_hidden {
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(false) = window.is_visible() {
+                    tracing::debug!("Monitor: window hidden; skipping");
+                    continue;
+                }
             }
         }
 
@@ -123,9 +119,11 @@ pub async fn start_monitor_loop(
             sess_guard.load().ok().map(|s| s.current_mode)
         };
 
-        if mode != Some(crate::memory::AppMode::Companion) {
-            tracing::debug!("Monitor: not in companion mode; skipping");
-            continue;
+        if settings.monitor_only_companion {
+            if mode != Some(crate::memory::AppMode::Companion) {
+                tracing::debug!("Monitor: not in companion mode; skipping");
+                continue;
+            }
         }
 
         // Skip when user idle for too long
@@ -141,7 +139,7 @@ pub async fn start_monitor_loop(
         };
 
         let now = current_timestamp();
-        if last_activity > 0 && now.saturating_sub(last_activity) > MONITOR_IDLE_SECS {
+        if last_activity > 0 && now.saturating_sub(last_activity) > settings.monitor_idle_secs {
             tracing::debug!("Monitor: user idle; skipping");
             continue;
         }
@@ -171,13 +169,15 @@ pub async fn start_monitor_loop(
 
         // 2. Build rich context from memory
         // Helper to handle mutex poisoning gracefully
-        let (user_facts, current_url, recent_activities) = {
-            let facts = match long_term.lock() {
+            let (user_facts, current_url, recent_activities) = {
+                let facts = match long_term.lock() {
                 Ok(ltm) => ltm
                     .get_user_facts()
                     .unwrap_or_default()
                     .iter()
-                    .map(|(k, v)| format!("{}: {}", k, crate::privacy::redact_pii(v)))
+                    .map(|(k, v)| {
+                        format!("{}: {}", k, crate::privacy::maybe_redact_pii(v, privacy.redact_pii))
+                    })
                     .collect::<Vec<_>>()
                     .join(", "),
                 Err(poisoned) => {
@@ -187,7 +187,9 @@ pub async fn start_monitor_loop(
                         .get_user_facts()
                         .unwrap_or_default()
                         .iter()
-                        .map(|(k, v)| format!("{}: {}", k, crate::privacy::redact_pii(v)))
+                        .map(|(k, v)| {
+                            format!("{}: {}", k, crate::privacy::maybe_redact_pii(v, privacy.redact_pii))
+                        })
                         .collect::<Vec<_>>()
                         .join(", ")
                 }
@@ -197,26 +199,32 @@ pub async fn start_monitor_loop(
                 Ok(sess) => {
                     let state = sess.load().unwrap_or_default();
                     let recent = sess
-                        .get_recent_activity(5)
+                        .get_recent_activity(settings.monitor_recent_activity_count)
                         .unwrap_or_default()
                         .iter()
-                        .map(|a| crate::privacy::redact_pii(&a.description))
+                        .map(|a| crate::privacy::maybe_redact_pii(&a.description, privacy.redact_pii))
                         .collect::<Vec<_>>()
                         .join("; ");
-                    (crate::privacy::redact_pii(&state.current_url), recent)
+                    (
+                        crate::privacy::maybe_redact_pii(&state.current_url, privacy.redact_pii),
+                        recent,
+                    )
                 }
                 Err(poisoned) => {
                     tracing::warn!("Session memory mutex poisoned, recovering");
                     let sess = poisoned.into_inner();
                     let state = sess.load().unwrap_or_default();
                     let recent = sess
-                        .get_recent_activity(5)
+                        .get_recent_activity(settings.monitor_recent_activity_count)
                         .unwrap_or_default()
                         .iter()
-                        .map(|a| crate::privacy::redact_pii(&a.description))
+                        .map(|a| crate::privacy::maybe_redact_pii(&a.description, privacy.redact_pii))
                         .collect::<Vec<_>>()
                         .join("; ");
-                    (crate::privacy::redact_pii(&state.current_url), recent)
+                    (
+                        crate::privacy::maybe_redact_pii(&state.current_url, privacy.redact_pii),
+                        recent,
+                    )
                 }
             };
 
@@ -279,7 +287,7 @@ Categories:
 
                         // Track category patterns
                         recent_categories.push(observation.app_category.clone());
-                        if recent_categories.len() > 10 {
+                        if recent_categories.len() > settings.monitor_category_window {
                             recent_categories.remove(0);
                         }
 
@@ -330,6 +338,7 @@ Categories:
                             &observation,
                             &recent_categories,
                             consecutive_idle_count,
+                            settings.monitor_idle_streak_threshold,
                         );
 
                         // Emit enhanced observation to frontend
@@ -369,9 +378,10 @@ fn generate_companion_behavior(
     observation: &ObservationResult,
     recent_categories: &[AppCategory],
     consecutive_idle: usize,
+    idle_streak_threshold: usize,
 ) -> Option<CompanionBehavior> {
     // If user has been idle for a while, suggest a puzzle
-    if consecutive_idle >= 3 {
+    if consecutive_idle >= idle_streak_threshold {
         return Some(CompanionBehavior {
             behavior_type: "puzzle".to_string(),
             trigger_context: "User has been idle".to_string(),

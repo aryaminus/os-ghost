@@ -194,9 +194,9 @@ pub async fn start_investigation(
         return Ok(generated);
     }
 
-    let redacted_url = crate::privacy::redact_pii(&url);
-    let redacted_title = crate::privacy::redact_pii(&title);
-    let redacted_content = crate::privacy::redact_pii(&content);
+    let redacted_url = crate::privacy::redact_with_settings(&url);
+    let redacted_title = crate::privacy::redact_with_settings(&title);
+    let redacted_content = crate::privacy::redact_with_settings(&content);
 
     // Fetch recent history for context
     let history_context = match crate::history::get_recent_history(10).await {
@@ -205,8 +205,8 @@ pub async fn start_investigation(
             .map(|h| {
                 format!(
                     "- {} ({})",
-                    crate::privacy::redact_pii(&h.title),
-                    crate::privacy::redact_pii(&h.url)
+                    crate::privacy::redact_with_settings(&h.title),
+                    crate::privacy::redact_with_settings(&h.url)
                 )
             })
             .collect::<Vec<String>>()
@@ -250,8 +250,8 @@ pub async fn generate_puzzle_from_history(
     ai_router: State<'_, Arc<SmartAiRouter>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<GeneratedPuzzle, String> {
-    let redacted_url = crate::privacy::redact_pii(&seed_url);
-    let redacted_title = crate::privacy::redact_pii(&seed_title);
+    let redacted_url = crate::privacy::redact_with_settings(&seed_url);
+    let redacted_title = crate::privacy::redact_with_settings(&seed_title);
 
     // Build history context from recent history
     let history_context = recent_history
@@ -260,8 +260,8 @@ pub async fn generate_puzzle_from_history(
         .map(|h| {
             format!(
                 "- {} ({})",
-                crate::privacy::redact_pii(&h.title),
-                crate::privacy::redact_pii(&h.url)
+                crate::privacy::redact_with_settings(&h.title),
+                crate::privacy::redact_with_settings(&h.url)
             )
         })
         .collect::<Vec<_>>()
@@ -273,8 +273,8 @@ pub async fn generate_puzzle_from_history(
         .map(|s| {
             format!(
                 "- {} ({})",
-                crate::privacy::redact_pii(&s.title),
-                crate::privacy::redact_pii(&s.url)
+                crate::privacy::redact_with_settings(&s.title),
+                crate::privacy::redact_with_settings(&s.url)
             )
         })
         .collect::<Vec<_>>()

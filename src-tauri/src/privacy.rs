@@ -19,7 +19,7 @@ pub enum AutonomyLevel {
     Suggester,
     /// Executes with confirmation for high-risk actions only
     Supervised,
-    /// Full autonomy within guardrails (future, not yet enabled)
+    /// Full autonomy within guardrails
     Autonomous,
 }
 
@@ -27,10 +27,10 @@ impl AutonomyLevel {
     /// Check if this level requires confirmation for a given action
     pub fn requires_confirmation(&self, is_high_risk: bool) -> bool {
         match self {
-            AutonomyLevel::Observer => true, // Always blocked anyway
-            AutonomyLevel::Suggester => true, // Always confirm
+            AutonomyLevel::Observer => true,           // Always blocked anyway
+            AutonomyLevel::Suggester => true,          // Always confirm
             AutonomyLevel::Supervised => is_high_risk, // Only high-risk
-            AutonomyLevel::Autonomous => false, // No confirmation (future)
+            AutonomyLevel::Autonomous => false,        // No confirmation (future)
         }
     }
 
@@ -44,14 +44,16 @@ impl AutonomyLevel {
         match self {
             AutonomyLevel::Observer => "Observer: Watch only, no actions",
             AutonomyLevel::Suggester => "Suggester: Proposes actions, you confirm each",
-            AutonomyLevel::Supervised => "Supervised: Auto-executes safe actions, confirms risky ones",
+            AutonomyLevel::Supervised => {
+                "Supervised: Auto-executes safe actions, confirms risky ones"
+            }
             AutonomyLevel::Autonomous => "Autonomous: Full control within guardrails",
         }
     }
 }
 
 /// Privacy settings stored locally
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrivacySettings {
     /// User has consented to screen capture
     pub capture_consent: bool,
@@ -65,8 +67,25 @@ pub struct PrivacySettings {
     /// Autonomy level for companion actions
     #[serde(default)]
     pub autonomy_level: AutonomyLevel,
+    /// Redact PII before sending to AI
+    #[serde(default)]
+    pub redact_pii: bool,
     /// Timestamp of consent
     pub consent_timestamp: Option<u64>,
+}
+
+impl Default for PrivacySettings {
+    fn default() -> Self {
+        Self {
+            capture_consent: false,
+            ai_analysis_consent: false,
+            privacy_notice_acknowledged: false,
+            read_only_mode: false,
+            autonomy_level: AutonomyLevel::Autonomous,
+            redact_pii: true,
+            consent_timestamp: None,
+        }
+    }
 }
 
 impl PrivacySettings {
@@ -124,13 +143,14 @@ pub fn update_privacy_settings(
     privacy_notice_acknowledged: bool,
     read_only_mode: bool,
     autonomy_level: Option<String>,
+    redact_pii: Option<bool>,
 ) -> Result<PrivacySettings, String> {
     let mut settings = PrivacySettings::load();
     settings.capture_consent = capture_consent;
     settings.ai_analysis_consent = ai_analysis_consent;
     settings.privacy_notice_acknowledged = privacy_notice_acknowledged;
     settings.read_only_mode = read_only_mode;
-    
+
     // Parse autonomy level if provided
     if let Some(level_str) = autonomy_level {
         settings.autonomy_level = match level_str.as_str() {
@@ -141,7 +161,11 @@ pub fn update_privacy_settings(
             _ => AutonomyLevel::Observer,
         };
     }
-    
+
+    if let Some(redact) = redact_pii {
+        settings.redact_pii = redact;
+    }
+
     settings.consent_timestamp = Some(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -228,19 +252,21 @@ pub fn redact_pii(text: &str) -> String {
     static IP_REGEX: OnceLock<Option<Regex>> = OnceLock::new();
     static API_KEY_REGEX: OnceLock<Option<Regex>> = OnceLock::new();
 
-    let email_re = EMAIL_REGEX.get_or_init(|| Regex::new(r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}").ok());
-    let phone_re = PHONE_REGEX.get_or_init(|| {
-        Regex::new(r"(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}").ok()
-    });
-    let credit_card_re = CREDIT_CARD_REGEX.get_or_init(|| {
-        Regex::new(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b").ok()
-    });
+    let email_re =
+        EMAIL_REGEX.get_or_init(|| Regex::new(r"(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}").ok());
+    let phone_re = PHONE_REGEX
+        .get_or_init(|| Regex::new(r"(\+\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}").ok());
+    let credit_card_re = CREDIT_CARD_REGEX
+        .get_or_init(|| Regex::new(r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b").ok());
     let ssn_re = SSN_REGEX.get_or_init(|| Regex::new(r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b").ok());
     let ip_re = IP_REGEX.get_or_init(|| {
         Regex::new(r"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b").ok()
     });
     let api_key_re = API_KEY_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)\b(?:sk_live_|ghp_|gho_|glpat-|xoxb-|xoxp-|AKIA|AIza)[a-zA-Z0-9_\-]{20,}\b").ok()
+        Regex::new(
+            r"(?i)\b(?:sk_live_|ghp_|gho_|glpat-|xoxb-|xoxp-|AKIA|AIza)[a-zA-Z0-9_\-]{20,}\b",
+        )
+        .ok()
     });
 
     let mut out: Cow<'_, str> = Cow::Borrowed(text);
@@ -265,6 +291,21 @@ pub fn redact_pii(text: &str) -> String {
     }
 
     out.into_owned()
+}
+
+/// Conditionally redact PII based on user settings
+pub fn maybe_redact_pii(text: &str, enabled: bool) -> String {
+    if enabled {
+        redact_pii(text)
+    } else {
+        text.to_string()
+    }
+}
+
+/// Convenience helper: redact using current privacy settings
+pub fn redact_with_settings(text: &str) -> String {
+    let settings = PrivacySettings::load();
+    maybe_redact_pii(text, settings.redact_pii)
 }
 
 #[cfg(test)]

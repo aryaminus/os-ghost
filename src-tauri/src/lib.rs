@@ -15,6 +15,7 @@ pub mod monitor;
 pub mod monitoring;
 pub mod ollama_client;
 pub mod privacy;
+pub mod system_settings;
 pub mod rollback;
 pub mod utils;
 pub mod window;
@@ -159,36 +160,39 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            // Register global shortcut for quick toggle
+            // Register global shortcut for quick toggle (if enabled)
             let app_handle = app.handle().clone();
-            match Shortcut::from_str("CmdOrCtrl+Shift+G") {
-                Ok(shortcut) => {
-                    if let Err(e) = app_handle.global_shortcut().register(shortcut) {
-                        tracing::warn!("Failed to register global shortcut: {}", e);
-                    }
+            let settings = system_settings::SystemSettings::load();
+            if settings.global_shortcut_enabled {
+                match Shortcut::from_str(&settings.global_shortcut) {
+                    Ok(shortcut) => {
+                        if let Err(e) = app_handle.global_shortcut().register(shortcut) {
+                            tracing::warn!("Failed to register global shortcut: {}", e);
+                        }
 
-                    let app_handle_for_shortcut = app_handle.clone();
-                    if let Err(e) = app_handle.global_shortcut().on_shortcut(
-                        shortcut,
-                        move |_, _, _| {
-                            if let Some(window) =
-                                app_handle_for_shortcut.get_webview_window("main")
-                            {
-                                let visible = window.is_visible().unwrap_or(true);
-                                if visible {
-                                    let _ = window.hide();
-                                } else {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
+                        let app_handle_for_shortcut = app_handle.clone();
+                        if let Err(e) = app_handle.global_shortcut().on_shortcut(
+                            shortcut,
+                            move |_, _, _| {
+                                if let Some(window) =
+                                    app_handle_for_shortcut.get_webview_window("main")
+                                {
+                                    let visible = window.is_visible().unwrap_or(true);
+                                    if visible {
+                                        let _ = window.hide();
+                                    } else {
+                                        let _ = window.show();
+                                        let _ = window.set_focus();
+                                    }
                                 }
-                            }
-                        },
-                    ) {
-                        tracing::warn!("Failed to set shortcut handler: {}", e);
+                            },
+                        ) {
+                            tracing::warn!("Failed to set shortcut handler: {}", e);
+                        }
                     }
-                }
-                Err(e) => {
-                    tracing::warn!("Invalid global shortcut: {}", e);
+                    Err(e) => {
+                        tracing::warn!("Invalid global shortcut: {}", e);
+                    }
                 }
             }
             // Load puzzles (wrapped in RwLock for dynamic puzzle registration)
@@ -382,10 +386,17 @@ pub fn run() {
             // System detection commands
             ipc::detect_chrome,
             ipc::launch_chrome,
+            ipc::open_settings,
+            ipc::open_external_url,
             ipc::get_app_mode,
             ipc::set_app_mode,
             ipc::get_autonomy_settings,
             ipc::set_autonomy_settings,
+            ipc::get_settings_state,
+            system_settings::get_system_settings,
+            system_settings::update_system_settings,
+            system_settings::set_global_shortcut_enabled,
+            system_settings::set_global_shortcut,
             // Adaptive behavior commands
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,
@@ -408,12 +419,15 @@ pub fn run() {
             privacy::can_capture_screen,
             privacy::can_analyze_with_ai,
             privacy::get_privacy_notice,
+            capture::get_capture_settings,
+            capture::set_capture_settings,
             // Action confirmation commands
             actions::get_pending_actions,
             actions::approve_action,
             actions::deny_action,
             actions::get_action_history,
             actions::clear_pending_actions,
+            actions::clear_action_history,
             actions::execute_approved_action,
             // Action preview commands
             actions::get_active_preview,
@@ -433,6 +447,8 @@ pub fn run() {
             mcp::sandbox::remove_sandbox_write_path,
             mcp::sandbox::enable_shell_category,
             mcp::sandbox::disable_shell_category,
+            mcp::sandbox::set_confirm_all_writes,
+            mcp::sandbox::set_max_read_size,
             mcp::sandbox::sandbox_read_file,
             mcp::sandbox::sandbox_write_file,
             mcp::sandbox::sandbox_list_dir,

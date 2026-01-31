@@ -59,7 +59,7 @@ For "difficulty", use 0.0-1.0 where 0.0 is trivial and 1.0 is very hard.
 Generate 2-5 sub_goals depending on complexity."#,
             context.puzzle_clue,
             context.target_pattern,
-            crate::privacy::redact_pii(&context.current_url),
+            crate::privacy::redact_with_settings(&context.current_url),
             context.proximity * 100.0
         );
 

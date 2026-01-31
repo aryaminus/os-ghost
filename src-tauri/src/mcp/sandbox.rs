@@ -549,6 +549,19 @@ pub fn disable_shell_category(category: String) -> Result<SandboxConfig, String>
 }
 
 #[tauri::command]
+pub fn set_confirm_all_writes(enabled: bool) -> Result<SandboxConfig, String> {
+    update_sandbox_config(|c| c.confirm_all_writes = enabled);
+    Ok(get_sandbox_config())
+}
+
+#[tauri::command]
+pub fn set_max_read_size(max_read_size: usize) -> Result<SandboxConfig, String> {
+    let capped = max_read_size.clamp(1024, 50 * 1024 * 1024);
+    update_sandbox_config(|c| c.max_read_size = capped);
+    Ok(get_sandbox_config())
+}
+
+#[tauri::command]
 pub fn sandbox_read_file(path: String) -> FileOpResult {
     let path_buf = PathBuf::from(&path);
     let config = get_sandbox_config();

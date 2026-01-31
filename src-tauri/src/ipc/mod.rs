@@ -9,7 +9,8 @@ use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_opener::OpenerExt;
 
 pub mod puzzles;
 pub use puzzles::{
@@ -44,6 +45,19 @@ pub struct SystemStatus {
     pub preferred_mode: String,
     /// Auto-create puzzles from companion suggestions
     pub auto_puzzle_from_companion: bool,
+}
+
+/// Aggregated settings payload for Settings window
+#[derive(Debug, Serialize, Clone)]
+pub struct SettingsState {
+    pub privacy: crate::privacy::PrivacySettings,
+    pub privacy_notice: String,
+    pub system_status: SystemStatus,
+    pub autonomy_settings: AutonomySettings,
+    pub intelligent_mode: IntelligentModeStatus,
+    pub sandbox_settings: crate::mcp::sandbox::SandboxConfig,
+    pub system_settings: crate::system_settings::SystemSettings,
+    pub capture_settings: crate::capture::CaptureSettings,
 }
 
 fn mode_to_string(mode: crate::memory::AppMode) -> String {
@@ -95,6 +109,87 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
 #[tauri::command]
 pub fn detect_chrome(session: State<'_, Arc<crate::memory::SessionMemory>>) -> SystemStatus {
     detect_system_status(Some(session.as_ref()))
+}
+
+/// Open the System Settings window and optionally navigate to a section
+#[tauri::command]
+pub fn open_settings(section: Option<String>, app: tauri::AppHandle) -> Result<(), String> {
+    let label = "settings";
+    let window = if let Some(existing) = app.get_webview_window(label) {
+        existing
+    } else {
+        let target = if let Some(ref section) = section {
+            format!("settings.html?section={}", section)
+        } else {
+            "settings.html".to_string()
+        };
+        WebviewWindowBuilder::new(&app, label, WebviewUrl::App(target.into()))
+            .title("System Settings")
+            .inner_size(980.0, 720.0)
+            .min_inner_size(820.0, 600.0)
+            .resizable(true)
+            .build()
+            .map_err(|e| e.to_string())?
+    };
+
+    let _ = window.show();
+    let _ = window.set_focus();
+
+    if let Some(section) = section {
+        let _ = window.emit(
+            "settings:navigate",
+            serde_json::json!({ "section": section }),
+        );
+    }
+
+    Ok(())
+}
+
+/// Aggregate settings state for Settings UI
+#[tauri::command]
+pub async fn get_settings_state(
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
+) -> Result<SettingsState, String> {
+    let privacy = crate::privacy::PrivacySettings::load();
+    let privacy_notice = crate::privacy::PRIVACY_NOTICE.to_string();
+    let system_status = detect_system_status(Some(session.as_ref()));
+    let autonomy_settings = AutonomySettings {
+        auto_puzzle_from_companion: session
+            .get_auto_puzzle_from_companion()
+            .map_err(|e| e.to_string())?,
+    };
+    let intelligent_mode = IntelligentModeStatus {
+        intelligent_mode: orchestrator.use_intelligent_mode(),
+        reflection: orchestrator.use_reflection(),
+        guardrails: orchestrator.use_guardrails(),
+    };
+    let sandbox_settings = crate::mcp::sandbox::get_sandbox_settings();
+    let system_settings = crate::system_settings::SystemSettings::load();
+    let capture_settings = crate::capture::CaptureSettings::load();
+
+    Ok(SettingsState {
+        privacy,
+        privacy_notice,
+        system_status,
+        autonomy_settings,
+        intelligent_mode,
+        sandbox_settings,
+        system_settings,
+        capture_settings,
+    })
+}
+
+/// Open an external URL in the system default browser
+#[tauri::command]
+pub fn open_external_url(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    let normalized = url.trim();
+    if !(normalized.starts_with("https://") || normalized.starts_with("http://")) {
+        return Err("Unsupported URL scheme".to_string());
+    }
+    app.opener()
+        .open_url(normalized, None::<String>)
+        .map_err(|e| e.to_string())
 }
 
 /// Get current app mode ("game" or "companion")
@@ -440,8 +535,8 @@ pub async fn quick_ask(
     }
 
     let state = session.load().unwrap_or_default();
-    let redacted_url = crate::privacy::redact_pii(&state.current_url);
-    let redacted_title = crate::privacy::redact_pii(&state.current_title);
+    let redacted_url = crate::privacy::redact_with_settings(&state.current_url);
+    let redacted_title = crate::privacy::redact_with_settings(&state.current_title);
 
     let full_prompt = format!(
         "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\nUser question: {}\n\nContext (if relevant):\n- Current URL: {}\n- Page title: {}",

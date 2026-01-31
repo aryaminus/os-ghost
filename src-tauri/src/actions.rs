@@ -291,6 +291,17 @@ pub fn clear_pending_actions() -> usize {
     count
 }
 
+/// Clear action history
+#[tauri::command]
+pub fn clear_action_history() -> usize {
+    let history = ACTION_QUEUE.get_history(1000);
+    let count = history.len();
+    if let Ok(mut history_guard) = ACTION_QUEUE.history.write() {
+        history_guard.clear();
+    }
+    count
+}
+
 /// Execute an approved action by ID
 /// Returns the action data on success, or an error message
 #[tauri::command]

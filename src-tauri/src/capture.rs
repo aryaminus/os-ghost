@@ -8,6 +8,9 @@ use std::io::Cursor;
 
 // Use the image types from screenshots crate to avoid version conflicts
 use screenshots::image::ImageFormat;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 
 /// Helper: Get the primary screen
 fn get_primary_screen() -> Result<Screen> {
@@ -18,17 +21,70 @@ fn get_primary_screen() -> Result<Screen> {
         .ok_or_else(|| anyhow::anyhow!("No screens found"))
 }
 
-/// Capture the primary monitor's screen and return as base64-encoded JPEG
+const CAPTURE_SETTINGS_FILE: &str = "capture_settings.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptureSettings {
+    pub image_format: String,
+}
+
+impl Default for CaptureSettings {
+    fn default() -> Self {
+        Self {
+            image_format: "jpeg".to_string(),
+        }
+    }
+}
+
+impl CaptureSettings {
+    fn settings_path() -> PathBuf {
+        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("os-ghost");
+        path.push(CAPTURE_SETTINGS_FILE);
+        path
+    }
+
+    pub fn load() -> Self {
+        let path = Self::settings_path();
+        if path.exists() {
+            if let Ok(contents) = fs::read_to_string(&path) {
+                if let Ok(settings) = serde_json::from_str(&contents) {
+                    return settings;
+                }
+            }
+        }
+        Self::default()
+    }
+
+    pub fn save(&self) -> anyhow::Result<()> {
+        let path = Self::settings_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let contents = serde_json::to_string_pretty(self)?;
+        fs::write(&path, contents)?;
+        Ok(())
+    }
+}
+
+fn resolve_image_format() -> ImageFormat {
+    let settings = CaptureSettings::load();
+    match settings.image_format.to_lowercase().as_str() {
+        "png" => ImageFormat::Png,
+        _ => ImageFormat::Jpeg,
+    }
+}
+
+/// Capture the primary monitor's screen and return as base64-encoded image
 pub fn capture_primary_monitor() -> Result<String> {
     let primary = get_primary_screen()?;
 
     // Capture screenshot - returns an ImageBuffer<Rgba<u8>, Vec<u8>>
     let image = primary.capture()?;
 
-    // Write to JPEG instead of PNG for performance (10x faster encoding)
-    // AI models handle JPEG compression artifacts well
+    // Write to configured format (JPEG default for speed)
     let mut jpeg_buffer = Vec::new();
-    image.write_to(&mut Cursor::new(&mut jpeg_buffer), ImageFormat::Jpeg)?;
+    image.write_to(&mut Cursor::new(&mut jpeg_buffer), resolve_image_format())?;
 
     // Base64 encode
     let base64_image = general_purpose::STANDARD.encode(&jpeg_buffer);
@@ -43,9 +99,9 @@ pub fn capture_region(x: i32, y: i32, width: u32, height: u32) -> Result<String>
     // Capture the region
     let image = primary.capture_area(x, y, width, height)?;
 
-    // Write to JPEG
+    // Write to configured format
     let mut jpeg_buffer = Vec::new();
-    image.write_to(&mut Cursor::new(&mut jpeg_buffer), ImageFormat::Jpeg)?;
+    image.write_to(&mut Cursor::new(&mut jpeg_buffer), resolve_image_format())?;
 
     let base64_image = general_purpose::STANDARD.encode(&jpeg_buffer);
 
@@ -62,4 +118,21 @@ pub async fn capture_screen(_app: tauri::AppHandle) -> Result<String, String> {
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_capture_settings() -> CaptureSettings {
+    CaptureSettings::load()
+}
+
+#[tauri::command]
+pub fn set_capture_settings(image_format: String) -> Result<CaptureSettings, String> {
+    let normalized = image_format.to_lowercase();
+    if normalized != "jpeg" && normalized != "png" {
+        return Err("Invalid image format".to_string());
+    }
+    let mut settings = CaptureSettings::load();
+    settings.image_format = normalized;
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
 }
