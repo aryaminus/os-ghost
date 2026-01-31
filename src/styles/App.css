@@ -418,6 +418,7 @@ body {
   display: flex;
   gap: var(--spacing-md);
   flex: 1;
+  align-items: stretch;
   min-height: 0; /* Allow shrinking */
 }
 
@@ -430,6 +431,9 @@ body {
   border: none;
   padding: 0;
   cursor: pointer;
+  align-self: flex-start;
+  width: fit-content;
+  height: fit-content;
   flex-shrink: 0;
   transition: transform var(--transition-fast), filter var(--transition-normal);
   filter: drop-shadow(0 0 var(--glow-size, 8px) var(--ghost-glow));
@@ -503,13 +507,14 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+  align-self: stretch;
   background: rgba(0, 0, 0, 0.6);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   position: relative;
   min-height: 0; /* Allow shrinking */
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* Bubble pointer */
@@ -538,15 +543,15 @@ body {
 }
 
 /* Scrollbar */
-.dialogue-box::-webkit-scrollbar {
+.dialogue-text::-webkit-scrollbar {
   width: 3px;
 }
 
-.dialogue-box::-webkit-scrollbar-track {
+.dialogue-text::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.dialogue-box::-webkit-scrollbar-thumb {
+.dialogue-text::-webkit-scrollbar-thumb {
   background: var(--ghost-glow);
   border-radius: 2px;
 }
@@ -573,7 +578,9 @@ body {
   line-height: 1.4;
   color: var(--text-primary);
   word-wrap: break-word;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .cursor {
