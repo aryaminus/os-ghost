@@ -35,11 +35,12 @@ use ipc::Puzzle;
 use memory::LongTermMemory;
 use ollama_client::OllamaClient;
 use std::sync::{Arc, Mutex};
-use tauri::menu::{Menu, MenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
 use std::str::FromStr;
 use window::GhostWindow;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use tauri_plugin_updater::UpdaterExt;
 
 /// Default puzzles for the game
 fn default_puzzles() -> Vec<Puzzle> {
@@ -161,45 +162,365 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            // App menu for Settings + toggle
-            let settings_item = MenuItem::with_id(
+            // App menu + accessibility-friendly standard items
+            let app_settings_item = MenuItem::with_id(
                 app,
                 "system_settings",
-                "System Settings",
+                "System Settings…",
                 true,
-                None::<&str>,
+                Some("CmdOrCtrl+,"),
             )
-                .map_err(|e| e.to_string())?;
-            let toggle_item = MenuItem::with_id(
+            .map_err(|e| e.to_string())?;
+
+            let settings_open = MenuItem::with_id(
                 app,
-                "toggle_ghost",
-                "Toggle Ghost",
+                "settings_open",
+                "Open Settings",
                 true,
                 None::<&str>,
             )
+            .map_err(|e| e.to_string())?;
+
+            let settings_general = MenuItem::with_id(app, "settings_general", "General", true, None::<&str>)
                 .map_err(|e| e.to_string())?;
-            let submenu = Submenu::with_items(app, "OS Ghost", true, &[&settings_item, &toggle_item])
+            let settings_privacy = MenuItem::with_id(
+                app,
+                "settings_privacy",
+                "Privacy & Security",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let settings_extensions = MenuItem::with_id(
+                app,
+                "settings_extensions",
+                "Extensions",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let settings_keys = MenuItem::with_id(
+                app,
+                "settings_keys",
+                "Keys and Models",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let settings_autonomy = MenuItem::with_id(
+                app,
+                "settings_autonomy",
+                "Autonomy",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let settings_sandbox = MenuItem::with_id(
+                app,
+                "settings_sandbox",
+                "Sandbox",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let settings_submenu = Submenu::with_items(
+                app,
+                "Settings",
+                true,
+                &[
+                    &settings_open,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &settings_general,
+                    &settings_privacy,
+                    &settings_extensions,
+                    &settings_keys,
+                    &settings_autonomy,
+                    &settings_sandbox,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let ghost_toggle = MenuItem::with_id(
+                app,
+                "ghost_toggle",
+                "Toggle Ghost Window",
+                true,
+                Some("CmdOrCtrl+Shift+G"),
+            )
+            .map_err(|e| e.to_string())?;
+            let ghost_show = MenuItem::with_id(app, "ghost_show", "Show Ghost", true, None::<&str>)
                 .map_err(|e| e.to_string())?;
-            let menu = Menu::with_items(app, &[&submenu]).map_err(|e| e.to_string())?;
+            let ghost_hide = MenuItem::with_id(app, "ghost_hide", "Hide Ghost", true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            let ghost_focus = MenuItem::with_id(app, "ghost_focus", "Focus Ghost", true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            let ghost_reset = MenuItem::with_id(app, "ghost_reset", "Reset Game", true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            let ghost_submenu = Submenu::with_items(
+                app,
+                "Ghost",
+                true,
+                &[
+                    &ghost_toggle,
+                    &ghost_show,
+                    &ghost_hide,
+                    &ghost_focus,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &ghost_reset,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let mode_companion = MenuItem::with_id(app, "mode_companion", "Companion Mode", true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            let mode_game = MenuItem::with_id(app, "mode_game", "Game Mode", true, None::<&str>)
+                .map_err(|e| e.to_string())?;
+            let mode_submenu = Submenu::with_items(
+                app,
+                "Mode",
+                true,
+                &[&mode_companion, &mode_game],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let autonomy_toggle = MenuItem::with_id(
+                app,
+                "autonomy_toggle",
+                "Toggle Auto Puzzle",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let autonomy_settings = MenuItem::with_id(
+                app,
+                "autonomy_settings",
+                "Open Autonomy Settings",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let autonomy_submenu = Submenu::with_items(
+                app,
+                "Autonomy",
+                true,
+                &[&autonomy_toggle, &autonomy_settings],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let privacy_toggle = MenuItem::with_id(
+                app,
+                "privacy_toggle",
+                "Toggle Read-Only Mode",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let privacy_settings = MenuItem::with_id(
+                app,
+                "privacy_settings",
+                "Open Privacy Settings",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let privacy_submenu = Submenu::with_items(
+                app,
+                "Privacy",
+                true,
+                &[&privacy_toggle, &privacy_settings],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let edit_submenu = Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::redo(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::cut(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::copy(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::paste(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::select_all(app, None).map_err(|e| e.to_string())?,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let window_submenu = Submenu::with_items(
+                app,
+                "Window",
+                true,
+                &[
+                    &PredefinedMenuItem::minimize(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::maximize(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::close_window(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::fullscreen(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let check_updates = MenuItem::with_id(
+                app,
+                "check_updates",
+                "Check for Updates…",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let app_submenu = Submenu::with_items(
+                app,
+                "OS Ghost",
+                true,
+                &[
+                    &PredefinedMenuItem::about(app, None, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &check_updates,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &app_settings_item,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::services(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::hide(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::hide_others(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::show_all(app, None).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
+                    &PredefinedMenuItem::quit(app, None).map_err(|e| e.to_string())?,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &app_submenu,
+                    &settings_submenu,
+                    &ghost_submenu,
+                    &mode_submenu,
+                    &autonomy_submenu,
+                    &privacy_submenu,
+                    &edit_submenu,
+                    &window_submenu,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
             app.set_menu(menu).map_err(|e| e.to_string())?;
 
-            app.on_menu_event(|app, event| match event.id().as_ref() {
-                "system_settings" => {
-                    let _ = crate::ipc::open_settings(Some("general".to_string()), app.clone());
-                }
-                "toggle_ghost" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let visible = window.is_visible().unwrap_or(true);
-                        if visible {
-                            let _ = window.hide();
-                        } else {
+            app.on_menu_event(|app, event| {
+                let emit_settings_update = |app: &tauri::AppHandle| {
+                    let _ = app.emit("settings:updated", serde_json::json!({ "source": "menu" }));
+                };
+
+                let emit_status_update = |app: &tauri::AppHandle| {
+                    let session = app.state::<Arc<memory::SessionMemory>>();
+                    let status = crate::ipc::detect_system_status(Some(session.as_ref()));
+                    let _ = app.emit("system_status_update", status);
+                };
+
+                match event.id().as_ref() {
+                    "system_settings" | "settings_open" | "settings_general" => {
+                        let _ = crate::ipc::open_settings(Some("general".to_string()), app.clone());
+                    }
+                    "settings_privacy" | "privacy_settings" => {
+                        let _ = crate::ipc::open_settings(Some("privacy".to_string()), app.clone());
+                    }
+                    "settings_extensions" => {
+                        let _ = crate::ipc::open_settings(Some("extensions".to_string()), app.clone());
+                    }
+                    "settings_keys" => {
+                        let _ = crate::ipc::open_settings(Some("keys".to_string()), app.clone());
+                    }
+                    "settings_autonomy" | "autonomy_settings" => {
+                        let _ = crate::ipc::open_settings(Some("autonomy".to_string()), app.clone());
+                    }
+                    "settings_sandbox" => {
+                        let _ = crate::ipc::open_settings(Some("sandbox".to_string()), app.clone());
+                    }
+                    "check_updates" => {
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            run_update_check(handle, true).await;
+                        });
+                    }
+                    "ghost_toggle" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let visible = window.is_visible().unwrap_or(true);
+                            if visible {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                    "ghost_show" => {
+                        if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
                     }
+                    "ghost_hide" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.hide();
+                        }
+                    }
+                    "ghost_focus" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "ghost_reset" => {
+                        tauri::async_runtime::spawn(async move {
+                            let _ = crate::game_state::reset_game().await;
+                        });
+                    }
+                    "mode_companion" => {
+                        let session = app.state::<Arc<memory::SessionMemory>>();
+                        let _ = session.set_preferred_mode(memory::AppMode::Companion);
+                        let _ = session.set_mode(memory::AppMode::Companion);
+                        emit_status_update(app);
+                        emit_settings_update(app);
+                    }
+                    "mode_game" => {
+                        let session = app.state::<Arc<memory::SessionMemory>>();
+                        let _ = session.set_preferred_mode(memory::AppMode::Game);
+                        let _ = session.set_mode(memory::AppMode::Game);
+                        emit_status_update(app);
+                        emit_settings_update(app);
+                    }
+                    "autonomy_toggle" => {
+                        let session = app.state::<Arc<memory::SessionMemory>>();
+                        if let Ok(current) = session.get_auto_puzzle_from_companion() {
+                            let _ = session.set_auto_puzzle_from_companion(!current);
+                            emit_status_update(app);
+                            emit_settings_update(app);
+                        }
+                    }
+                    "privacy_toggle" => {
+                        let settings = crate::privacy::PrivacySettings::load();
+                        let _ = crate::privacy::update_privacy_settings(
+                            settings.capture_consent,
+                            settings.ai_analysis_consent,
+                            settings.privacy_notice_acknowledged,
+                            !settings.read_only_mode,
+                            None,
+                            None,
+                        );
+                        emit_settings_update(app);
+                    }
+                    _ => {}
                 }
-                _ => {}
             });
+
+            if !cfg!(debug_assertions) {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    run_update_check(handle, false).await;
+                });
+            }
 
             // Register global shortcut for quick toggle (if enabled)
             let app_handle = app.handle().clone();
@@ -513,6 +834,80 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+async fn run_update_check(app: tauri::AppHandle, install: bool) {
+    let _ = app.emit("updater:checking", serde_json::json!({ "install": install }));
+
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(err) => {
+            let _ = app.emit(
+                "updater:error",
+                serde_json::json!({ "message": err.to_string() }),
+            );
+            return;
+        }
+    };
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let _ = app.emit(
+                "updater:available",
+                serde_json::json!({
+                    "version": update.version,
+                    "currentVersion": update.current_version,
+                    "notes": update.body,
+                    "pubDate": update.date.map(|d| d.to_string())
+                }),
+            );
+
+            if install {
+                let _ = app.emit(
+                    "updater:installing",
+                    serde_json::json!({ "version": update.version }),
+                );
+                let result = update
+                    .download_and_install(
+                        |chunk, total| {
+                            let _ = app.emit(
+                                "updater:download-progress",
+                                serde_json::json!({ "chunk": chunk, "total": total }),
+                            );
+                        },
+                        || {
+                            let _ = app.emit("updater:downloaded", serde_json::json!({}));
+                        },
+                    )
+                    .await;
+
+                match result {
+                    Ok(()) => {
+                        let _ = app.emit(
+                            "updater:installed",
+                            serde_json::json!({ "version": update.version }),
+                        );
+                        app.restart();
+                    }
+                    Err(err) => {
+                        let _ = app.emit(
+                            "updater:error",
+                            serde_json::json!({ "message": err.to_string() }),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(None) => {
+            let _ = app.emit("updater:not-available", serde_json::json!({}));
+        }
+        Err(err) => {
+            let _ = app.emit(
+                "updater:error",
+                serde_json::json!({ "message": err.to_string() }),
+            );
+        }
+    }
 }
 
 // ============================================================================
