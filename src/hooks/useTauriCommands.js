@@ -176,6 +176,7 @@ export function useGhostGame() {
 	// Ref for function hoisting (must be declared before use)
 	const handleNavigationRef = useRef(null);
 	const handlePageContentRef = useRef(null);
+	const captureAndAnalyzeRef = useRef(null);
 	const advanceToNextPuzzleRef = useRef(null);
 	const triggerPuzzleGenerationRef = useRef(null);
 
@@ -764,11 +765,28 @@ export function useGhostGame() {
 					"[Ghost] Found existing content, triggering initial puzzle..."
 				);
 				triggerPuzzleGenerationRef.current?.();
+			} else if (configured) {
+				// No extension content yet, but we have API key
+				// Trigger initial screenshot to start observation immediately
+				log(
+					"[Ghost] No extension content, starting with screenshot capture..."
+				);
+				// Small delay to let UI settle before capture
+				scheduleTimeout(() => {
+					if (isMountedRef.current) {
+						captureAndAnalyzeRef.current?.();
+					}
+				}, 1000);
 			}
+
+			// Refresh system status after first render to pull last_screenshot_at
+			scheduleTimeout(() => {
+				detectSystemStatus();
+			}, 1500);
 		} catch (err) {
 			console.error("[Ghost] Failed to initialize game:", err);
 		}
-	}, []);
+	}, [detectSystemStatus, scheduleTimeout]);
 
 	// Load persistent state and check API key on mount
 	useEffect(() => {
@@ -964,6 +982,10 @@ export function useGhostGame() {
 			}
 		}
 	}, []);
+
+	useEffect(() => {
+		captureAndAnalyzeRef.current = captureAndAnalyze;
+	}, [captureAndAnalyze]);
 
 	/**
 	 * Verify if the current screen matches the puzzle clue.

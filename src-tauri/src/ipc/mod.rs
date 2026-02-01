@@ -715,6 +715,7 @@ pub fn request_extension_ping(
 #[tauri::command]
 pub async fn capture_and_analyze(
     app: tauri::AppHandle,
+    session: State<'_, Arc<crate::memory::SessionMemory>>,
     ai_router: State<'_, Arc<SmartAiRouter>>,
 ) -> Result<String, String> {
     // Enforce explicit user consent
@@ -733,6 +734,9 @@ pub async fn capture_and_analyze(
     let screenshot = capture::capture_screen(app)
         .await
         .map_err(|e| format!("Capture failed: {}", e))?;
+
+    // Record capture for session metrics (best effort)
+    let _ = session.record_screenshot();
 
     // Analyze with AI
     let prompt =

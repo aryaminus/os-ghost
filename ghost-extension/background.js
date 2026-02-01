@@ -228,6 +228,22 @@ function connectToNative() {
 			},
 		});
 
+		// Send hello twice to handle race on initial connect
+		setTimeout(() => {
+			sendToNative({
+				type: "hello",
+				protocol_version: PROTOCOL_VERSION,
+				extension_version: EXTENSION_VERSION,
+				extension_id: chrome.runtime.id,
+				capabilities: {
+					history: !!chrome.history,
+					top_sites: !!chrome.topSites,
+					content: true,
+					effects: true,
+				},
+			});
+		}, 500);
+
 		if (heartbeatTimerId) {
 			clearInterval(heartbeatTimerId);
 		}

@@ -162,16 +162,28 @@ const Ghost = () => {
   const autoMode = !!autonomySettings?.autoPuzzleFromCompanion;
   const lastPageUpdate = systemStatus?.lastPageUpdate;
   const lastScreenshotAt = systemStatus?.lastScreenshotAt;
+  const screenshotFreshWindow = useMemo(() => {
+    const intervalSecs = systemSettings?.monitor_interval_secs ?? 60;
+    return Math.max(120, intervalSecs * 2);
+  }, [systemSettings?.monitor_interval_secs]);
+  const hasRecentPage = useMemo(() => {
+    if (!extensionConnectedValue || !lastPageUpdate) return false;
+    return Date.now() / 1000 - lastPageUpdate < 120;
+  }, [extensionConnectedValue, lastPageUpdate]);
+  const hasRecentScreenshot = useMemo(() => {
+    if (!lastScreenshotAt) return false;
+    return Date.now() / 1000 - lastScreenshotAt < screenshotFreshWindow;
+  }, [lastScreenshotAt, screenshotFreshWindow]);
+
   const sourceLabel = useMemo(() => {
-    const now = Date.now() / 1000;
-    if (extensionConnectedValue && lastPageUpdate && now - lastPageUpdate < 120) {
+    if (hasRecentPage) {
       return "Source: Chrome";
     }
-    if (systemSettings?.monitor_enabled && hasConsent) {
+    if ((hasRecentScreenshot || systemSettings?.monitor_enabled) && hasConsent) {
       return "Source: Screenshots";
     }
     return "Source: Waiting";
-  }, [extensionConnectedValue, lastPageUpdate, systemSettings?.monitor_enabled, hasConsent]);
+  }, [hasRecentPage, hasRecentScreenshot, systemSettings?.monitor_enabled, hasConsent]);
   const lastScanLabel = useMemo(() => {
     if (!lastScreenshotAt) return "Last scan: --";
     const delta = Math.max(0, Math.floor(Date.now() / 1000 - lastScreenshotAt));
@@ -254,9 +266,12 @@ const Ghost = () => {
     
     if (isCompanionMode) {
       if (autoMode) {
-        return extensionConnectedValue
+        return hasRecentPage
           ? "Auto mode: Watching your browsing..."
           : "Auto mode: Observing via screenshots...";
+      }
+      if (!hasRecentPage && (hasRecentScreenshot || systemSettings?.monitor_enabled) && hasConsent) {
+        return "Observing via screenshots...";
       }
       return extensionConnectedValue
         ? "Companion ready. Browse to begin."
@@ -276,7 +291,32 @@ const Ghost = () => {
     isCompanionMode,
     autoMode,
     extensionConnectedValue,
+    hasRecentPage,
+    hasRecentScreenshot,
+    systemSettings?.monitor_enabled,
+    screenshotFreshWindow,
   ]);
+
+  // Check if text should skip typewriter (system messages, scan results)
+  const shouldSkipTypewriter = useMemo(() => {
+    const systemMessages = [
+      "Waiting for signal...",
+      "Read-only mode. I'm just watching.",
+      "Grant consent to begin.",
+      "Configure your API key to start.",
+      "Auto mode: Watching your browsing...",
+      "Auto mode: Observing via screenshots...",
+      "Companion ready. Browse to begin.",
+      "Observing via screenshots...",
+      "Game ready. Browse to begin.",
+      "Loading puzzle...",
+      "Nothing found here. Keep browsing.",
+      "No mystery to investigate yet... waiting for signal.",
+    ];
+    return systemMessages.some(msg => displayText.startsWith(msg)) ||
+           displayText.includes("Analysis failed") ||
+           displayText.includes("Error:");
+  }, [displayText]);
 
   // Typewriter effect - only triggers on actual text change
   useEffect(() => {
@@ -285,6 +325,12 @@ const Ghost = () => {
     }
     if (displayText === lastTextRef.current) return;
     lastTextRef.current = displayText;
+
+    // Skip typewriter for system messages and errors
+    if (shouldSkipTypewriter) {
+      setTypedDialogue(displayText);
+      return;
+    }
 
     let index = 0;
     setTypedDialogue("");
@@ -303,7 +349,7 @@ const Ghost = () => {
         typewriterRef.current = null;
       }
     };
-  }, [displayText]);
+  }, [displayText, shouldSkipTypewriter]);
 
   // Track puzzle timing
   useEffect(() => {

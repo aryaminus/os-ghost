@@ -169,6 +169,7 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
         // Parse and handle message
         if let Ok(message) = serde_json::from_slice::<BrowserMessage>(&msg_buf) {
             tracing::debug!("Received from Chrome: {:?}", message);
+            tracing::debug!("Raw message bytes: {}", String::from_utf8_lossy(&msg_buf));
 
             // Update MCP state based on message type
             let mcp_state = mcp_ctx.mcp_server.state();
@@ -181,7 +182,13 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     let extension_id = message.extension_id.clone();
                     let capabilities = message.capabilities.clone();
 
-                    let resolved_protocol = protocol.clone().or_else(|| Some("legacy".to_string()));
+                    tracing::debug!("Hello message - protocol: {:?}, version: {:?}, id: {:?}, capabilities: {:?}",
+                        protocol, version, extension_id, capabilities);
+
+                    let resolved_protocol = protocol.clone().or_else(|| {
+                        tracing::warn!("Protocol version missing, defaulting to 'legacy'");
+                        Some("legacy".to_string())
+                    });
                     let resolved_version = version.clone().or_else(|| Some("legacy".to_string()));
 
                     system_status::update_status(|status| {
@@ -207,6 +214,19 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     system_status::update_status(|status| {
                         status.last_extension_heartbeat = Some(now);
                         status.extension_operational = true;
+                    });
+
+                    // If hello hasn't arrived yet, treat heartbeat as minimal handshake
+                    system_status::update_status(|status| {
+                        if status.extension_protocol_version.is_none() {
+                            status.extension_protocol_version = Some("1".to_string());
+                        }
+                        if status.extension_version.is_none() {
+                            status.extension_version = Some("unknown".to_string());
+                        }
+                        if status.last_extension_hello.is_none() {
+                            status.last_extension_hello = Some(now);
+                        }
                     });
 
                     emit_status_throttled(&app);
@@ -367,6 +387,9 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     }
                 }
             }
+        } else {
+            tracing::error!("Failed to parse message from Chrome. Raw: {}", String::from_utf8_lossy(&msg_buf));
+            continue;
         }
     }
 
