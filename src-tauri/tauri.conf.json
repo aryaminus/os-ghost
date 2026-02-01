@@ -60,8 +60,7 @@
 		],
 		"category": "Game",
 		"macOS": {
-			"entitlements": "entitlements.plist",
-			"signingIdentity": "-"
+			"entitlements": "entitlements.plist"
 		},
 		"windows": {
 			"webviewInstallMode": {
