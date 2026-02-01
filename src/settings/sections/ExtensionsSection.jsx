@@ -12,6 +12,8 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
   const [pairingCode, setPairingCode] = useState("");
   const [pairingExpires, setPairingExpires] = useState(null);
   const [protocolMessage, setProtocolMessage] = useState("");
+  const [resetMessage, setResetMessage] = useState("");
+  const [buildMessage, setBuildMessage] = useState("");
 
   const status = settingsState.systemStatus;
   const pairing = settingsState.pairingStatus;
@@ -24,6 +26,8 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
   const handleRefresh = useCallback(async () => {
     setError("");
     setProtocolMessage("");
+    setResetMessage("");
+    setBuildMessage("");
     await onSettingsUpdated();
   }, [onSettingsUpdated]);
 
@@ -89,8 +93,16 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
 
   const handleCheckProtocol = useCallback(() => {
     const expected = "1";
-    if (!status?.extensionProtocolVersion) {
+    if (!status?.extensionProtocolVersion && !status?.lastExtensionHello) {
       setProtocolMessage("No protocol handshake detected yet.");
+      return;
+    }
+    if (status.extensionProtocolVersion === "legacy") {
+      setProtocolMessage("Legacy extension detected. Update to latest build for handshake support.");
+      return;
+    }
+    if (!status?.extensionProtocolVersion && status?.lastExtensionHello) {
+      setProtocolMessage("Handshake received but no protocol details. Update extension.");
       return;
     }
     if (status.extensionProtocolVersion === expected) {
@@ -99,6 +111,32 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
       setProtocolMessage(`Protocol mismatch: expected ${expected}, got ${status.extensionProtocolVersion}.`);
     }
   }, [status?.extensionProtocolVersion]);
+
+  const handleResetBridge = useCallback(async () => {
+    setError("");
+    setResetMessage("");
+    setBuildMessage("");
+    try {
+      await invoke("reset_bridge_registration");
+      setResetMessage("Bridge registration refreshed. Reload the extension.");
+      await onSettingsUpdated();
+    } catch (err) {
+      console.error("Failed to reset bridge registration", err);
+      setError("Reset failed. Ensure native_bridge is built and try again.");
+    }
+  }, [onSettingsUpdated]);
+
+  const handleRebuildBridge = useCallback(async () => {
+    setError("");
+    setBuildMessage("");
+    try {
+      await invoke("rebuild_native_bridge");
+      setBuildMessage("native_bridge rebuilt. Now reset registration and reload the extension.");
+    } catch (err) {
+      console.error("Failed to rebuild native bridge", err);
+      setError("Rebuild failed. Ensure cargo is installed and try again.");
+    }
+  }, []);
 
   const handleClearPairing = useCallback(async () => {
     setError("");
@@ -112,6 +150,8 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
       setError("Could not clear pairing code.");
     }
   }, [onSettingsUpdated]);
+
+  const isDev = import.meta.env.DEV;
 
   return (
     <section className="settings-section">
@@ -194,9 +234,19 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
           <button type="button" className="ghost-button" onClick={handleCheckProtocol}>
             Check protocol
           </button>
+          <button type="button" className="ghost-button" onClick={handleResetBridge}>
+            Reset bridge registration
+          </button>
+          {isDev && (
+            <button type="button" className="ghost-button" onClick={handleRebuildBridge}>
+              Rebuild native bridge
+            </button>
+          )}
         </div>
         {error && <span className="status-pill error">{error}</span>}
         {protocolMessage && <span className="status-pill neutral">{protocolMessage}</span>}
+        {resetMessage && <span className="status-pill neutral">{resetMessage}</span>}
+        {buildMessage && <span className="status-pill neutral">{buildMessage}</span>}
       </div>
 
       <div className="settings-card">

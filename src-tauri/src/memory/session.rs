@@ -1,8 +1,8 @@
 //! Session memory - short-term working memory for current game session
 //! Stores current puzzle state, recent interactions, activity history, and mode state
 
-use super::store::MemoryStore;
 use super::scoped_state::ScopedState;
+use super::store::MemoryStore;
 use crate::utils::current_timestamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -86,6 +86,9 @@ pub struct SessionState {
     /// Screenshots taken this session
     #[serde(default)]
     pub screenshots_taken: usize,
+    /// Last screenshot timestamp
+    #[serde(default)]
+    pub last_screenshot_at: u64,
     /// Latest page content for analysis
     #[serde(default, skip)]
     pub current_content: Option<String>,
@@ -113,6 +116,7 @@ impl Default for SessionState {
             last_mode_change: now,
             puzzles_solved_session: 0,
             screenshots_taken: 0,
+            last_screenshot_at: 0,
             current_content: None,
         }
     }
@@ -280,6 +284,7 @@ impl SessionMemory {
                 let mut state = old.unwrap_or_default();
                 state.screenshots_taken += 1;
                 state.last_activity = current_timestamp();
+                state.last_screenshot_at = current_timestamp();
                 Some(state)
             })?;
         Ok(())
@@ -369,7 +374,10 @@ impl SessionMemory {
 
     /// Load scoped state from storage
     pub fn load_scoped_state(&self) -> Result<ScopedState> {
-        Ok(self.store.get(SCOPED_STATE_TREE, "current")?.unwrap_or_default())
+        Ok(self
+            .store
+            .get(SCOPED_STATE_TREE, "current")?
+            .unwrap_or_default())
     }
 
     /// Save scoped state to storage
@@ -385,35 +393,41 @@ impl SessionMemory {
 
     /// Set a scoped value by key (supports temp:, user:, app:, session: prefixes)
     pub fn set_scoped(&self, key: &str, value: serde_json::Value) -> Result<()> {
-        self.store.update(SCOPED_STATE_TREE, "current", |old: Option<ScopedState>| {
-            let mut state = old.unwrap_or_default();
-            state.set(key, value.clone());
-            Some(state)
-        })?;
+        self.store
+            .update(SCOPED_STATE_TREE, "current", |old: Option<ScopedState>| {
+                let mut state = old.unwrap_or_default();
+                state.set(key, value.clone());
+                Some(state)
+            })?;
         Ok(())
     }
 
     /// Clear temp-scoped state (call at start of each invocation)
     /// This follows ADK pattern where temp: state is discarded after each turn
     pub fn clear_temp_state(&self) -> Result<()> {
-        self.store.update(SCOPED_STATE_TREE, "current", |old: Option<ScopedState>| {
-            let mut state = old.unwrap_or_default();
-            state.clear_temp();
-            Some(state)
-        })?;
+        self.store
+            .update(SCOPED_STATE_TREE, "current", |old: Option<ScopedState>| {
+                let mut state = old.unwrap_or_default();
+                state.clear_temp();
+                Some(state)
+            })?;
         Ok(())
     }
 
     /// Apply a state delta from an EventActions
-    pub fn apply_state_delta(&self, delta: &std::collections::HashMap<String, serde_json::Value>) -> Result<()> {
+    pub fn apply_state_delta(
+        &self,
+        delta: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
         if delta.is_empty() {
             return Ok(());
         }
-        self.store.update(SCOPED_STATE_TREE, "current", |old: Option<ScopedState>| {
-            let mut state = old.unwrap_or_default();
-            state.apply_delta(delta);
-            Some(state)
-        })?;
+        self.store
+            .update(SCOPED_STATE_TREE, "current", |old: Option<ScopedState>| {
+                let mut state = old.unwrap_or_default();
+                state.apply_delta(delta);
+                Some(state)
+            })?;
         Ok(())
     }
 
@@ -422,12 +436,13 @@ impl SessionMemory {
         self.store.delete(SESSION_TREE, "current")?;
         self.store.clear_tree(ACTIVITY_TREE)?;
         // Clear session-scoped state but preserve user: and app: scopes
-        self.store.update(SCOPED_STATE_TREE, "current", |old: Option<ScopedState>| {
-            let mut state = old.unwrap_or_default();
-            state.clear_session();
-            state.clear_temp();
-            Some(state)
-        })?;
+        self.store
+            .update(SCOPED_STATE_TREE, "current", |old: Option<ScopedState>| {
+                let mut state = old.unwrap_or_default();
+                state.clear_session();
+                state.clear_temp();
+                Some(state)
+            })?;
         Ok(())
     }
 

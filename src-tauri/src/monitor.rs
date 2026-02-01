@@ -144,9 +144,11 @@ pub async fn start_monitor_loop(
         };
 
         let now = current_timestamp();
-        if last_activity > 0 && now.saturating_sub(last_activity) > settings.monitor_idle_secs {
-            tracing::debug!("Monitor: user idle; skipping");
-            continue;
+        if !settings.monitor_ignore_idle {
+            if last_activity > 0 && now.saturating_sub(last_activity) > settings.monitor_idle_secs {
+                tracing::debug!("Monitor: user idle; skipping");
+                continue;
+            }
         }
 
         // 1. Capture Screen (no window hiding - better UX)

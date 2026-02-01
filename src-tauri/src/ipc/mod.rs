@@ -35,6 +35,8 @@ pub struct SystemStatus {
     pub extension_operational: bool,
     /// Last heartbeat timestamp (unix seconds)
     pub last_extension_heartbeat: Option<u64>,
+    /// Last hello timestamp (unix seconds)
+    pub last_extension_hello: Option<u64>,
     /// Extension protocol version
     pub extension_protocol_version: Option<String>,
     /// Extension version
@@ -53,6 +55,8 @@ pub struct SystemStatus {
     pub api_key_source: String,
     /// Last known browsing URL (from extension or history)
     pub last_known_url: Option<String>,
+    /// Last screenshot timestamp
+    pub last_screenshot_at: Option<u64>,
     /// Active AI provider
     pub active_provider: Option<String>,
     /// Current app mode
@@ -129,6 +133,8 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
         .or_else(|| session_state.as_ref().map(|s| s.current_url.clone()))
         .filter(|url| !url.is_empty());
 
+    let last_screenshot_at = session_state.as_ref().map(|s| s.last_screenshot_at).filter(|v| *v > 0);
+
     SystemStatus {
         chrome_path,
         chrome_installed,
@@ -153,6 +159,9 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
         extension_capabilities: status_snapshot
             .as_ref()
             .and_then(|s| s.extension_capabilities.clone()),
+        last_extension_hello: status_snapshot
+            .as_ref()
+            .and_then(|s| s.last_extension_hello),
         mcp_browser_connected: status_snapshot
             .as_ref()
             .map(|s| s.mcp_browser_connected)
@@ -161,6 +170,7 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
         api_key_configured,
         api_key_source,
         last_known_url,
+        last_screenshot_at,
         active_provider: status_snapshot
             .as_ref()
             .and_then(|s| s.active_provider.clone()),

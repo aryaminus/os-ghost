@@ -16,6 +16,8 @@ pub struct SystemSettings {
     pub monitor_enabled: bool,
     pub monitor_interval_secs: u64,
     pub monitor_idle_secs: u64,
+    #[serde(default)]
+    pub monitor_ignore_idle: bool,
     pub monitor_allow_hidden: bool,
     pub monitor_only_companion: bool,
     pub monitor_recent_activity_count: usize,
@@ -31,6 +33,7 @@ impl Default for SystemSettings {
             monitor_enabled: true,
             monitor_interval_secs: 60,
             monitor_idle_secs: 15 * 60,
+            monitor_ignore_idle: false,
             monitor_allow_hidden: false,
             monitor_only_companion: true,
             monitor_recent_activity_count: 5,
@@ -83,6 +86,7 @@ pub fn update_system_settings(
     monitor_enabled: bool,
     monitor_interval_secs: u64,
     monitor_idle_secs: u64,
+    monitor_ignore_idle: bool,
     monitor_allow_hidden: bool,
     monitor_only_companion: bool,
     monitor_recent_activity_count: usize,
@@ -94,6 +98,7 @@ pub fn update_system_settings(
     settings.monitor_enabled = monitor_enabled;
     settings.monitor_interval_secs = monitor_interval_secs.max(10).min(3600);
     settings.monitor_idle_secs = monitor_idle_secs.max(60).min(60 * 60 * 12);
+    settings.monitor_ignore_idle = monitor_ignore_idle;
     settings.monitor_allow_hidden = monitor_allow_hidden;
     settings.monitor_only_companion = monitor_only_companion;
     settings.monitor_recent_activity_count = monitor_recent_activity_count.clamp(1, 20);

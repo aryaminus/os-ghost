@@ -136,6 +136,7 @@ export function useGhostGame() {
 		extensionConnected: false,
 		extensionOperational: false,
 		lastExtensionHeartbeat: null,
+		lastExtensionHello: null,
 		extensionProtocolVersion: null,
 		extensionVersion: null,
 		extensionId: null,
@@ -145,6 +146,7 @@ export function useGhostGame() {
 		apiKeyConfigured: false,
 		apiKeySource: "none", // "none" | "env" | "user"
 		lastKnownUrl: null,
+		lastScreenshotAt: null,
 		activeProvider: null,
 		currentMode: "companion",
 		preferredMode: "companion",
@@ -203,6 +205,7 @@ export function useGhostGame() {
 				extensionConnected: status.extension_connected,
 				extensionOperational: status.extension_operational,
 				lastExtensionHeartbeat: status.last_extension_heartbeat,
+				lastExtensionHello: status.last_extension_hello,
 				extensionProtocolVersion: status.extension_protocol_version,
 				extensionVersion: status.extension_version,
 				extensionId: status.extension_id,
@@ -212,6 +215,7 @@ export function useGhostGame() {
 				apiKeyConfigured: status.api_key_configured,
 				apiKeySource: status.api_key_source || "none",
 				lastKnownUrl: status.last_known_url,
+				lastScreenshotAt: status.last_screenshot_at,
 				activeProvider: status.active_provider,
 				currentMode: status.current_mode,
 				preferredMode: status.preferred_mode,
@@ -573,6 +577,7 @@ export function useGhostGame() {
 					extensionConnected: status.extension_connected ?? prev.extensionConnected,
 					extensionOperational: status.extension_operational ?? prev.extensionOperational,
 					lastExtensionHeartbeat: status.last_extension_heartbeat ?? prev.lastExtensionHeartbeat,
+					lastExtensionHello: status.last_extension_hello ?? prev.lastExtensionHello,
 					extensionProtocolVersion:
 						status.extension_protocol_version ?? prev.extensionProtocolVersion,
 					extensionVersion: status.extension_version ?? prev.extensionVersion,
@@ -583,6 +588,7 @@ export function useGhostGame() {
 						status.mcp_browser_connected ?? prev.mcpBrowserConnected,
 					lastPageUpdate: status.last_page_update ?? prev.lastPageUpdate,
 					lastKnownUrl: status.last_known_url ?? prev.lastKnownUrl,
+					lastScreenshotAt: status.last_screenshot_at ?? prev.lastScreenshotAt,
 					activeProvider: status.active_provider ?? prev.activeProvider,
 					// Preserve extension connection state as it might be handled separately
 					// or merge if backend sends it authoritative
@@ -740,8 +746,7 @@ export function useGhostGame() {
 				...prev,
 				apiKeyConfigured: configured,
 				currentPuzzle: savedState?.current_puzzle_index || 0,
-				dialogue:
-					"Connection established. I need to see what you see... browse to a page.",
+				dialogue: "",
 				// Ensure we don't start with a default puzzle
 				puzzleId: "",
 				clue: "",

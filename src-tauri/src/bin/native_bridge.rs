@@ -3,7 +3,7 @@
 //!
 //! Chrome Extension → (stdio) → native-bridge → (TCP:9876) → Tauri App
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
@@ -12,17 +12,10 @@ const TAURI_PORT: u16 = 9876;
 const LOG_FILE_NAME: &str = "os-ghost-bridge.log";
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1 MB limit
 
-/// Message from Chrome extension
-#[derive(Debug, Deserialize, Serialize)]
+/// Raw message from Chrome extension
 struct BrowserMessage {
-    #[serde(rename = "type")]
     msg_type: String,
-    url: Option<String>,
-    title: Option<String>,
-    body_text: Option<String>,
-    timestamp: Option<i64>,
-    recent_history: Option<Vec<serde_json::Value>>,
-    top_sites: Option<Vec<serde_json::Value>>,
+    payload: Vec<u8>,
 }
 
 /// Response to Chrome extension
@@ -41,7 +34,7 @@ fn log(msg: &str) {
         if let Some(parent) = log_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        
+
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
             let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
             let _ = writeln!(file, "[{}] {}", timestamp, msg);
@@ -51,7 +44,7 @@ fn log(msg: &str) {
 
 fn main() {
     log("Native bridge started");
-    
+
     // Try to connect to Tauri app
     let mut tauri_connection: Option<TcpStream> = None;
 
@@ -102,22 +95,9 @@ fn main() {
 
         // Forward message to Tauri
         if let Some(ref mut stream) = tauri_connection {
-            let json = match serde_json::to_vec(&message) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    log(&format!("Failed to serialize message to JSON: {}", e));
-                    send_native_response(&NativeResponse {
-                        action: "error".to_string(),
-                        success: false,
-                        error: Some("Failed to serialize message".to_string()),
-                    });
-                    continue;
-                }
-            };
+            let len = (message.payload.len() as u32).to_le_bytes();
 
-            let len = (json.len() as u32).to_le_bytes();
-
-            if stream.write_all(&len).is_err() || stream.write_all(&json).is_err() {
+            if stream.write_all(&len).is_err() || stream.write_all(&message.payload).is_err() {
                 log("Lost connection to Tauri during write");
                 // Connection lost, clear it
                 tauri_connection = None;
@@ -133,7 +113,7 @@ fn main() {
             let mut len_buf = [0u8; 4];
             if stream.read_exact(&mut len_buf).is_ok() {
                 let response_len = u32::from_le_bytes(len_buf) as usize;
-                
+
                 if response_len > MAX_MESSAGE_SIZE {
                     log(&format!("Response from Tauri too large: {}", response_len));
                     tauri_connection = None; // Reset connection state
@@ -174,27 +154,39 @@ fn read_native_message() -> io::Result<Option<BrowserMessage>> {
     }
 
     // Chrome uses native endian, but we convert to little endian for TCP consistency if needed
-    // Actually, Native Messaging spec says "native byte order". 
+    // Actually, Native Messaging spec says "native byte order".
     // Since we are running local, native endian is correct.
     let message_length = u32::from_ne_bytes(length_bytes) as usize;
 
     if message_length == 0 {
         return Ok(None);
     }
-    
+
     if message_length > MAX_MESSAGE_SIZE {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "Message too large"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Message too large",
+        ));
     }
 
     // Read message bytes
     let mut message_bytes = vec![0u8; message_length];
     stdin.read_exact(&mut message_bytes)?;
 
-    // Parse JSON
-    let message: BrowserMessage = serde_json::from_slice(&message_bytes)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let message_type = serde_json::from_slice::<serde_json::Value>(&message_bytes)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("type")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
 
-    Ok(Some(message))
+    Ok(Some(BrowserMessage {
+        msg_type: message_type,
+        payload: message_bytes,
+    }))
 }
 
 /// Send a native messaging response to stdout (length-prefixed JSON)

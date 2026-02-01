@@ -146,6 +146,7 @@ const Ghost = () => {
   });
   const [recentTimeline, setRecentTimeline] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [systemSettings, setSystemSettings] = useState(null);
 
   // Derived state
   const isCompanionMode = systemStatus?.currentMode === "companion";
@@ -159,6 +160,25 @@ const Ghost = () => {
   const extensionHealthy = systemStatus?.extensionOperational ?? extensionConnectedValue;
   const keyConfigured = !!systemStatus?.apiKeyConfigured;
   const autoMode = !!autonomySettings?.autoPuzzleFromCompanion;
+  const lastPageUpdate = systemStatus?.lastPageUpdate;
+  const lastScreenshotAt = systemStatus?.lastScreenshotAt;
+  const sourceLabel = useMemo(() => {
+    const now = Date.now() / 1000;
+    if (extensionConnectedValue && lastPageUpdate && now - lastPageUpdate < 120) {
+      return "Source: Chrome";
+    }
+    if (systemSettings?.monitor_enabled && hasConsent) {
+      return "Source: Screenshots";
+    }
+    return "Source: Waiting";
+  }, [extensionConnectedValue, lastPageUpdate, systemSettings?.monitor_enabled, hasConsent]);
+  const lastScanLabel = useMemo(() => {
+    if (!lastScreenshotAt) return "Last scan: --";
+    const delta = Math.max(0, Math.floor(Date.now() / 1000 - lastScreenshotAt));
+    if (delta < 60) return `Last scan: ${delta}s ago`;
+    if (delta < 3600) return `Last scan: ${Math.floor(delta / 60)}m ago`;
+    return `Last scan: ${Math.floor(delta / 3600)}h ago`;
+  }, [lastScreenshotAt]);
 
   // Action management for approval flows
   const {
@@ -189,9 +209,17 @@ const Ghost = () => {
     }
   }, []);
 
+  const loadSystemSettings = useCallback(async () => {
+    const settings = await safeInvoke("get_system_settings", {}, null);
+    if (settings) {
+      setSystemSettings(settings);
+    }
+  }, []);
+
   useEffect(() => {
     loadPrivacy();
-  }, [loadPrivacy]);
+    loadSystemSettings();
+  }, [loadPrivacy, loadSystemSettings]);
 
   // Listen for settings updates
   useEffect(() => {
@@ -199,6 +227,7 @@ const Ghost = () => {
     const setup = async () => {
       unlisten = await listen("settings:updated", () => {
         loadPrivacy();
+        loadSystemSettings();
         detectSystemStatus?.();
       });
     };
@@ -537,6 +566,30 @@ const Ghost = () => {
             <span>{systemState.label}</span>
           </button>
         )}
+        {extensionConnectedValue && !systemStatus?.extensionProtocolVersion && !systemStatus?.lastExtensionHello && (
+          <button
+            type="button"
+            className="ghost-alert warning"
+            onClick={() => openSettings("extensions")}
+          >
+            <StatusDot status="warning" pulse={false} />
+            <span>Extension handshake missing. Reload extension.</span>
+          </button>
+        )}
+        {extensionConnectedValue && systemStatus?.extensionProtocolVersion === "legacy" && (
+          <button
+            type="button"
+            className="ghost-alert info"
+            onClick={() => openSettings("extensions")}
+          >
+            <StatusDot status="info" pulse={false} />
+            <span>Legacy extension detected. Update for handshake support.</span>
+          </button>
+        )}
+        <div className="ghost-source">
+          <span>{sourceLabel}</span>
+          <span>{lastScanLabel}</span>
+        </div>
       </header>
 
       {/* Main content: Sprite + Bubble */}
@@ -629,6 +682,15 @@ const Ghost = () => {
               disabled={primaryAction.disabled}
             >
               {primaryAction.label}
+            </button>
+            <button
+              type="button"
+              className="mini-btn"
+              onClick={handleAnalyze}
+              disabled={!hasConsent || isLoading}
+              title="Manual screenshot scan"
+            >
+              Scan
             </button>
             <button
               type="button"

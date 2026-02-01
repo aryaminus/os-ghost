@@ -24,6 +24,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
     enabled: true,
     intervalSecs: 60,
     idleSecs: 900,
+    ignoreIdle: false,
     allowHidden: false,
     onlyCompanion: true,
     recentCount: 5,
@@ -50,6 +51,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
       enabled: settingsState.systemSettings.monitor_enabled ?? true,
       intervalSecs: settingsState.systemSettings.monitor_interval_secs,
       idleSecs: settingsState.systemSettings.monitor_idle_secs,
+      ignoreIdle: settingsState.systemSettings.monitor_ignore_idle ?? false,
       allowHidden: settingsState.systemSettings.monitor_allow_hidden,
       onlyCompanion: settingsState.systemSettings.monitor_only_companion,
       recentCount: settingsState.systemSettings.monitor_recent_activity_count,
@@ -137,6 +139,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
         monitorEnabled: monitorForm.enabled,
         monitorIntervalSecs: monitorForm.intervalSecs,
         monitorIdleSecs: monitorForm.idleSecs,
+        monitorIgnoreIdle: monitorForm.ignoreIdle,
         monitorAllowHidden: monitorForm.allowHidden,
         monitorOnlyCompanion: monitorForm.onlyCompanion,
         monitorRecentActivityCount: monitorForm.recentCount,
@@ -358,6 +361,14 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
             onChange={handleMonitorChange("idleSecs")}
           />
         </div>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={monitorForm.ignoreIdle}
+            onChange={handleMonitorChange("ignoreIdle")}
+          />
+          <span>Continue monitoring even when idle.</span>
+        </label>
         <label className="checkbox-row">
           <input
             type="checkbox"

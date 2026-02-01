@@ -175,19 +175,24 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
 
             match message.msg_type.as_str() {
                 "hello" => {
+                    let now = crate::utils::current_timestamp();
                     let protocol = message.protocol_version.clone();
                     let version = message.extension_version.clone();
                     let extension_id = message.extension_id.clone();
                     let capabilities = message.capabilities.clone();
 
+                    let resolved_protocol = protocol.clone().or_else(|| Some("legacy".to_string()));
+                    let resolved_version = version.clone().or_else(|| Some("legacy".to_string()));
+
                     system_status::update_status(|status| {
-                        status.extension_protocol_version = protocol;
-                        status.extension_version = version;
+                        status.extension_protocol_version = resolved_protocol;
+                        status.extension_version = resolved_version;
                         status.extension_id = extension_id.clone();
                         status.extension_capabilities = capabilities;
+                        status.last_extension_hello = Some(now);
                     });
 
-                    emit_status_throttled(&app);
+                    crate::ipc::emit_system_status_update(&app);
 
                     if let Some(id) = extension_id {
                         crate::pairing::ensure_trusted_source(

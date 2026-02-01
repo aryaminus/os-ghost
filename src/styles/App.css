@@ -243,6 +243,16 @@ body {
   flex-shrink: 0;
 }
 
+.ghost-source {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .ghost-topbar {
   display: flex;
   align-items: center;

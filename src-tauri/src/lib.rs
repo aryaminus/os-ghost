@@ -871,6 +871,8 @@ pub fn run() {
             ipc::set_autonomy_settings,
             ipc::get_settings_state,
             ipc::health_check,
+            reset_bridge_registration,
+            rebuild_native_bridge,
             system_settings::get_system_settings,
             system_settings::update_system_settings,
             system_settings::set_monitor_enabled,
@@ -1117,6 +1119,109 @@ fn auto_register_manifest(_app: &tauri::AppHandle) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[tauri::command]
+fn reset_bridge_registration() -> Result<(), String> {
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_dir = exe_path.parent().ok_or("No parent dir for exe")?;
+
+    #[cfg(windows)]
+    let binary_name = "native_bridge.exe";
+    #[cfg(not(windows))]
+    let binary_name = "native_bridge";
+
+    let mut candidate_paths = Vec::new();
+    candidate_paths.push(exe_dir.join(binary_name));
+
+    if let Some(parent) = exe_dir.parent() {
+        candidate_paths.push(parent.join(binary_name));
+        candidate_paths.push(parent.join("debug").join(binary_name));
+        candidate_paths.push(parent.join("release").join(binary_name));
+    }
+
+    let binary_path = candidate_paths
+        .into_iter()
+        .find(|path| path.exists())
+        .ok_or("Native bridge binary not found. Build it and retry.")?;
+
+    #[cfg(target_os = "macos")]
+    {
+        register_manifest_for_dir(
+            &binary_path,
+            &dirs::home_dir()
+                .ok_or("No home dir")?
+                .join("Library/Application Support/Google/Chrome/NativeMessagingHosts"),
+        )?;
+        register_manifest_for_dir(
+            &binary_path,
+            &dirs::home_dir()
+                .ok_or("No home dir")?
+                .join("Library/Application Support/Chromium/NativeMessagingHosts"),
+        )?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let home = dirs::home_dir().ok_or("No home dir")?;
+        register_manifest_for_dir(
+            &binary_path,
+            &home.join(".config/google-chrome/NativeMessagingHosts"),
+        )?;
+        register_manifest_for_dir(
+            &binary_path,
+            &home.join(".config/chromium/NativeMessagingHosts"),
+        )?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        register_windows_manifest(&binary_path)?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn rebuild_native_bridge() -> Result<String, String> {
+    #[cfg(not(debug_assertions))]
+    {
+        return Err("Rebuild is only available in development builds".to_string());
+    }
+
+    #[cfg(debug_assertions)]
+    {
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut src_tauri_dir = None;
+
+    if let Some(parent) = exe_path.parent() {
+        if let Some(target_dir) = parent.parent() {
+            if let Some(candidate) = target_dir.parent() {
+                let cargo = candidate.join("Cargo.toml");
+                if cargo.exists() {
+                    src_tauri_dir = Some(candidate.to_path_buf());
+                }
+            }
+        }
+    }
+
+    let src_tauri_dir = src_tauri_dir.ok_or("Unable to locate src-tauri directory")?;
+
+    let output = std::process::Command::new("cargo")
+        .arg("build")
+        .arg("--bin")
+        .arg("native_bridge")
+        .current_dir(&src_tauri_dir)
+        .output()
+        .map_err(|e| format!("Failed to spawn cargo: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Bridge build failed: {}", stderr.trim()));
+    }
+
+    Ok("native_bridge rebuilt".to_string())
+    }
 }
 
 /// Register manifest in a specific directory (macOS/Linux)
