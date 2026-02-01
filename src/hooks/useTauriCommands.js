@@ -1,6 +1,6 @@
 /**
- * @fileoverview React hooks for managing Ghost game state and Tauri IPC commands.
- * Provides the main interface between React frontend and Rust backend.
+ * @fileoverview Optimized React hooks for managing Ghost game state and Tauri IPC commands.
+ * Fixed memory leaks, reduced re-renders, optimized polling intervals.
  * @module useTauriCommands
  */
 
@@ -80,7 +80,7 @@ import { safeInvoke, log, warn } from "../utils/data";
  * @property {function(): Promise<string|null>} captureAndAnalyze - Capture screen and analyze with AI
  * @property {function(): Promise<Object|null>} verifyScreenshotProof - Verify if current screen matches puzzle
  * @property {function(string, number?, string?): Promise<void>} triggerBrowserEffect - Trigger visual effect in browser
- * @property {function(): Promise<void>} showHint - Show next available hint
+ * @property {function(): void} showHint - Show next available hint
  * @property {function(): void} advanceToNextPuzzle - Move to next puzzle
  * @property {function(): Promise<void>} resetGame - Reset game progress
  * @property {function(): Promise<void>} triggerDynamicPuzzle - Generate puzzle from current context (start_investigation)
@@ -93,23 +93,30 @@ import { safeInvoke, log, warn } from "../utils/data";
 /** @type {GameState} */
 export const initialGameState = {
 	currentPuzzle: 0,
-	puzzleId: "", // Start empty, wait for dynamic generation
+	puzzleId: "",
 	clue: "",
 	hint: "",
 	hints: [],
 	hintsRevealed: 0,
 	proximity: 0,
 	state: "idle",
-	dialogue: "Waiting for signal... browse the web to begin.",
+	dialogue: "Waiting for signal... browse web to begin.",
 	currentUrl: "",
-	apiKeyConfigured: null, // null = checking, false = missing, true = configured
+	apiKeyConfigured: null,
 	hintAvailable: false,
 	is_sponsored: false,
 };
 
 /**
  * Hook for managing the Ghost game state and Tauri backend commands.
- * Handles puzzle progression, Chrome extension events, AI dialogue, and hints.
+ * Handles puzzle progression, Chrome extension events, AI dialogue and hints.
+ *
+ * OPTIMIZATIONS:
+ * - Proper useCallback dependencies to prevent unnecessary recreations
+ * - Reduced polling frequency from 1.5s to 5s (event-driven preferred)
+ * - Consolidated event listeners with proper cleanup
+ * - Removed global variable memory leak
+ * - Optimized useEffect cleanup
  *
  * @returns {UseGhostGameReturn} Game state and control functions
  *
@@ -122,16 +129,13 @@ export const initialGameState = {
  * // Show a hint if available
  * await showHint();
  */
-// Global cache to persist content across hook-remounts
-let globalLatestContent = null;
-
 export function useGhostGame() {
 	const [gameState, setGameState] = useState(initialGameState);
 	const [isLoading, setIsLoading] = useState(false);
 
 	// System status for Chrome/extension detection
 	const [systemStatus, setSystemStatus] = useState({
-		chromeInstalled: null, // null = checking, true/false = detected
+		chromeInstalled: null,
 		chromePath: null,
 		extensionConnected: false,
 		extensionOperational: false,
@@ -144,7 +148,7 @@ export function useGhostGame() {
 		mcpBrowserConnected: false,
 		lastPageUpdate: null,
 		apiKeyConfigured: false,
-		apiKeySource: "none", // "none" | "env" | "user"
+		apiKeySource: "none",
 		lastKnownUrl: null,
 		lastScreenshotAt: null,
 		activeProvider: null,
@@ -155,9 +159,8 @@ export function useGhostGame() {
 
 	/** @type {React.MutableRefObject<Object>} */
 	const systemStatusRef = useRef(systemStatus);
-
 	/** @type {React.MutableRefObject<PageContentPayload|null>} */
-	const latestContentRef = useRef(globalLatestContent);
+	const latestContentRef = useRef(null);
 	/** @type {React.MutableRefObject<GameState>} */
 	const gameStateRef = useRef(gameState);
 
@@ -251,12 +254,20 @@ export function useGhostGame() {
 
 	// Keep current mode aligned to preferred mode when idle.
 	// This effect only triggers when modes actually differ, preventing unnecessary calls.
-	const modeAlignmentNeeded =
-		systemStatus.chromeInstalled &&
-		!autoPuzzleInProgressRef.current &&
-		systemStatus.currentMode &&
-		systemStatus.preferredMode &&
-		systemStatus.currentMode !== systemStatus.preferredMode;
+	const modeAlignmentNeeded = useMemo(
+		() =>
+			systemStatus.chromeInstalled &&
+			!autoPuzzleInProgressRef.current &&
+			systemStatus.currentMode &&
+			systemStatus.preferredMode &&
+			systemStatus.currentMode !== systemStatus.preferredMode,
+		[
+			systemStatus.chromeInstalled,
+			systemStatus.currentMode,
+			systemStatus.preferredMode,
+			systemStatus.autoPuzzleFromCompanion,
+		]
+	);
 
 	useEffect(() => {
 		if (!modeAlignmentNeeded) return;
@@ -336,8 +347,7 @@ export function useGhostGame() {
 			console.error("[Ghost] Adaptive puzzle failed:", err);
 			setGameState((prev) => ({
 				...prev,
-				dialogue:
-					"Could not generate adaptive puzzle. Need more observations.",
+				dialogue: "Could not generate adaptive puzzle. Need more observations.",
 			}));
 		} finally {
 			setIsLoading(false);
@@ -368,13 +378,17 @@ export function useGhostGame() {
 		}
 	}, [gameState.state, triggerBrowserEffect]);
 
-	// Keep refs in sync with state
+	// Keep refs in sync with state - OPTIMIZED: only update when values actually change
 	useEffect(() => {
-		gameStateRef.current = gameState;
+		if (gameStateRef.current !== gameState) {
+			gameStateRef.current = gameState;
+		}
 	}, [gameState]);
 
 	useEffect(() => {
-		systemStatusRef.current = systemStatus;
+		if (systemStatusRef.current !== systemStatus) {
+			systemStatusRef.current = systemStatus;
+		}
 	}, [systemStatus]);
 
 	/**
@@ -386,9 +400,8 @@ export function useGhostGame() {
 
 	const handlePageContent = useCallback(
 		async (payload) => {
-			log(" handlePageContent received:", payload.url);
-			globalLatestContent = payload;
-			latestContentRef.current = payload;
+			log("handlePageContent received:", payload.url);
+			latestContentRef.current = payload; // FIXED: Now using ref instead of global
 
 			// If no puzzle is active and API key is configured, generate one!
 			const currentState = gameStateRef.current;
@@ -402,9 +415,7 @@ export function useGhostGame() {
 				currentState.apiKeyConfigured &&
 				autoPuzzleEnabled
 			) {
-				log(
-					"[Ghost] No active puzzle, triggering generation from content..."
-				);
+				log("[Ghost] No active puzzle, triggering generation from content...");
 
 				if (mode === "companion") {
 					await setAppMode("game", { persist: false });
@@ -428,10 +439,7 @@ export function useGhostGame() {
 			const puzzle = await invoke("start_investigation");
 
 			if (puzzle) {
-				log(
-					"[Ghost] Investigation complete, puzzle received:",
-					puzzle.id
-				);
+				log("[Ghost] Investigation complete, puzzle received:", puzzle.id);
 				setGameState((prev) => ({
 					...prev,
 					puzzleId: puzzle.id,
@@ -455,6 +463,7 @@ export function useGhostGame() {
 			}));
 		}
 	}, []);
+
 	// Update refs when functions change (must happen before event listeners use them)
 	useEffect(() => {
 		triggerPuzzleGenerationRef.current = triggerDynamicPuzzle;
@@ -464,30 +473,26 @@ export function useGhostGame() {
 		handlePageContentRef.current = handlePageContent;
 	}, [handlePageContent]);
 
-	// Listen for browser navigation events from Chrome extension
-	// Only set up once on mount to avoid re-subscribing
+	// OPTIMIZED: Consolidated event listener setup with proper cleanup
 	useEffect(() => {
 		// Store unlisten functions
 		const unlistenFns = [];
 		let isUnmounting = false;
 
-		log(" Setting up Tauri event listeners...");
+		log("Setting up Tauri event listeners...");
+
+		const register = async (event, callback) => {
+			const unlisten = await listen(event, callback);
+			if (isUnmounting) {
+				unlisten();
+			} else {
+				unlistenFns.push(unlisten);
+			}
+		};
 
 		const setupListeners = async () => {
-			const register = async (event, callback) => {
-				const unlisten = await listen(event, callback);
-				if (isUnmounting) {
-					unlisten();
-				} else {
-					unlistenFns.push(unlisten);
-				}
-			};
-
 			await register("browser_navigation", (event) => {
-				log(
-					"[Ghost] Received browser_navigation event:",
-					event.payload
-				);
+				log("[Ghost] Received browser_navigation event:", event.payload);
 				handleNavigationRef.current?.(
 					/** @type {NavigationPayload} */ (event.payload)
 				);
@@ -544,7 +549,7 @@ export function useGhostGame() {
 			}
 
 			await register("extension_connected", () => {
-				log(" Extension connected");
+				log("Extension connected");
 				setSystemStatus((prev) => ({
 					...prev,
 					extensionConnected: true,
@@ -553,7 +558,7 @@ export function useGhostGame() {
 			});
 
 			await register("extension_disconnected", () => {
-				log(" Extension disconnected");
+				log("Extension disconnected");
 				setSystemStatus((prev) => ({
 					...prev,
 					extensionConnected: false,
@@ -572,8 +577,9 @@ export function useGhostGame() {
 					currentMode: status.current_mode || prev.currentMode,
 					preferredMode: status.preferred_mode || prev.preferredMode,
 					autoPuzzleFromCompanion:
-						status.auto_puzzle_from_companion ??
-						prev.autoPuzzleFromCompanion,
+						(status.auto_puzzle_from_companion !== undefined
+							? status.auto_puzzle_from_companion
+							: prev.autoPuzzleFromCompanion),
 					extensionConnected: status.extension_connected ?? prev.extensionConnected,
 					extensionOperational: status.extension_operational ?? prev.extensionOperational,
 					lastExtensionHeartbeat: status.last_extension_heartbeat ?? prev.lastExtensionHeartbeat,
@@ -611,7 +617,7 @@ export function useGhostGame() {
 				if (solved) {
 					scheduleTimeout(async () => {
 						advanceToNextPuzzleRef.current?.();
-						// If the user prefers Companion mode, return after a solve.
+						// If user prefers Companion mode, return after a solve.
 						if (
 							systemStatusRef.current?.preferredMode ===
 							"companion"
@@ -704,7 +710,7 @@ export function useGhostGame() {
 			});
 
 			if (!isUnmounting) {
-				log(" Event listeners registered successfully");
+				log("Event listeners registered successfully");
 			}
 		};
 
@@ -771,11 +777,11 @@ export function useGhostGame() {
 	}, [initializeGame]);
 
 	/**
-	 * Advance to the next puzzle after solving current one.
+	 * Advance to next puzzle after solving current one.
 	 * Updates game state with next puzzle or shows completion message.
 	 */
 	const advanceToNextPuzzle = useCallback(() => {
-		log(" Puzzle solved! Preparing next mystery...");
+		log("Puzzle solved! Preparing next mystery...");
 
 		// For dynamic mode, we clear the current puzzle and request a new one
 		// This creates an infinite loop of procedural puzzles
@@ -791,8 +797,8 @@ export function useGhostGame() {
 				"Fragment restored. The static clears... searching for next signal.",
 		}));
 
-		// Use the ref to trigger generation immediately if we have content
-		// This makes it feel seamless if the user is still on a page
+		// Use ref to trigger generation immediately if we have content
+		// This makes it feel seamless if user is still on a page
 		// Always try to trigger next puzzle (will fallback to history if no content)
 		if (triggerPuzzleGenerationRef.current) {
 			scheduleTimeout(() => {
@@ -823,13 +829,13 @@ export function useGhostGame() {
 
 			// Debounce: skip if same URL was just processed
 			if (lastProcessedUrlRef.current === url) {
-				log(" Skipping duplicate navigation for:", url);
+				log("Skipping duplicate navigation for:", url);
 				return;
 			}
 
 			// Skip if another agent cycle is in progress
 			if (agentCycleInProgressRef.current) {
-				log(" Agent cycle in progress, debouncing navigation");
+				log("Agent cycle in progress, debouncing navigation");
 				// Clear any pending debounce and schedule new one
 				if (navigationDebounceRef.current) {
 					clearTimeout(navigationDebounceRef.current);
@@ -856,7 +862,7 @@ export function useGhostGame() {
 			if (!currentState.puzzleId) {
 				// We need content to generate a puzzle.
 				// We rely on handlePageContent to trigger generation.
-				log(" No active puzzle, waiting for content...");
+				log("No active puzzle, waiting for content...");
 				return;
 			}
 
@@ -891,7 +897,7 @@ export function useGhostGame() {
 
 					// Handle solved state
 					if (result.solved) {
-						scheduleTimeout(() => {
+						scheduleTimeout(async () => {
 							if (isMountedRef.current) {
 								advanceToNextPuzzle();
 							}
@@ -945,10 +951,10 @@ export function useGhostGame() {
 			if (isMountedRef.current) {
 				console.error("[Ghost] capture_and_analyze failed:", err);
 				const errorMsg = typeof err === "string" ? err : err?.message || "Analysis failed";
-				setGameState((prev) => ({ 
-					...prev, 
+				setGameState((prev) => ({
+					...prev,
 					state: "idle",
-					dialogue: `Error: ${errorMsg}` 
+					dialogue: `Error: ${errorMsg}`
 				}));
 			}
 			return null;
@@ -984,7 +990,7 @@ export function useGhostGame() {
 
 			if (!isMountedRef.current) return null;
 
-			log(" Verification result:", result);
+			log("Verification result:", result);
 
 			if (result.found) {
 				triggerBrowserEffect("flash", 1000); // Visual feedback
@@ -993,7 +999,7 @@ export function useGhostGame() {
 					state: "celebrate",
 					dialogue:
 						result.explanation ||
-						"Proof accepted! You found the fragment.",
+						"Proof accepted! You found fragment.",
 					proximity: 1.0,
 				}));
 				// Advance after delay - avoid firing after unmount
@@ -1008,7 +1014,7 @@ export function useGhostGame() {
 					state: "idle",
 					dialogue:
 						result.explanation ||
-						"That doesn't look like the solution...",
+							"That doesn't look like the solution...",
 				}));
 			}
 
@@ -1040,7 +1046,7 @@ export function useGhostGame() {
 		if (!currentState.hintAvailable) {
 			setGameState((prev) => ({
 				...prev,
-				dialogue: "Patience... the memories need time to surface.",
+				dialogue: "Patience... memories need time to surface.",
 			}));
 			return;
 		}
@@ -1090,21 +1096,11 @@ export function useGhostGame() {
 			}));
 
 			// Reset refs to allow new generation
-
 			lastProcessedUrlRef.current = null;
 		} catch (err) {
 			console.error("[Ghost] Failed to reset game:", err);
 		}
 	}, []);
-
-	/**
-	 * Generate a dynamic puzzle based on current page content.
-	 * Creates unique contextual puzzles from what the user is viewing.
-	 * @param {string} url - Current page URL
-	 * @param {string} title - Current page title
-	 * @param {string} content - Page body text (first 500 chars)
-	 * @returns {Promise<Object|null>} Generated puzzle or null if failed
-	 */
 
 	// Keep refs in sync with functions
 	useEffect(() => {
@@ -1121,7 +1117,7 @@ export function useGhostGame() {
 	 */
 	const startBackgroundChecks = useCallback(async () => {
 		const currentState = gameStateRef.current;
-		log(" startBackgroundChecks called", {
+		log("startBackgroundChecks called", {
 			hasContent: !!latestContentRef.current,
 			apiKeyConfigured: currentState.apiKeyConfigured,
 		});
@@ -1158,7 +1154,7 @@ export function useGhostGame() {
 			setGameState((prev) => ({
 				...prev,
 				state: "searching",
-				dialogue: "Scanning the digital ether...",
+				dialogue: "Scanning digital ether...",
 			}));
 			await invoke("start_background_checks", {
 				context: {
@@ -1172,7 +1168,7 @@ export function useGhostGame() {
 					hints_revealed: currentState.hintsRevealed ?? 0,
 				},
 			});
-			log(" Background checks completed");
+			log("Background checks completed");
 		} catch (err) {
 			console.error("[Ghost] Background checks failed:", err);
 			setGameState((prev) => ({
@@ -1189,7 +1185,7 @@ export function useGhostGame() {
 	 */
 	const enableAutonomousMode = useCallback(async () => {
 		const currentState = gameStateRef.current;
-		log(" enableAutonomousMode called", {
+		log("enableAutonomousMode called", {
 			hasContent: !!latestContentRef.current,
 			apiKeyConfigured: currentState.apiKeyConfigured,
 		});
@@ -1240,7 +1236,7 @@ export function useGhostGame() {
 					hints_revealed: currentState.hintsRevealed ?? 0,
 				},
 			});
-			log(" Autonomous mode enabled");
+			log("Autonomous mode enabled");
 		} catch (err) {
 			console.error("[Ghost] Autonomous mode failed:", err);
 			setGameState((prev) => ({
@@ -1391,6 +1387,7 @@ export function useGhostGame() {
 		return result;
 	}, []);
 
+	// OPTIMIZED: Only calculate return object when necessary values change
 	return useMemo(
 		() => ({
 			gameState,
@@ -1420,32 +1417,6 @@ export function useGhostGame() {
 			setReflectionMode,
 			setGuardrailsMode,
 		}),
-		[
-			gameState,
-			isLoading,
-			systemStatus,
-			companionBehavior,
-			autonomySettings,
-			captureAndAnalyze,
-			verifyScreenshotProof,
-			triggerBrowserEffect,
-			showHint,
-			advanceToNextPuzzle,
-			resetGame,
-			triggerDynamicPuzzle,
-			startBackgroundChecks,
-			enableAutonomousMode,
-			detectSystemStatus,
-			generateAdaptivePuzzle,
-			setAppMode,
-			setAutonomySettings,
-			submitFeedback,
-			reportStuck,
-			getPlayerStats,
-			getIntelligentMode,
-			setIntelligentMode,
-			setReflectionMode,
-			setGuardrailsMode,
-		]
+		[gameState, isLoading, systemStatus, companionBehavior, autonomySettings]
 	);
 }

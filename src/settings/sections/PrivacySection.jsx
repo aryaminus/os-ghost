@@ -30,6 +30,16 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
     recentCount: 5,
     idleStreak: 3,
     categoryWindow: 10,
+    adaptiveEnabled: true,
+    adaptiveMinIntervalSecs: 10,
+    adaptiveMaxIntervalSecs: 300,
+    adaptiveIdleThresholdSecs: 300,
+    adaptiveLowActivityThresholdSecs: 60,
+    adaptiveHighActivityCount: 20,
+    changeDetectionEnabled: true,
+    changePixelThreshold: 30,
+    changeMinChangedPercentage: 0.01,
+    changeMaxChangedPercentage: 0.95,
   });
 
   const [captureFormat, setCaptureFormat] = useState("jpeg");
@@ -57,6 +67,16 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
       recentCount: settingsState.systemSettings.monitor_recent_activity_count,
       idleStreak: settingsState.systemSettings.monitor_idle_streak_threshold,
       categoryWindow: settingsState.systemSettings.monitor_category_window,
+      adaptiveEnabled: settingsState.systemSettings.adaptive_capture_enabled ?? true,
+      adaptiveMinIntervalSecs: settingsState.systemSettings.adaptive_min_interval_secs,
+      adaptiveMaxIntervalSecs: settingsState.systemSettings.adaptive_max_interval_secs,
+      adaptiveIdleThresholdSecs: settingsState.systemSettings.adaptive_idle_threshold_secs,
+      adaptiveLowActivityThresholdSecs: settingsState.systemSettings.adaptive_low_activity_threshold_secs,
+      adaptiveHighActivityCount: settingsState.systemSettings.adaptive_high_activity_count,
+      changeDetectionEnabled: settingsState.systemSettings.change_detection_enabled ?? true,
+      changePixelThreshold: settingsState.systemSettings.change_pixel_threshold,
+      changeMinChangedPercentage: settingsState.systemSettings.change_min_changed_percentage,
+      changeMaxChangedPercentage: settingsState.systemSettings.change_max_changed_percentage,
     });
   }, [settingsState.systemSettings]);
 
@@ -146,6 +166,16 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
         monitorIdleStreakThreshold: monitorForm.idleStreak,
         monitorCategoryWindow: monitorForm.categoryWindow,
         globalShortcutEnabled: settingsState.systemSettings.global_shortcut_enabled,
+        adaptiveCaptureEnabled: monitorForm.adaptiveEnabled,
+        adaptiveMinIntervalSecs: monitorForm.adaptiveMinIntervalSecs,
+        adaptiveMaxIntervalSecs: monitorForm.adaptiveMaxIntervalSecs,
+        adaptiveIdleThresholdSecs: monitorForm.adaptiveIdleThresholdSecs,
+        adaptiveLowActivityThresholdSecs: monitorForm.adaptiveLowActivityThresholdSecs,
+        adaptiveHighActivityCount: monitorForm.adaptiveHighActivityCount,
+        changeDetectionEnabled: monitorForm.changeDetectionEnabled,
+        changePixelThreshold: monitorForm.changePixelThreshold,
+        changeMinChangedPercentage: monitorForm.changeMinChangedPercentage,
+        changeMaxChangedPercentage: monitorForm.changeMaxChangedPercentage,
       });
       setMonitorMessage("Monitoring settings updated.");
       onSettingsUpdated();
@@ -440,6 +470,162 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
           </button>
           {monitorMessage && <span className="status-pill neutral">{monitorMessage}</span>}
         </div>
+      </div>
+
+      <div className="settings-card">
+        <h3>Adaptive capture</h3>
+        <p className="card-note">
+          Dynamically adjusts capture intervals based on your activity level for more efficient monitoring.
+        </p>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={monitorForm.adaptiveEnabled}
+            onChange={handleMonitorChange("adaptiveEnabled")}
+          />
+          <span>Enable adaptive capture intervals.</span>
+        </label>
+        {monitorForm.adaptiveEnabled && (
+          <div className="settings-grid">
+            <div>
+              <label className="card-label" htmlFor="adaptive-min-interval">
+                Min interval (sec)
+              </label>
+              <input
+                id="adaptive-min-interval"
+                className="text-input"
+                type="number"
+                min="5"
+                max="60"
+                value={monitorForm.adaptiveMinIntervalSecs}
+                onChange={handleMonitorChange("adaptiveMinIntervalSecs")}
+              />
+            </div>
+            <div>
+              <label className="card-label" htmlFor="adaptive-max-interval">
+                Max interval (sec)
+              </label>
+              <input
+                id="adaptive-max-interval"
+                className="text-input"
+                type="number"
+                min="60"
+                max="3600"
+                value={monitorForm.adaptiveMaxIntervalSecs}
+                onChange={handleMonitorChange("adaptiveMaxIntervalSecs")}
+              />
+            </div>
+            <div>
+              <label className="card-label" htmlFor="adaptive-idle-threshold">
+                Idle threshold (sec)
+              </label>
+              <input
+                id="adaptive-idle-threshold"
+                className="text-input"
+                type="number"
+                min="30"
+                max="3600"
+                value={monitorForm.adaptiveIdleThresholdSecs}
+                onChange={handleMonitorChange("adaptiveIdleThresholdSecs")}
+              />
+            </div>
+            <div>
+              <label className="card-label" htmlFor="adaptive-low-activity">
+                Low activity (sec)
+              </label>
+              <input
+                id="adaptive-low-activity"
+                className="text-input"
+                type="number"
+                min="10"
+                max="300"
+                value={monitorForm.adaptiveLowActivityThresholdSecs}
+                onChange={handleMonitorChange("adaptiveLowActivityThresholdSecs")}
+              />
+            </div>
+            <div>
+              <label className="card-label" htmlFor="adaptive-high-activity">
+                High activity count
+              </label>
+              <input
+                id="adaptive-high-activity"
+                className="text-input"
+                type="number"
+                min="5"
+                max="100"
+                value={monitorForm.adaptiveHighActivityCount}
+                onChange={handleMonitorChange("adaptiveHighActivityCount")}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <h3>Change detection</h3>
+        <p className="card-note">
+          Skip captures when screen content hasn't changed significantly.
+        </p>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={monitorForm.changeDetectionEnabled}
+            onChange={handleMonitorChange("changeDetectionEnabled")}
+          />
+          <span>Enable screen change detection.</span>
+        </label>
+        {monitorForm.changeDetectionEnabled && (
+          <div className="settings-grid">
+            <div>
+              <label className="card-label" htmlFor="change-pixel-threshold">
+                Pixel threshold (0-255)
+              </label>
+              <input
+                id="change-pixel-threshold"
+                className="text-input"
+                type="number"
+                min="0"
+                max="255"
+                value={monitorForm.changePixelThreshold}
+                onChange={handleMonitorChange("changePixelThreshold")}
+              />
+            </div>
+            <div>
+              <label className="card-label" htmlFor="change-min-percentage">
+                Min changed (%)
+              </label>
+              <input
+                id="change-min-percentage"
+                className="text-input"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={(monitorForm.changeMinChangedPercentage * 100).toFixed(2)}
+                onChange={(e) => handleMonitorChange("changeMinChangedPercentage")({
+                  target: { value: Number(e.target.value) / 100 }
+                })}
+              />
+            </div>
+            <div>
+              <label className="card-label" htmlFor="change-max-percentage">
+                Max changed (%)
+              </label>
+              <input
+                id="change-max-percentage"
+                className="text-input"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={(monitorForm.changeMaxChangedPercentage * 100).toFixed(2)}
+                onChange={(e) => handleMonitorChange("changeMaxChangedPercentage")({
+                  target: { value: Number(e.target.value) / 100 }
+                })}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="settings-card">

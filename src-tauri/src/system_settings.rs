@@ -25,6 +25,18 @@ pub struct SystemSettings {
     pub monitor_category_window: usize,
     pub global_shortcut_enabled: bool,
     pub global_shortcut: String,
+    #[serde(default)]
+    pub adaptive_capture_enabled: bool,
+    pub adaptive_min_interval_secs: u64,
+    pub adaptive_max_interval_secs: u64,
+    pub adaptive_idle_threshold_secs: u64,
+    pub adaptive_low_activity_threshold_secs: u64,
+    pub adaptive_high_activity_count: usize,
+    #[serde(default)]
+    pub change_detection_enabled: bool,
+    pub change_pixel_threshold: u8,
+    pub change_min_changed_percentage: f32,
+    pub change_max_changed_percentage: f32,
 }
 
 impl Default for SystemSettings {
@@ -41,6 +53,16 @@ impl Default for SystemSettings {
             monitor_category_window: 10,
             global_shortcut_enabled: true,
             global_shortcut: "CmdOrCtrl+Shift+G".to_string(),
+            adaptive_capture_enabled: true,
+            adaptive_min_interval_secs: 10,
+            adaptive_max_interval_secs: 300,
+            adaptive_idle_threshold_secs: 300,
+            adaptive_low_activity_threshold_secs: 60,
+            adaptive_high_activity_count: 20,
+            change_detection_enabled: true,
+            change_pixel_threshold: 30,
+            change_min_changed_percentage: 0.01,
+            change_max_changed_percentage: 0.95,
         }
     }
 }
@@ -93,6 +115,16 @@ pub fn update_system_settings(
     monitor_idle_streak_threshold: usize,
     monitor_category_window: usize,
     global_shortcut_enabled: bool,
+    adaptive_capture_enabled: bool,
+    adaptive_min_interval_secs: u64,
+    adaptive_max_interval_secs: u64,
+    adaptive_idle_threshold_secs: u64,
+    adaptive_low_activity_threshold_secs: u64,
+    adaptive_high_activity_count: usize,
+    change_detection_enabled: bool,
+    change_pixel_threshold: u8,
+    change_min_changed_percentage: f32,
+    change_max_changed_percentage: f32,
 ) -> Result<SystemSettings, String> {
     let mut settings = SystemSettings::load();
     settings.monitor_enabled = monitor_enabled;
@@ -105,6 +137,17 @@ pub fn update_system_settings(
     settings.monitor_idle_streak_threshold = monitor_idle_streak_threshold.clamp(1, 10);
     settings.monitor_category_window = monitor_category_window.clamp(5, 30);
     settings.global_shortcut_enabled = global_shortcut_enabled;
+    settings.adaptive_capture_enabled = adaptive_capture_enabled;
+    settings.adaptive_min_interval_secs = adaptive_min_interval_secs.max(5).min(60);
+    settings.adaptive_max_interval_secs = adaptive_max_interval_secs.max(60).min(3600);
+    settings.adaptive_idle_threshold_secs = adaptive_idle_threshold_secs.max(30).min(3600);
+    settings.adaptive_low_activity_threshold_secs =
+        adaptive_low_activity_threshold_secs.max(10).min(300);
+    settings.adaptive_high_activity_count = adaptive_high_activity_count.clamp(5, 100);
+    settings.change_detection_enabled = change_detection_enabled;
+    settings.change_pixel_threshold = change_pixel_threshold.min(255);
+    settings.change_min_changed_percentage = change_min_changed_percentage.max(0.0).min(1.0);
+    settings.change_max_changed_percentage = change_max_changed_percentage.max(0.0).min(1.0);
 
     settings.save().map_err(|e| e.to_string())?;
     Ok(settings)
@@ -190,6 +233,30 @@ pub fn set_global_shortcut_enabled(
 pub fn set_monitor_enabled(enabled: bool) -> Result<SystemSettings, String> {
     let mut settings = SystemSettings::load();
     settings.monitor_enabled = enabled;
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn get_change_detection_settings() -> crate::change_detection::ChangeDetectionConfig {
+    let settings = SystemSettings::load();
+    crate::change_detection::ChangeDetectionConfig {
+        pixel_threshold: settings.change_pixel_threshold,
+        min_changed_percentage: settings.change_min_changed_percentage,
+        max_changed_percentage: settings.change_max_changed_percentage,
+    }
+}
+
+#[tauri::command]
+pub fn set_change_detection_settings(
+    pixel_threshold: u8,
+    min_changed_percentage: f32,
+    max_changed_percentage: f32,
+) -> Result<SystemSettings, String> {
+    let mut settings = SystemSettings::load();
+    settings.change_pixel_threshold = pixel_threshold.min(255);
+    settings.change_min_changed_percentage = min_changed_percentage.max(0.0).min(1.0);
+    settings.change_max_changed_percentage = max_changed_percentage.max(0.0).min(1.0);
     settings.save().map_err(|e| e.to_string())?;
     Ok(settings)
 }

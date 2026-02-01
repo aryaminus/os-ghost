@@ -7,6 +7,7 @@ pub mod actions;
 pub mod ai_provider;
 pub mod bridge;
 pub mod capture;
+pub mod change_detection;
 pub mod game_state;
 pub mod gemini_client;
 pub mod history;
@@ -878,6 +879,8 @@ pub fn run() {
             system_settings::set_monitor_enabled,
             system_settings::set_global_shortcut_enabled,
             system_settings::set_global_shortcut,
+            system_settings::get_change_detection_settings,
+            system_settings::set_change_detection_settings,
             // Adaptive behavior commands
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,

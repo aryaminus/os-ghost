@@ -75,12 +75,10 @@ impl MemoryStore {
         F: Fn(Option<T>) -> Option<T>,
     {
         let tree = self.db.open_tree(tree)?;
-        
+
         let res = tree.fetch_and_update(key.as_bytes(), |old_bytes| {
             // Deserialize old value (if any)
-            let old_val = old_bytes.and_then(|bytes| {
-                serde_json::from_slice::<T>(bytes).ok()
-            });
+            let old_val = old_bytes.and_then(|bytes| serde_json::from_slice::<T>(bytes).ok());
 
             // Apply update function
             let new_val = f(old_val);
