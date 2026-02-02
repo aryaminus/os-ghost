@@ -3,11 +3,13 @@
 
 // Core modules
 pub mod action_preview;
+pub mod action_ledger;
 pub mod actions;
 pub mod ai_provider;
 pub mod bridge;
 pub mod capture;
 pub mod change_detection;
+pub mod email;
 pub mod game_state;
 pub mod gemini_client;
 pub mod history;
@@ -15,9 +17,18 @@ pub mod integrations;
 pub mod ipc;
 pub mod monitor;
 pub mod monitoring;
+pub mod events_bus;
+pub mod permissions;
+pub mod intent;
+pub mod intent_autorun;
+pub mod skills;
+pub mod workflows;
+pub mod extensions;
+pub mod persona;
+pub mod perf;
+pub mod notifications;
 pub mod ollama_client;
 pub mod pairing;
-pub mod permissions;
 pub mod privacy;
 pub mod system_status;
 pub mod system_settings;
@@ -167,9 +178,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            crate::rollback::init_rollback_manager();
+            crate::rollback::set_undo_executor(crate::rollback::default_undo_executor());
             // App menu + accessibility-friendly standard items
             let app_settings_item = MenuItem::with_id(
                 app,
@@ -584,6 +598,7 @@ pub fn run() {
                             None,
                             None,
                             None,
+                            None,
                         );
                         emit_settings_update(app);
                     }
@@ -885,11 +900,22 @@ pub fn run() {
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,
             ipc::quick_ask,
-            // Integrations: calendar + notes
+            // Integrations: calendar + notes + email
             integrations::get_calendar_settings,
             integrations::update_calendar_settings,
             integrations::get_upcoming_events,
             integrations::list_notes,
+            integrations::get_files_settings,
+            integrations::update_files_settings,
+            integrations::list_recent_files,
+            integrations::get_email_settings,
+            integrations::update_email_settings,
+            integrations::email_oauth_status,
+            integrations::email_begin_oauth,
+            integrations::email_disconnect,
+            integrations::list_email_inbox,
+            integrations::triage_email_inbox,
+            integrations::apply_email_triage,
             integrations::add_note,
             integrations::update_note,
             integrations::delete_note,
@@ -907,6 +933,27 @@ pub fn run() {
             // Timeline commands
             timeline::get_timeline,
             timeline::clear_timeline,
+            events_bus::get_recent_events,
+            intent::get_intents,
+            intent::dismiss_intent,
+            intent::create_intent_action,
+            intent::get_intent_actions,
+            intent::auto_create_top_intent,
+            skills::list_skills,
+            skills::create_skill,
+            skills::increment_skill_usage,
+            skills::execute_skill,
+            extensions::runtime::list_extensions,
+            extensions::runtime::reload_extensions,
+            extensions::runtime::execute_extension,
+            extensions::runtime::list_extension_tools,
+            extensions::runtime::execute_extension_tool,
+            extensions::runtime::request_extension_tool_action,
+            persona::get_persona,
+            persona::set_persona,
+            perf::get_perf_snapshot,
+            notifications::push_notification,
+            notifications::list_notifications,
             // Ollama configuration commands
             ipc::get_ollama_config,
             ipc::set_ollama_config,
@@ -935,6 +982,7 @@ pub fn run() {
             actions::clear_pending_actions,
             actions::clear_action_history,
             actions::execute_approved_action,
+            action_ledger::get_action_ledger,
             // Action preview commands
             actions::get_active_preview,
             actions::approve_preview,

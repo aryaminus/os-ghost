@@ -364,15 +364,15 @@ const ApiKeyInput = ({ onKeySet, apiKeySource = "none" }) => {
 					<input
 						ref={inputRef}
 						type={showKey ? "text" : "password"}
-						className={`api-key-input ${error ? "has-error" : ""}`}
-						placeholder={
-							apiKeySource === "user"
-								? "Enter new key to override..."
-								: apiKeySource === "env"
-									? "Enter key to override env..."
-									: "Enter Gemini API key..."
-						}
-						value={apiKey}
+							className={`api-key-input ${error ? "has-error" : ""}`}
+							placeholder={
+								apiKeySource === "user"
+									? "Enter new key to override..."
+									: apiKeySource === "env"
+										? "Enter key to override env..."
+										: "Enter Gemini API key..."
+							}
+							value={apiKey}
 						onChange={handleChange}
 						disabled={isLoading}
 						autoComplete="off"

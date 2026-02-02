@@ -10,6 +10,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
     noticeAck: false,
     readOnly: false,
     redactPii: true,
+    trustProfile: "balanced",
   });
   const [saving, setSaving] = useState(false);
   const [monitorSaving, setMonitorSaving] = useState(false);
@@ -40,6 +41,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
     changePixelThreshold: 30,
     changeMinChangedPercentage: 0.01,
     changeMaxChangedPercentage: 0.95,
+    analysisCooldownSecs: 90,
   });
 
   const [captureFormat, setCaptureFormat] = useState("jpeg");
@@ -52,6 +54,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
       noticeAck: !!settingsState.privacy.privacy_notice_acknowledged,
       readOnly: !!settingsState.privacy.read_only_mode,
       redactPii: settingsState.privacy.redact_pii !== false,
+      trustProfile: settingsState.privacy.trust_profile || "balanced",
     });
   }, [settingsState.privacy]);
 
@@ -77,6 +80,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
       changePixelThreshold: settingsState.systemSettings.change_pixel_threshold,
       changeMinChangedPercentage: settingsState.systemSettings.change_min_changed_percentage,
       changeMaxChangedPercentage: settingsState.systemSettings.change_max_changed_percentage,
+      analysisCooldownSecs: settingsState.systemSettings.analysis_cooldown_secs ?? 90,
     });
   }, [settingsState.systemSettings]);
 
@@ -117,6 +121,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
         autonomyLevel: settingsState.privacy.autonomy_level || "autonomous",
         redactPii: formState.redactPii,
         previewPolicy: settingsState.privacy.preview_policy || "always",
+        trustProfile: formState.trustProfile,
       });
       setSuccess("Privacy settings updated.");
       onSettingsUpdated();
@@ -176,6 +181,7 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
         changePixelThreshold: monitorForm.changePixelThreshold,
         changeMinChangedPercentage: monitorForm.changeMinChangedPercentage,
         changeMaxChangedPercentage: monitorForm.changeMaxChangedPercentage,
+        analysisCooldownSecs: monitorForm.analysisCooldownSecs,
       });
       setMonitorMessage("Monitoring settings updated.");
       onSettingsUpdated();
@@ -335,6 +341,23 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
           />
           <span>Enable read-only mode (no automation or capture).</span>
         </label>
+        <div className="form-row">
+          <label className="card-label" htmlFor="privacy-trust-profile">
+            Trust profile
+          </label>
+          <select
+            id="privacy-trust-profile"
+            className="text-input"
+            value={formState.trustProfile}
+            onChange={(event) =>
+              setFormState((prev) => ({ ...prev, trustProfile: event.target.value }))
+            }
+          >
+            <option value="strict">Strict</option>
+            <option value="balanced">Balanced</option>
+            <option value="open">Open</option>
+          </select>
+        </div>
 
         <div className="button-row">
           <button
@@ -428,6 +451,20 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
               max="20"
               value={monitorForm.recentCount}
               onChange={handleMonitorChange("recentCount")}
+            />
+          </div>
+          <div>
+            <label className="card-label" htmlFor="monitor-analysis-cooldown">
+              Analysis cooldown (sec)
+            </label>
+            <input
+              id="monitor-analysis-cooldown"
+              className="text-input"
+              type="number"
+              min="30"
+              max="3600"
+              value={monitorForm.analysisCooldownSecs}
+              onChange={handleMonitorChange("analysisCooldownSecs")}
             />
           </div>
           <div>

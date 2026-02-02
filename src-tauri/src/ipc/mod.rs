@@ -84,6 +84,8 @@ pub struct SettingsState {
     pub recent_timeline: Vec<crate::timeline::TimelineEntry>,
     pub calendar_settings: crate::integrations::CalendarSettings,
     pub notes: Vec<crate::integrations::Note>,
+    pub files_settings: crate::integrations::FilesSettings,
+    pub email_settings: crate::integrations::EmailSettings,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -268,6 +270,8 @@ pub async fn get_settings_state(
     let recent_timeline = crate::timeline::get_recent_timeline(5);
     let calendar_settings = crate::integrations::CalendarSettings::load();
     let notes = notes_store.list_notes().unwrap_or_default();
+    let files_settings = crate::integrations::FilesSettings::load();
+    let email_settings = crate::integrations::EmailSettings::load();
 
     Ok(SettingsState {
         privacy,
@@ -284,6 +288,8 @@ pub async fn get_settings_state(
         recent_timeline,
         calendar_settings,
         notes,
+        files_settings,
+        email_settings,
     })
 }
 

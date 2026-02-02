@@ -89,6 +89,10 @@ pub struct SessionState {
     /// Last screenshot timestamp
     #[serde(default)]
     pub last_screenshot_at: u64,
+    /// Timestamp of last successful AI analysis (seconds since UNIX epoch)
+    pub last_analysis_at: u64,
+    /// Timestamp of last auto-generated intent action
+    pub last_intent_action_at: u64,
     /// Latest page content for analysis
     #[serde(default, skip)]
     pub current_content: Option<String>,
@@ -117,6 +121,8 @@ impl Default for SessionState {
             puzzles_solved_session: 0,
             screenshots_taken: 0,
             last_screenshot_at: 0,
+            last_analysis_at: 0,
+            last_intent_action_at: 0,
             current_content: None,
         }
     }
@@ -285,6 +291,28 @@ impl SessionMemory {
                 state.screenshots_taken += 1;
                 state.last_activity = current_timestamp();
                 state.last_screenshot_at = current_timestamp();
+                Some(state)
+            })?;
+        Ok(())
+    }
+
+    /// Record successful AI analysis timestamp
+    pub fn record_analysis(&self) -> Result<()> {
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.last_analysis_at = current_timestamp();
+                Some(state)
+            })?;
+        Ok(())
+    }
+
+    /// Record an intent action creation timestamp
+    pub fn record_intent_action(&self) -> Result<()> {
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.last_intent_action_at = current_timestamp();
                 Some(state)
             })?;
         Ok(())

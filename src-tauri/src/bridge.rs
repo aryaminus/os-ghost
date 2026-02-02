@@ -7,6 +7,7 @@
 //! interface. See `mcp::browser` for the full MCP implementation.
 
 use crate::game_state::EffectQueue;
+use crate::events_bus::{record_event, EventKind, EventPriority};
 use crate::mcp::browser::{BrowserMcpServer, BrowserState};
 use crate::mcp::{McpServer, ToolRequest};
 use crate::system_status;
@@ -265,6 +266,20 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                             "timestamp": timestamp
                         }),
                     );
+
+                    let mut metadata = serde_json::Map::new();
+                    metadata.insert("url".to_string(), serde_json::Value::String(url.clone()));
+                    metadata.insert("title".to_string(), serde_json::Value::String(title.clone()));
+                    record_event(
+                        EventKind::Navigation,
+                        "Browser navigation",
+                        Some(title),
+                        metadata.into_iter().collect(),
+                        EventPriority::Normal,
+                        Some(format!("nav:{}", url)),
+                        Some(10),
+                        Some("browser".to_string()),
+                    );
                 }
                 "page_content" => {
                     let url = message.url.clone().unwrap_or_default();
@@ -309,6 +324,21 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                             "url": url,
                             "body_text": body_text
                         }),
+                    );
+
+                    let mut metadata = serde_json::Map::new();
+                    metadata.insert("url".to_string(), serde_json::Value::String(url.clone()));
+                    metadata.insert("title".to_string(), serde_json::Value::String(title));
+                    metadata.insert("content_bytes".to_string(), serde_json::Value::Number(serde_json::Number::from(body_text.len() as u64)));
+                    record_event(
+                        EventKind::Content,
+                        "Page content updated",
+                        None,
+                        metadata.into_iter().collect(),
+                        EventPriority::Normal,
+                        Some(format!("content:{}", url)),
+                        Some(30),
+                        Some("browser".to_string()),
                     );
                 }
                 "browsing_context" => {

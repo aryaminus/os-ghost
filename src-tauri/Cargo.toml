@@ -46,10 +46,17 @@ async-trait = "0.1"
 futures = "0.3"
 tempfile = "3"
 tokio-util = "0.7"  # For CancellationToken
+notify = "6"
+sysinfo = "0.30"
+libc = "0.2"
 # Time handling - disabled default features to avoid WASM/js-sys bloat in Tauri desktop app
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 # Lazy static for global action queue
 lazy_static = "1.4"
+oauth2 = "4"
+url = "2"
+tiny_http = "0.12"
+keyring = "2"
 
 # SQLite for Chrome history reading
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -57,6 +64,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # Screen capture - screenshots crate is more stable
 screenshots = "0.8"
 tauri-plugin-updater = "2.9.0"
+tauri-plugin-notification = "2"
 
 # macOS specific bindings - using objc2 for low-level control
 [target.'cfg(target_os = "macos")'.dependencies]

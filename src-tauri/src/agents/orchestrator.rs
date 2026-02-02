@@ -151,6 +151,11 @@ impl AgentOrchestrator {
             3,
         );
 
+        let callbacks = Arc::new(AsyncMutex::new(CallbackRegistry::new()));
+        if let Ok(mut registry) = callbacks.try_lock() {
+            registry.register_extension_tools();
+        }
+
         Ok(Self {
             workflow,
             planning_workflow,
@@ -166,7 +171,7 @@ impl AgentOrchestrator {
             session,
             long_term,
             mode: AtomicU8::new(AgentMode::Standard as u8), // Default to Standard mode
-            callbacks: Arc::new(AsyncMutex::new(CallbackRegistry::new())),
+            callbacks,
             metrics: Arc::new(MetricsCollector::default()),
         })
     }
@@ -678,7 +683,7 @@ impl AgentOrchestrator {
 
     /// Run autonomous loop with planning
     /// Creates a plan first, then monitors with self-correction
-    pub async fn run_planned_autonomous_loop(
+    pub async fn run_autonomous_loop_with_plan(
         &self,
         context: &AgentContext,
     ) -> AgentResult<Vec<AgentOutput>> {

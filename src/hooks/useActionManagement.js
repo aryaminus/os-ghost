@@ -101,6 +101,8 @@ export function useActionManagement(autonomyLevel = "observer", apiKeyConfigured
 	// Sandbox settings
 	const [sandboxSettings, setSandboxSettings] = useState(null);
 	const [showSandboxSettings, setShowSandboxSettings] = useState(false);
+	const [actionLedger, setActionLedger] = useState([]);
+	const [showActionLedger, setShowActionLedger] = useState(false);
 	// Editing param state
 	const [editingParam, setEditingParam] = useState(null);
 
@@ -284,6 +286,42 @@ export function useActionManagement(autonomyLevel = "observer", apiKeyConfigured
 		setShowActionHistory(true);
 	}, []);
 
+	/** Fetch action ledger entries */
+	const fetchActionLedger = useCallback(async () => {
+		const entries = await safeInvoke("get_action_ledger", { limit: 50 }, []);
+		setActionLedger(entries || []);
+		setShowActionLedger(true);
+	}, []);
+
+	const fetchRecentEvents = useCallback(async () => {
+		return safeInvoke("get_recent_events", { limit: 20 }, []);
+	}, []);
+
+	const fetchIntents = useCallback(async () => {
+		return safeInvoke("get_intents", { limit: 40 }, []);
+	}, []);
+
+	const dismissIntent = useCallback(async (summary) => {
+		return safeInvoke("dismiss_intent", { summary }, null);
+	}, []);
+
+	const createIntentAction = useCallback(async (summary) => {
+		return safeInvoke("create_intent_action", { summary }, null);
+	}, []);
+
+	const fetchIntentActions = useCallback(async () => {
+		return safeInvoke("get_intent_actions", {}, []);
+	}, []);
+
+	const autoCreateTopIntent = useCallback(async () => {
+		return safeInvoke("auto_create_top_intent", {}, null);
+	}, []);
+
+	/** Close action ledger modal */
+	const closeActionLedger = useCallback(() => {
+		setShowActionLedger(false);
+	}, []);
+
 	/** Close action history modal */
 	const closeActionHistory = useCallback(() => {
 		setShowActionHistory(false);
@@ -391,6 +429,16 @@ export function useActionManagement(autonomyLevel = "observer", apiKeyConfigured
 		// History
 		fetchActionHistory,
 		closeActionHistory,
+		fetchActionLedger,
+		closeActionLedger,
+		actionLedger,
+		showActionLedger,
+		fetchRecentEvents,
+		fetchIntents,
+		dismissIntent,
+		createIntentAction,
+		fetchIntentActions,
+		autoCreateTopIntent,
 
 		// Sandbox
 		fetchSandboxSettings,

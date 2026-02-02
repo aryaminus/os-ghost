@@ -72,9 +72,9 @@ pub struct PromptDescriptor {
     pub name: String,
     /// Description of when to use this prompt
     pub description: String,
-    /// Parameter placeholders in the template
+    /// Parameters referenced in the template
     pub parameters: Vec<String>,
-    /// The actual prompt template with {{placeholders}}
+    /// The prompt template with {{parameters}}
     pub template: String,
 }
 

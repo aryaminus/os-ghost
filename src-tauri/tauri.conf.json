@@ -23,9 +23,9 @@
 				"title": "The OS Ghost",
 				"label": "main",
 				"width": 330,
-				"height": 390,
+				"height": 420,
 				"minWidth": 320,
-				"minHeight": 360,
+				"minHeight": 400,
 				"maxWidth": 460,
 				"maxHeight": 640,
 				"transparent": true,
@@ -46,6 +46,9 @@
 	"bundle": {
 		"createUpdaterArtifacts": true,
 		"active": true,
+		"resources": [
+			"resources/gmail_client_secret.json"
+		],
 		"externalBin": [
 			"native_bridge"
 		],

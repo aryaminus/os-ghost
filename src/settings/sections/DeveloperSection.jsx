@@ -1,4 +1,5 @@
 import PropTypes from "prop-types";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useActionManagement } from "../../hooks/useActionManagement";
 
@@ -18,6 +19,7 @@ const DeveloperSection = ({ settingsState }) => {
     undoAction,
     redoAction,
   } = useActionManagement(autonomyLevel, apiKeyConfigured);
+  const [perfSnapshot, setPerfSnapshot] = useState(null);
 
   const handleClearPending = async () => {
     await invoke("clear_pending_actions");
@@ -34,6 +36,20 @@ const DeveloperSection = ({ settingsState }) => {
   const handleClearTimeline = async () => {
     await invoke("clear_timeline");
   };
+
+  useEffect(() => {
+    let mounted = true;
+    const loadPerf = async () => {
+      const snapshot = await invoke("get_perf_snapshot");
+      if (mounted) setPerfSnapshot(snapshot);
+    };
+    loadPerf();
+    const timer = setInterval(loadPerf, 30000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   return (
     <section className="settings-section">
@@ -186,6 +202,48 @@ const DeveloperSection = ({ settingsState }) => {
           <div className="card-row">
             <span className="card-label">Tool calling</span>
             <span className="card-value">{modelCapabilities.has_tool_calling ? "Yes" : "No"}</span>
+          </div>
+        </div>
+      )}
+
+      {perfSnapshot && (
+        <div className="settings-card">
+          <h3>Performance</h3>
+          <div className="card-row">
+            <span className="card-label">Uptime</span>
+            <span className="card-value">{Math.floor(perfSnapshot.app_uptime_secs / 60)} min</span>
+          </div>
+          <div className="card-row">
+            <span className="card-label">Memory</span>
+            <span className="card-value">
+              {perfSnapshot.memory_bytes
+                ? `${Math.round(perfSnapshot.memory_bytes / (1024 * 1024))} MB`
+                : "Unavailable"}
+            </span>
+          </div>
+          <div className="card-row">
+            <span className="card-label">CPU</span>
+            <span className="card-value">
+              {perfSnapshot.cpu_usage !== null && perfSnapshot.cpu_usage !== undefined
+                ? `${perfSnapshot.cpu_usage.toFixed(1)}%`
+                : "Unavailable"}
+            </span>
+          </div>
+          <div className="card-row">
+            <span className="card-label">Load avg</span>
+            <span className="card-value">
+              {perfSnapshot.load_avg !== null && perfSnapshot.load_avg !== undefined
+                ? perfSnapshot.load_avg.toFixed(2)
+                : "Unavailable"}
+            </span>
+          </div>
+          <div className="card-row">
+            <span className="card-label">Battery</span>
+            <span className="card-value">
+              {perfSnapshot.battery_percent !== null && perfSnapshot.battery_percent !== undefined
+                ? `${perfSnapshot.battery_percent}%`
+                : "Unavailable"}
+            </span>
           </div>
         </div>
       )}

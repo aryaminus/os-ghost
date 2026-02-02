@@ -37,6 +37,9 @@ pub struct SystemSettings {
     pub change_pixel_threshold: u8,
     pub change_min_changed_percentage: f32,
     pub change_max_changed_percentage: f32,
+    /// Minimum seconds between AI analysis calls
+    #[serde(default)]
+    pub analysis_cooldown_secs: u64,
 }
 
 impl Default for SystemSettings {
@@ -63,6 +66,7 @@ impl Default for SystemSettings {
             change_pixel_threshold: 30,
             change_min_changed_percentage: 0.01,
             change_max_changed_percentage: 0.95,
+            analysis_cooldown_secs: 90,
         }
     }
 }
@@ -125,6 +129,7 @@ pub fn update_system_settings(
     change_pixel_threshold: u8,
     change_min_changed_percentage: f32,
     change_max_changed_percentage: f32,
+    analysis_cooldown_secs: u64,
 ) -> Result<SystemSettings, String> {
     let mut settings = SystemSettings::load();
     settings.monitor_enabled = monitor_enabled;
@@ -148,6 +153,7 @@ pub fn update_system_settings(
     settings.change_pixel_threshold = change_pixel_threshold.min(255);
     settings.change_min_changed_percentage = change_min_changed_percentage.max(0.0).min(1.0);
     settings.change_max_changed_percentage = change_max_changed_percentage.max(0.0).min(1.0);
+    settings.analysis_cooldown_secs = analysis_cooldown_secs.max(30).min(3600);
 
     settings.save().map_err(|e| e.to_string())?;
     Ok(settings)

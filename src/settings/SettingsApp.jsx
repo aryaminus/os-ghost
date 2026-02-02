@@ -27,6 +27,8 @@ const DEFAULT_SETTINGS_STATE = {
   recentTimeline: [],
   calendarSettings: null,
   notes: [],
+  filesSettings: null,
+  emailSettings: null,
 };
 
 const SECTIONS = Object.freeze([
@@ -101,6 +103,8 @@ const SettingsApp = () => {
         recentTimeline: state.recent_timeline || [],
         calendarSettings: state.calendar_settings,
         notes: state.notes || [],
+        filesSettings: state.files_settings || null,
+        emailSettings: state.email_settings || null,
       });
     }
     if (!hasLoadedRef.current) {

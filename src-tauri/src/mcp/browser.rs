@@ -18,6 +18,8 @@ use super::traits::*;
 use super::types::*;
 use crate::action_preview::{VisualPreview, VisualPreviewType};
 use crate::actions::{ActionRiskLevel, PendingAction, ACTION_QUEUE};
+use crate::action_ledger::record_action_created;
+use crate::permissions::{evaluate_action, PermissionDecision};
 use crate::privacy::PrivacySettings;
 use async_trait::async_trait;
 use serde_json::json;
@@ -728,7 +730,8 @@ impl McpServer for BrowserMcpServer {
                     };
 
                     // Check if confirmation is required
-                    if privacy.autonomy_level.requires_confirmation(risk_level.is_high_risk())
+                    let decision = evaluate_action(privacy.autonomy_level, risk_level.is_high_risk());
+                    if matches!(decision, PermissionDecision::RequireConfirmation)
                         || matches!(preview_policy, crate::privacy::PreviewPolicy::Always)
                     {
                         // Get target description for the action
@@ -760,6 +763,7 @@ impl McpServer for BrowserMcpServer {
                         
                         // Create pending action for user confirmation
                         let preview_target = target.clone();
+                        let description_clone = description.clone(); // Clone before moving to PendingAction
                         let pending = PendingAction::new(
                             descriptor.name.clone(),
                             description,
@@ -812,6 +816,17 @@ impl McpServer for BrowserMcpServer {
                         };
 
                         let action_id = ACTION_QUEUE.add(pending);
+
+                        record_action_created(
+                            action_id,
+                            descriptor.name.clone(),
+                            description_clone,
+                            target.clone(),
+                            format!("{:?}", risk_level).to_lowercase(),
+                            None,
+                            Some(request.arguments.clone()),
+                            Some("mcp_browser".to_string()),
+                        );
                         
                         return ToolResponse {
                             request_id: request.request_id,
@@ -821,6 +836,19 @@ impl McpServer for BrowserMcpServer {
                                 "action_id": action_id,
                                 "preview_id": preview_id,
                                 "message": "Action requires user confirmation"
+                            }),
+                            error: None,
+                            execution_time_ms: start.elapsed().as_millis() as u64,
+                        };
+                    }
+
+                    if matches!(decision, PermissionDecision::Deny) {
+                        return ToolResponse {
+                            request_id: request.request_id,
+                            success: false,
+                            data: json!({
+                                "status": "blocked",
+                                "reason": "Autonomy policy blocks this action"
                             }),
                             error: None,
                             execution_time_ms: start.elapsed().as_millis() as u64,

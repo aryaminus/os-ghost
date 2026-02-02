@@ -1,5 +1,6 @@
 //! Lightweight scheduler for companion routines
 
+use crate::events_bus::{record_event, EventKind, EventPriority};
 use crate::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -161,6 +162,17 @@ fn handle_daily_brief(app: &AppHandle, state: &Arc<RwLock<SchedulerState>>) -> a
         TimelineStatus::Pending,
     );
 
+    record_event(
+        EventKind::Routine,
+        "Daily brief queued",
+        Some("Scheduled routine".to_string()),
+        std::collections::HashMap::new(),
+        EventPriority::Low,
+        Some("routine:daily_brief".to_string()),
+        Some(3600),
+        Some("scheduler".to_string()),
+    );
+
     Ok(())
 }
 
@@ -198,6 +210,17 @@ fn handle_idle_suggestion(
         Some("User idle for 20+ minutes".to_string()),
         TimelineEntryType::Routine,
         TimelineStatus::Pending,
+    );
+
+    record_event(
+        EventKind::Routine,
+        "Idle suggestion queued",
+        Some("User idle for 20+ minutes".to_string()),
+        std::collections::HashMap::new(),
+        EventPriority::Low,
+        Some("routine:idle_suggestion".to_string()),
+        Some(3600),
+        Some("scheduler".to_string()),
     );
 
     Ok(())

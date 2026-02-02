@@ -86,6 +86,9 @@ pub struct PrivacySettings {
     /// Preview policy for side-effect actions
     #[serde(default)]
     pub preview_policy: PreviewPolicy,
+    /// Trust profile preset
+    #[serde(default)]
+    pub trust_profile: String,
     /// Timestamp of consent
     pub consent_timestamp: Option<u64>,
 }
@@ -100,6 +103,7 @@ impl Default for PrivacySettings {
             autonomy_level: AutonomyLevel::Observer,
             redact_pii: true,
             preview_policy: PreviewPolicy::Always,
+            trust_profile: "balanced".to_string(),
             consent_timestamp: None,
         }
     }
@@ -162,6 +166,7 @@ pub fn update_privacy_settings(
     autonomy_level: Option<String>,
     redact_pii: Option<bool>,
     preview_policy: Option<String>,
+    trust_profile: Option<String>,
 ) -> Result<PrivacySettings, String> {
     let mut settings = PrivacySettings::load();
     settings.capture_consent = capture_consent;
@@ -191,6 +196,10 @@ pub fn update_privacy_settings(
             "off" => PreviewPolicy::Off,
             _ => PreviewPolicy::Always,
         };
+    }
+
+    if let Some(profile) = trust_profile {
+        settings.trust_profile = profile;
     }
 
     settings.consent_timestamp = Some(
