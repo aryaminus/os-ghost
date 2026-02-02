@@ -158,6 +158,15 @@ jobs:
                   cp "$BIN_PATH" "native_bridge-$TARGET${EXT}"
                   ls -l "native_bridge-$TARGET${EXT}"
 
+            - name: Write App Store Connect API key
+              if: matrix.platform == 'macos-latest'
+              shell: bash
+              env:
+                  APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+                  APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+              run: |
+                  echo "$APPLE_API_PRIVATE_KEY" > "${{ runner.temp }}/AuthKey_${APPLE_API_KEY}.p8"
+                  ls -la "${{ runner.temp }}/AuthKey_${APPLE_API_KEY}.p8"
 
             - name: Build and Publish
               uses: tauri-apps/tauri-action@v0
@@ -187,12 +196,3 @@ jobs:
                   prerelease: false
                   includeUpdaterJson: true
                   args: ${{ matrix.args }}
-
-            - name: Write App Store Connect API key
-              if: matrix.platform == 'macos-latest'
-              shell: bash
-              env:
-                  APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-                  APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-              run: |
-                  echo "$APPLE_API_PRIVATE_KEY" > "${{ runner.temp }}/AuthKey_${APPLE_API_KEY}.p8"
