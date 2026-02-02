@@ -208,7 +208,7 @@ export function useActionManagement(autonomyLevel = "observer", apiKeyConfigured
 	/** Approve a pending action */
 	const approveAction = useCallback(async (actionId) => {
 		if (actionPreview?.action?.id === actionId) {
-			await safeInvoke("approve_preview", { preview_id: actionPreview.id }, null);
+			await safeInvoke("approve_preview", { previewId: actionPreview.id }, null);
 			setActionPreview(null);
 			setPendingActions((prev) => prev.filter((a) => a.id !== actionId));
 			return;
@@ -223,7 +223,7 @@ export function useActionManagement(autonomyLevel = "observer", apiKeyConfigured
 	/** Deny a pending action */
 	const denyAction = useCallback(async (actionId) => {
 		if (actionPreview?.action?.id === actionId) {
-			await safeInvoke("deny_preview", { preview_id: actionPreview.id, reason: "User denied" }, null);
+			await safeInvoke("deny_preview", { previewId: actionPreview.id, reason: "User denied" }, null);
 			setActionPreview(null);
 		} else {
 			await safeInvoke("deny_action", { action_id: actionId }, null);
@@ -234,14 +234,14 @@ export function useActionManagement(autonomyLevel = "observer", apiKeyConfigured
 	/** Approve current preview */
 	const approvePreview = useCallback(async () => {
 		if (!actionPreview) return;
-		await safeInvoke("approve_preview", { preview_id: actionPreview.id }, null);
+		await safeInvoke("approve_preview", { previewId: actionPreview.id }, null);
 		setActionPreview(null);
 	}, [actionPreview]);
 
 	/** Deny current preview */
 	const denyPreview = useCallback(async (reason) => {
 		if (!actionPreview) return;
-		await safeInvoke("deny_preview", { preview_id: actionPreview.id, reason }, null);
+		await safeInvoke("deny_preview", { previewId: actionPreview.id, reason }, null);
 		setActionPreview(null);
 	}, [actionPreview]);
 
@@ -250,7 +250,7 @@ export function useActionManagement(autonomyLevel = "observer", apiKeyConfigured
 		if (!actionPreview) return;
 		const result = await safeInvoke(
 			"update_preview_param",
-			{ preview_id: actionPreview.id, param_name: paramName, value },
+			{ previewId: actionPreview.id, paramName, value },
 			null
 		);
 		if (result) {

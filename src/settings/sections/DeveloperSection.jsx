@@ -1,6 +1,7 @@
 import PropTypes from "prop-types";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { safeInvoke } from "../../utils/data";
 import { useActionManagement } from "../../hooks/useActionManagement";
 
 const DeveloperSection = ({ settingsState }) => {
@@ -20,6 +21,10 @@ const DeveloperSection = ({ settingsState }) => {
     redoAction,
   } = useActionManagement(autonomyLevel, apiKeyConfigured);
   const [perfSnapshot, setPerfSnapshot] = useState(null);
+  const [actionLedger, setActionLedger] = useState([]);
+  const [recentEvents, setRecentEvents] = useState([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   const handleClearPending = async () => {
     await invoke("clear_pending_actions");
@@ -37,6 +42,26 @@ const DeveloperSection = ({ settingsState }) => {
     await invoke("clear_timeline");
   };
 
+  const refreshActionLedger = useCallback(async () => {
+    setLedgerLoading(true);
+    try {
+      const entries = await safeInvoke("get_action_ledger", { limit: 200 }, []);
+      setActionLedger(Array.isArray(entries) ? entries : []);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }, []);
+
+  const refreshRecentEvents = useCallback(async () => {
+    setEventsLoading(true);
+    try {
+      const entries = await safeInvoke("get_recent_events", { limit: 200 }, []);
+      setRecentEvents(Array.isArray(entries) ? entries : []);
+    } finally {
+      setEventsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     const loadPerf = async () => {
@@ -50,6 +75,11 @@ const DeveloperSection = ({ settingsState }) => {
       clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    refreshActionLedger();
+    refreshRecentEvents();
+  }, [refreshActionLedger, refreshRecentEvents]);
 
   return (
     <section className="settings-section">
@@ -186,6 +216,68 @@ const DeveloperSection = ({ settingsState }) => {
             Clear timeline
           </button>
         </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Action ledger</h3>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={refreshActionLedger}
+            disabled={ledgerLoading}
+          >
+            {ledgerLoading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        {actionLedger.length === 0 ? (
+          <p className="card-note">No action ledger entries.</p>
+        ) : (
+          <div className="list-grid">
+            {actionLedger.map((entry) => (
+              <div key={`${entry.action_id}-${entry.timestamp}`} className="list-item">
+                <div>
+                  <strong>{entry.description || entry.action_type}</strong>
+                  {entry.reason && <div className="card-note">Why: {entry.reason}</div>}
+                </div>
+                <span className="status-pill neutral">
+                  {new Date(entry.timestamp * 1000).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Recent events</h3>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={refreshRecentEvents}
+            disabled={eventsLoading}
+          >
+            {eventsLoading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        {recentEvents.length === 0 ? (
+          <p className="card-note">No recent events.</p>
+        ) : (
+          <div className="list-grid">
+            {recentEvents.map((entry) => (
+              <div key={entry.id} className="list-item">
+                <div>
+                  <strong>{entry.summary}</strong>
+                  {entry.detail && <div className="card-note">{entry.detail}</div>}
+                </div>
+                <span className="status-pill neutral">
+                  {new Date(entry.timestamp * 1000).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {modelCapabilities && (

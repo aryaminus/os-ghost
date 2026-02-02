@@ -25,6 +25,8 @@
 		"global-shortcut:allow-is-registered",
 		"fs:allow-read-text-file",
 		"fs:allow-write-text-file",
-		"updater:default"
+		"updater:default",
+		"notification:default",
+		"notification:allow-is-permission-granted"
 	]
 }

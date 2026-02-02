@@ -26,6 +26,11 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailApplyLoading, setEmailApplyLoading] = useState(false);
   const [emailError, setEmailError] = useState("");
+  const [persona, setPersona] = useState(null);
+  const [personaDraft, setPersonaDraft] = useState(null);
+  const [personaSaving, setPersonaSaving] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
 
   useEffect(() => {
     if (!calendarSettings) return;
@@ -58,6 +63,42 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
       lastSyncAt: emailSettings.last_sync_at || null,
     });
   }, [emailSettings]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadPersona = async () => {
+      try {
+        const profile = await invoke("get_persona");
+        if (mounted && profile) {
+          setPersona(profile);
+          setPersonaDraft(profile);
+        }
+      } catch (err) {
+        console.error("Failed to load persona", err);
+      }
+    };
+    loadPersona();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const refreshNotifications = useCallback(async () => {
+    setNotificationsLoading(true);
+    try {
+      const entries = await invoke("list_notifications", { limit: 20 });
+      setNotifications(Array.isArray(entries) ? entries : []);
+    } catch (err) {
+      console.error("Failed to load notifications", err);
+      setNotifications([]);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshNotifications();
+  }, [refreshNotifications]);
 
   const refreshEvents = useCallback(async () => {
     setLoadingEvents(true);
@@ -228,6 +269,23 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
       setEmailApplyLoading(false);
     }
   }, [emailTriage, refreshEmailInbox]);
+
+  const handlePersonaSave = useCallback(async () => {
+    if (!personaDraft) return;
+    setPersonaSaving(true);
+    try {
+      const updated = await invoke("set_persona", { profile: personaDraft });
+      if (updated) {
+        setPersona(updated);
+        setPersonaDraft(updated);
+      }
+      onSettingsUpdated?.();
+    } catch (err) {
+      console.error("Failed to save persona", err);
+    } finally {
+      setPersonaSaving(false);
+    }
+  }, [personaDraft, onSettingsUpdated]);
 
   const handleNoteSave = useCallback(async () => {
     if (!noteDraft.title.trim() && !noteDraft.body.trim()) return;
@@ -619,6 +677,135 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
         )}
       </div>
 
+      <div className="settings-card">
+        <h3>Persona</h3>
+        {!personaDraft ? (
+          <p className="card-note">Persona unavailable.</p>
+        ) : (
+          <div className="note-editor">
+            <input
+              className="text-input"
+              value={personaDraft.name}
+              onChange={(event) =>
+                setPersonaDraft((prev) => ({ ...prev, name: event.target.value }))
+              }
+              placeholder="Name"
+            />
+            <input
+              className="text-input"
+              value={personaDraft.description}
+              onChange={(event) =>
+                setPersonaDraft((prev) => ({ ...prev, description: event.target.value }))
+              }
+              placeholder="Description"
+            />
+            <input
+              className="text-input"
+              value={personaDraft.tone}
+              onChange={(event) =>
+                setPersonaDraft((prev) => ({ ...prev, tone: event.target.value }))
+              }
+              placeholder="Tone"
+            />
+            <div className="input-row">
+              <input
+                className="text-input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                value={personaDraft.hint_density}
+                onChange={(event) =>
+                  setPersonaDraft((prev) => ({
+                    ...prev,
+                    hint_density: Number(event.target.value),
+                  }))
+                }
+              />
+              <span className="card-note">Hint density (0-1)</span>
+            </div>
+            <div className="input-row">
+              <input
+                className="text-input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                value={personaDraft.action_aggressiveness}
+                onChange={(event) =>
+                  setPersonaDraft((prev) => ({
+                    ...prev,
+                    action_aggressiveness: Number(event.target.value),
+                  }))
+                }
+              />
+              <span className="card-note">Action aggressiveness (0-1)</span>
+            </div>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={!!personaDraft.allow_auto_intents}
+                onChange={(event) =>
+                  setPersonaDraft((prev) => ({
+                    ...prev,
+                    allow_auto_intents: event.target.checked,
+                  }))
+                }
+              />
+              <span>Allow auto intents</span>
+            </label>
+            <div className="button-row">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handlePersonaSave}
+                disabled={personaSaving}
+              >
+                {personaSaving ? "Saving…" : "Save persona"}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setPersonaDraft(persona)}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="settings-card">
+        <h3>Notifications</h3>
+        <div className="button-row">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={refreshNotifications}
+            disabled={notificationsLoading}
+          >
+            {notificationsLoading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        {notifications.length === 0 ? (
+          <p className="card-note">No notifications.</p>
+        ) : (
+          <div className="list-grid">
+            {notifications.map((note) => (
+              <div key={note.id} className="list-item">
+                <div>
+                  <strong>{note.title}</strong>
+                  <div className="card-note">{note.body}</div>
+                </div>
+                <span className="status-pill neutral">
+                  {new Date(note.timestamp * 1000).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </section>
   );
 };
@@ -627,6 +814,8 @@ IntegrationsSection.propTypes = {
   settingsState: PropTypes.shape({
     calendarSettings: PropTypes.object,
     notes: PropTypes.array,
+    filesSettings: PropTypes.object,
+    emailSettings: PropTypes.object,
   }).isRequired,
   onSettingsUpdated: PropTypes.func,
 };

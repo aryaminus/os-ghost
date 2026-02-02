@@ -78,6 +78,29 @@ const LinkIcon = () => (
   </svg>
 );
 
+const PlugIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M7 7v6" />
+    <path d="M17 7v6" />
+    <path d="M5 13h14" />
+    <path d="M12 13v6" />
+  </svg>
+);
+
+const WandIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 7l5 5-5 5" />
+    <path d="M19 7l-5 5 5 5" />
+  </svg>
+);
+
+const ExpandIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+);
+
+
 const CloseIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 6 6 18" />
@@ -147,26 +170,12 @@ const Ghost = () => {
   const [recentTimeline, setRecentTimeline] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [recentEvents, setRecentEvents] = useState([]);
-  const [showEvents, setShowEvents] = useState(false);
   const [intentCandidates, setIntentCandidates] = useState([]);
   const [showIntents, setShowIntents] = useState(false);
   const [intentActions, setIntentActions] = useState([]);
   const [skills, setSkills] = useState([]);
   const [showSkills, setShowSkills] = useState(false);
-  const [extensions, setExtensions] = useState([]);
-  const [showExtensions, setShowExtensions] = useState(false);
-  const [extensionReloading, setExtensionReloading] = useState(false);
-  const [extensionTools, setExtensionTools] = useState([]);
-  const [notes, setNotes] = useState([]);
-  const [showNotes, setShowNotes] = useState(false);
-  const [events, setEvents] = useState([]);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [persona, setPersona] = useState(null);
-  const [personaDraft, setPersonaDraft] = useState(null);
-  const [personaSaving, setPersonaSaving] = useState(false);
-  const [showPersona, setShowPersona] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
+  const [latestNotification, setLatestNotification] = useState(null);
   const [systemSettings, setSystemSettings] = useState(null);
 
   // Derived state
@@ -226,9 +235,7 @@ const Ghost = () => {
     denyPreview,
     editPreviewParam,
     actionLedger,
-    showActionLedger,
     fetchActionLedger,
-    closeActionLedger,
     fetchRecentEvents,
     fetchIntents,
     dismissIntent,
@@ -418,19 +425,47 @@ const Ghost = () => {
 
   useEffect(() => {
     let mounted = true;
+    const loadNotifications = async () => {
+      const entries = await safeInvoke("list_notifications", { limit: 1 }, []);
+      if (!mounted) return;
+      const latest = Array.isArray(entries) && entries.length > 0 ? entries[0] : null;
+      setLatestNotification(latest);
+    };
+    loadNotifications();
+    const timer = setInterval(loadNotifications, 60000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadLedger = async () => {
+      await fetchActionLedger?.();
+    };
     const loadEvents = async () => {
       const entries = await fetchRecentEvents?.();
       if (mounted && Array.isArray(entries)) {
         setRecentEvents(entries);
       }
     };
-    loadEvents();
-    const timer = setInterval(loadEvents, 60000);
+    if (showHistory) {
+      loadLedger();
+      loadEvents();
+      const timer = setInterval(() => {
+        loadLedger();
+        loadEvents();
+      }, 60000);
+      return () => {
+        mounted = false;
+        clearInterval(timer);
+      };
+    }
     return () => {
       mounted = false;
-      clearInterval(timer);
     };
-  }, [fetchRecentEvents]);
+  }, [fetchRecentEvents, fetchActionLedger, showHistory]);
 
   useEffect(() => {
     let mounted = true;
@@ -480,86 +515,11 @@ const Ghost = () => {
     };
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-    const loadExtensions = async () => {
-      const entries = await safeInvoke("list_extensions", {}, []);
-      if (mounted && Array.isArray(entries)) {
-        setExtensions(entries);
-      }
-      const tools = await safeInvoke("list_extension_tools", {}, []);
-      if (mounted && Array.isArray(tools)) {
-        setExtensionTools(tools);
-      }
-    };
-    loadExtensions();
-    const timer = setInterval(loadExtensions, 60000);
-    return () => {
-      mounted = false;
-      clearInterval(timer);
-    };
-  }, []);
 
   useEffect(() => {
     let mounted = true;
-    const loadNotes = async () => {
-      const entries = await safeInvoke("list_notes", {}, []);
-      if (mounted && Array.isArray(entries)) {
-        setNotes(entries);
-      }
-    };
-    loadNotes();
-    const timer = setInterval(loadNotes, 60000);
     return () => {
       mounted = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadCalendar = async () => {
-      const entries = await safeInvoke("get_upcoming_events", { limit: 5 }, []);
-      if (mounted && Array.isArray(entries)) {
-        setEvents(entries);
-      }
-    };
-    loadCalendar();
-    const timer = setInterval(loadCalendar, 60000);
-    return () => {
-      mounted = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadPersona = async () => {
-      const profile = await safeInvoke("get_persona", {}, null);
-      if (mounted && profile) {
-        setPersona(profile);
-        setPersonaDraft(profile);
-      }
-    };
-    loadPersona();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadNotifications = async () => {
-      const entries = await safeInvoke("list_notifications", { limit: 10 }, []);
-      if (mounted && Array.isArray(entries)) {
-        setNotifications(entries);
-      }
-    };
-    loadNotifications();
-    const timer = setInterval(loadNotifications, 30000);
-    return () => {
-      mounted = false;
-      clearInterval(timer);
     };
   }, []);
 
@@ -607,11 +567,17 @@ const Ghost = () => {
   }, [isCompanionMode, setAppMode]);
 
   const handleToggleAuto = useCallback(() => {
-    setAutonomySettings?.((prev) => ({
-      ...prev,
-      autoPuzzleFromCompanion: !prev.autoPuzzleFromCompanion,
-    }));
-  }, [setAutonomySettings]);
+    setAutonomySettings?.((prev) => {
+      const nextValue = !prev.autoPuzzleFromCompanion;
+      if (nextValue && !isCompanionMode) {
+        setAppMode?.("companion");
+      }
+      return {
+        ...prev,
+        autoPuzzleFromCompanion: nextValue,
+      };
+    });
+  }, [setAutonomySettings, isCompanionMode, setAppMode]);
 
   const handleToggleReadOnly = useCallback(async () => {
     if (!privacySettings) return;
@@ -697,6 +663,18 @@ const Ghost = () => {
     [createIntentAction]
   );
 
+  const handleToggleHistory = useCallback(() => {
+    setShowHistory((prev) => !prev);
+  }, []);
+
+  const handleCloseTimeline = useCallback(() => {
+    setShowHistory(false);
+  }, []);
+
+  const handleOpenTimelineDetails = useCallback(() => {
+    openSettings("developer");
+  }, [openSettings]);
+
   // Compute system status for display
   const systemState = useMemo(() => {
     if (!keyConfigured) return { status: "error", label: "No API Key" };
@@ -765,13 +743,11 @@ const Ghost = () => {
               active={true}
               onClick={handleToggleMode}
             />
-            {isCompanionMode && (
-              <ToggleChip
-                label="Auto"
-                active={autoMode}
-                onClick={handleToggleAuto}
-              />
-            )}
+            <ToggleChip
+              label="Auto"
+              active={autoMode}
+              onClick={handleToggleAuto}
+            />
             <ToggleChip
               label="Read-only"
               active={readOnlyMode}
@@ -827,6 +803,16 @@ const Ghost = () => {
             <span>Legacy extension detected. Update for handshake support.</span>
           </button>
         )}
+        {latestNotification && (
+          <button
+            type="button"
+            className="ghost-alert info"
+            onClick={() => openSettings("integrations")}
+          >
+            <StatusDot status="info" pulse={false} />
+            <span>{latestNotification.title || "Notification"}</span>
+          </button>
+        )}
         <div className="ghost-source">
           <span>{sourceLabel}</span>
           <span>{lastScanLabel}</span>
@@ -869,27 +855,9 @@ const Ghost = () => {
             <button
               type="button"
               className={`ghost-icon-btn ${showHistory ? "active" : ""}`}
-              onClick={() => setShowHistory((prev) => !prev)}
-              aria-label="Toggle recent activity"
-              title="Recent activity"
-            >
-              <HistoryIcon />
-            </button>
-            <button
-              type="button"
-              className={`ghost-icon-btn ${showActionLedger ? "active" : ""}`}
-              onClick={() => (showActionLedger ? closeActionLedger() : fetchActionLedger())}
-              aria-label="Toggle action ledger"
-              title="Action ledger"
-            >
-              <HistoryIcon />
-            </button>
-            <button
-              type="button"
-              className={`ghost-icon-btn ${showEvents ? "active" : ""}`}
-              onClick={() => setShowEvents((prev) => !prev)}
-              aria-label="Toggle recent events"
-              title="Recent events"
+              onClick={handleToggleHistory}
+              aria-label="Toggle timeline"
+              title="Timeline"
             >
               <HistoryIcon />
             </button>
@@ -900,7 +868,7 @@ const Ghost = () => {
               aria-label="Toggle intent ideas"
               title="Intent ideas"
             >
-              <HistoryIcon />
+              <PlugIcon />
             </button>
             <button
               type="button"
@@ -909,52 +877,7 @@ const Ghost = () => {
               aria-label="Toggle skills"
               title="Skills"
             >
-              <HistoryIcon />
-            </button>
-            <button
-              type="button"
-              className={`ghost-icon-btn ${showExtensions ? "active" : ""}`}
-              onClick={() => setShowExtensions((prev) => !prev)}
-              aria-label="Toggle extensions"
-              title="Extensions"
-            >
-              <HistoryIcon />
-            </button>
-            <button
-              type="button"
-              className={`ghost-icon-btn ${showNotes ? "active" : ""}`}
-              onClick={() => setShowNotes((prev) => !prev)}
-              aria-label="Toggle notes"
-              title="Notes"
-            >
-              <HistoryIcon />
-            </button>
-            <button
-              type="button"
-              className={`ghost-icon-btn ${showCalendar ? "active" : ""}`}
-              onClick={() => setShowCalendar((prev) => !prev)}
-              aria-label="Toggle calendar"
-              title="Calendar"
-            >
-              <HistoryIcon />
-            </button>
-            <button
-              type="button"
-              className={`ghost-icon-btn ${showPersona ? "active" : ""}`}
-              onClick={() => setShowPersona((prev) => !prev)}
-              aria-label="Toggle persona"
-              title="Persona"
-            >
-              <HistoryIcon />
-            </button>
-            <button
-              type="button"
-              className={`ghost-icon-btn ${showNotifications ? "active" : ""}`}
-              onClick={() => setShowNotifications((prev) => !prev)}
-              aria-label="Toggle notifications"
-              title="Notifications"
-            >
-              <HistoryIcon />
+              <WandIcon />
             </button>
           </div>
         </div>
@@ -971,251 +894,234 @@ const Ghost = () => {
             </div>
           )}
 
-          {/* Dialogue text */}
-          <div className="dialogue-text">
-            {typedDialogue}
-            {typedDialogue.length < displayText.length && (
-              <span className="cursor" aria-hidden="true">|</span>
+          <div className="dialogue-scroll">
+            {/* Dialogue text */}
+            <div className="dialogue-text">
+              {typedDialogue}
+              {typedDialogue.length < displayText.length && (
+                <span className="cursor" aria-hidden="true">|</span>
+              )}
+            </div>
+
+            {/* Loading indicator */}
+            {isLoading && <span className="dialogue-loading">Thinking...</span>}
+
+            {/* Companion suggestion */}
+            {companionBehavior?.suggestion && (
+              <div className="companion-line">{companionBehavior.suggestion}</div>
             )}
-          </div>
+            {companionBehavior?.trigger_context && (
+              <div className="companion-line subtle">Why: {companionBehavior.trigger_context}</div>
+            )}
+            {intentCandidates.length > 0 && !companionBehavior?.suggestion && (
+              <div className="companion-line">
+                Next idea: {intentCandidates[0].summary}
+              </div>
+            )}
+            {intentCandidates.length > 0 && !companionBehavior?.trigger_context && (
+              <div className="companion-line subtle">
+                Why: {intentCandidates[0].reason}
+              </div>
+            )}
+            {intentCandidates.length > 0 && !companionBehavior?.suggestion && (
+              <div className="intent-actions">
+                <button
+                  type="button"
+                  className="mini-btn subtle"
+                  onClick={() => handleIntentApply(intentCandidates[0])}
+                >
+                  Create action
+                </button>
+                <button
+                  type="button"
+                  className="mini-btn subtle"
+                  onClick={() => {
+                    const summary = intentCandidates[0].summary;
+                    dismissIntent?.(summary);
+                    setIntentCandidates((prev) => prev.filter((item) => item.summary !== summary));
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
-          {/* Loading indicator */}
-          {isLoading && <span className="dialogue-loading">Thinking...</span>}
+            {/* Quick Ask error */}
+            {quickAsk.error && (
+              <div className="dialogue-error">{quickAsk.error}</div>
+            )}
 
-          {/* Companion suggestion */}
-          {companionBehavior?.suggestion && (
-            <div className="companion-line">{companionBehavior.suggestion}</div>
-          )}
-          {companionBehavior?.trigger_context && (
-            <div className="companion-line subtle">Why: {companionBehavior.trigger_context}</div>
-          )}
-          {intentCandidates.length > 0 && !companionBehavior?.suggestion && (
-            <div className="companion-line">
-              Next idea: {intentCandidates[0].summary}
-            </div>
-          )}
-          {intentCandidates.length > 0 && !companionBehavior?.trigger_context && (
-            <div className="companion-line subtle">
-              Why: {intentCandidates[0].reason}
-            </div>
-          )}
-          {intentCandidates.length > 0 && !companionBehavior?.suggestion && (
-            <div className="intent-actions">
-              <button
-                type="button"
-                className="mini-btn"
-                onClick={() => handleIntentApply(intentCandidates[0])}
-              >
-                Create action
-              </button>
+            {/* Quick Ask input */}
+            {quickAsk.isOpen && (
+              <form className="quick-ask-row" onSubmit={handleQuickAskSubmit}>
+                <div className="quick-ask-field">
+                  <label className="quick-ask-label" htmlFor="quick-ask-input">
+                    Create action question or instruction
+                  </label>
+                  <div className="quick-ask-input-row">
+                    <input
+                      id="quick-ask-input"
+                      type="text"
+                      className="quick-ask-input"
+                      value={quickAsk.prompt}
+                      onChange={(e) => setQuickAsk((prev) => ({ ...prev, prompt: e.target.value }))}
+                      placeholder="Ask a question or give an instruction..."
+                      aria-label="Quick question or instruction"
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      className="mini-btn"
+                      disabled={quickAsk.isLoading || !quickAsk.prompt.trim()}
+                    >
+                      {quickAsk.isLoading ? "..." : "Send"}
+                    </button>
+                  </div>
+                </div>
+                <label className="quick-ask-toggle">
+                  <input
+                    type="checkbox"
+                    checked={quickAsk.includeContext}
+                    onChange={(e) =>
+                      setQuickAsk((prev) => ({ ...prev, includeContext: e.target.checked }))
+                    }
+                  />
+                  <span>Include context</span>
+                </label>
+              </form>
+            )}
+
+            {/* Clear quick ask response */}
+            {quickAsk.response && (
               <button
                 type="button"
                 className="mini-btn subtle"
-                onClick={() => {
-                  const summary = intentCandidates[0].summary;
-                  dismissIntent?.(summary);
-                  setIntentCandidates((prev) => prev.filter((item) => item.summary !== summary));
-                }}
+                onClick={() => setQuickAsk({ prompt: "", response: "", error: "", isLoading: false, isOpen: false, includeContext: true })}
               >
-                Dismiss
+                Clear response
               </button>
-            </div>
-          )}
-
-          {/* Quick Ask error */}
-          {quickAsk.error && (
-            <div className="dialogue-error">{quickAsk.error}</div>
-          )}
-
-          {/* Action buttons */}
-          <div className="dialogue-actions">
-            <button
-              type="button"
-              className="mini-btn primary"
-              onClick={primaryAction.onClick}
-              disabled={primaryAction.disabled}
-            >
-              {primaryAction.label}
-            </button>
-            <button
-              type="button"
-              className="mini-btn"
-              onClick={handleAnalyze}
-              disabled={!hasConsent || isLoading}
-              title="Manual screenshot scan"
-            >
-              Scan
-            </button>
-            <button
-              type="button"
-              className="mini-btn"
-              onClick={secondaryAction.onClick}
-              disabled={secondaryAction.disabled}
-            >
-              {secondaryAction.label}
-            </button>
-            <button
-              type="button"
-              className="mini-btn"
-              onClick={() => setQuickAsk((prev) => ({ ...prev, isOpen: !prev.isOpen }))}
-              disabled={!keyConfigured}
-              aria-expanded={quickAsk.isOpen}
-            >
-              Ask
-            </button>
+            )}
           </div>
 
-          {/* Quick Ask input */}
-          {quickAsk.isOpen && (
-            <form className="quick-ask-row" onSubmit={handleQuickAskSubmit}>
-              <input
-                type="text"
-                className="quick-ask-input"
-                value={quickAsk.prompt}
-                onChange={(e) => setQuickAsk((prev) => ({ ...prev, prompt: e.target.value }))}
-                placeholder="Ask something..."
-                aria-label="Quick question"
-                autoFocus
-              />
+          <div className="dialogue-sticky">
+            {/* Action buttons */}
+            <div className="dialogue-actions">
               <button
-                type="submit"
-                className="mini-btn"
-                disabled={quickAsk.isLoading || !quickAsk.prompt.trim()}
+                type="button"
+                className="mini-btn primary"
+                onClick={primaryAction.onClick}
+                disabled={primaryAction.disabled}
               >
-                {quickAsk.isLoading ? "..." : "Send"}
+                {primaryAction.label}
               </button>
-              <label className="quick-ask-toggle">
-                <input
-                  type="checkbox"
-                  checked={quickAsk.includeContext}
-                  onChange={(e) =>
-                    setQuickAsk((prev) => ({ ...prev, includeContext: e.target.checked }))
-                  }
-                />
-                <span>Include context</span>
-              </label>
-            </form>
-          )}
-
-          {/* Clear quick ask response */}
-          {quickAsk.response && (
-            <button
-              type="button"
-              className="mini-btn subtle"
-              onClick={() => setQuickAsk({ prompt: "", response: "", error: "", isLoading: false, isOpen: false, includeContext: true })}
-            >
-              Clear response
-            </button>
-          )}
+              <button
+                type="button"
+                className="mini-btn"
+                onClick={handleAnalyze}
+                disabled={!hasConsent || isLoading}
+                title="Manual screenshot scan"
+              >
+                Scan
+              </button>
+              <button
+                type="button"
+                className="mini-btn"
+                onClick={secondaryAction.onClick}
+                disabled={secondaryAction.disabled}
+              >
+                {secondaryAction.label}
+              </button>
+              <button
+                type="button"
+                className="mini-btn"
+                onClick={() => setQuickAsk((prev) => ({ ...prev, isOpen: !prev.isOpen }))}
+                disabled={!keyConfigured}
+                aria-expanded={quickAsk.isOpen}
+              >
+                Ask
+              </button>
+            </div>
+          </div>
 
           {showHistory && (
             <>
               <button
                 type="button"
                 className="ghost-overlay"
-                onClick={() => setShowHistory(false)}
-                aria-label="Close recent activity"
+                onClick={handleCloseTimeline}
+                aria-label="Close timeline"
               />
               <div
                 className="timeline-popover"
                 role="dialog"
-                aria-label="Recent activity"
+                aria-label="Timeline"
                 onClick={(event) => event.stopPropagation()}
               >
               <div className="timeline-header">
-                <span>Recent activity</span>
+                <span>Timeline</span>
                 <div className="timeline-actions">
                   <button
                     type="button"
                     className="ghost-icon-btn compact"
-                    onClick={() => setShowHistory(false)}
-                    aria-label="Close recent activity"
+                    onClick={handleOpenTimelineDetails}
+                    aria-label="Open timeline details"
+                    title="Open timeline details"
+                  >
+                    <ExpandIcon />
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-icon-btn compact"
+                    onClick={handleCloseTimeline}
+                    aria-label="Close timeline"
                     title="Close"
                   >
                     <CloseIcon />
                   </button>
                 </div>
               </div>
-              {aggregatedTimeline.length === 0 ? (
-                <div className="timeline-empty">No recent activity.</div>
-              ) : (
-                <div className="timeline-list">
-                  {aggregatedTimeline.map((entry) => (
-                    <div key={entry.id} className="timeline-item">
-                      <div className="timeline-summary">
-                        {entry.summary}
-                        {entry.count > 1 && (
-                          <span className="timeline-count">×{entry.count}</span>
-                        )}
-                      </div>
-                      {entry.reason && <div className="timeline-reason">{entry.reason}</div>}
-                      <div className="timeline-meta">
-                        <span>{new Date(entry.timestamp * 1000).toLocaleTimeString()}</span>
-                        <span className="timeline-status">{entry.status}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              </div>
-            </>
-          )}
-
-          {showActionLedger && (
-            <>
-              <button
-                type="button"
-                className="ghost-overlay"
-                onClick={closeActionLedger}
-                aria-label="Close action ledger"
-              />
-              <div
-                className="timeline-popover"
-                role="dialog"
-                aria-label="Action ledger"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="timeline-header">
-                  <span>Action ledger</span>
-                  <div className="timeline-actions">
-                    <button
-                      type="button"
-                      className="ghost-icon-btn compact"
-                      onClick={async () => {
-                        if (extensionReloading) return;
-                        setExtensionReloading(true);
-                        const entries = await safeInvoke("reload_extensions", {}, []);
-                        if (Array.isArray(entries)) {
-                          setExtensions(entries);
-                        }
-                        setExtensionReloading(false);
-                      }}
-                      aria-label="Reload extensions"
-                      title="Reload"
-                    >
-                      {extensionReloading ? "..." : "Reload"}
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-icon-btn compact"
-                      onClick={closeActionLedger}
-                      aria-label="Close action ledger"
-                      title="Close"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </div>
-                {actionLedger.length === 0 ? (
-                  <div className="timeline-empty">No action entries.</div>
+                {actionLedger.length === 0 && aggregatedTimeline.length === 0 && recentEvents.length === 0 ? (
+                  <div className="timeline-empty">No timeline entries yet.</div>
                 ) : (
-                  <div className="timeline-list">
-                    {actionLedger.map((entry) => (
-                      <div key={`${entry.action_id}-${entry.timestamp}`} className="timeline-item">
-                        <div className="timeline-summary">
-                          {entry.description || entry.action_type}
+                <div className="timeline-list">
+                  {actionLedger.length > 0 && (
+                    <div className="timeline-section">
+                      <div className="timeline-section-header">
+                        <span>Action ledger</span>
+                        <span className="timeline-count">
+                          {actionLedger.length}
+                        </span>
+                      </div>
+                      {actionLedger.slice(0, 3).map((entry) => (
+                        <div key={`${entry.action_id}-${entry.timestamp}`} className="timeline-item">
+                          <div className="timeline-summary">
+                            {entry.description || entry.action_type}
+                          </div>
+                          {entry.reason && <div className="timeline-reason">Why: {entry.reason}</div>}
+                          <div className="timeline-meta">
+                            <span>{new Date(entry.timestamp * 1000).toLocaleTimeString()}</span>
+                            <span className="timeline-status">{entry.status}</span>
+                          </div>
                         </div>
-                        {entry.reason && <div className="timeline-reason">Why: {entry.reason}</div>}
+                      ))}
+                    </div>
+                  )}
+                  <div className="timeline-section">
+                    <div className="timeline-section-header">
+                      <span>Recent activity</span>
+                      <span className="timeline-count">
+                        {aggregatedTimeline.length}
+                      </span>
+                    </div>
+                    {aggregatedTimeline.slice(0, 3).map((entry) => (
+                      <div key={entry.id} className="timeline-item">
+                        <div className="timeline-summary">
+                          {entry.summary}
+                          {entry.count > 1 && (
+                            <span className="timeline-count">×{entry.count}</span>
+                          )}
+                        </div>
+                        {entry.reason && <div className="timeline-reason">{entry.reason}</div>}
                         <div className="timeline-meta">
                           <span>{new Date(entry.timestamp * 1000).toLocaleTimeString()}</span>
                           <span className="timeline-status">{entry.status}</span>
@@ -1223,44 +1129,14 @@ const Ghost = () => {
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {showEvents && (
-            <>
-              <button
-                type="button"
-                className="ghost-overlay"
-                onClick={() => setShowEvents(false)}
-                aria-label="Close recent events"
-              />
-              <div
-                className="timeline-popover"
-                role="dialog"
-                aria-label="Recent events"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="timeline-header">
-                  <span>Recent events</span>
-                  <div className="timeline-actions">
-                    <button
-                      type="button"
-                      className="ghost-icon-btn compact"
-                      onClick={() => setShowEvents(false)}
-                      aria-label="Close recent events"
-                      title="Close"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </div>
-                {recentEvents.length === 0 ? (
-                  <div className="timeline-empty">No recent events.</div>
-                ) : (
-                  <div className="timeline-list">
-                    {recentEvents.map((entry) => (
+                  <div className="timeline-section">
+                    <div className="timeline-section-header">
+                      <span>Recent events</span>
+                      <span className="timeline-count">
+                        {recentEvents.length}
+                      </span>
+                    </div>
+                    {recentEvents.slice(0, 3).map((entry) => (
                       <div key={entry.id} className="timeline-item">
                         <div className="timeline-summary">{entry.summary}</div>
                         {entry.detail && <div className="timeline-reason">{entry.detail}</div>}
@@ -1271,7 +1147,8 @@ const Ghost = () => {
                       </div>
                     ))}
                   </div>
-                )}
+                </div>
+              )}
               </div>
             </>
           )}
@@ -1342,8 +1219,11 @@ const Ghost = () => {
                   <div className="timeline-empty">No intent ideas yet.</div>
                 ) : (
                   <div className="timeline-list">
-                    {intentCandidates.map((intent) => (
-                      <div key={intent.id} className="timeline-item">
+                    {intentCandidates.map((intent, index) => (
+                      <div
+                        key={`${intent.id || "intent"}-${intent.summary || "summary"}-${index}`}
+                        className="timeline-item"
+                      >
                         <div className="timeline-summary">{intent.summary}</div>
                         <div className="timeline-reason">Why: {intent.reason}</div>
                         <div className="timeline-meta">
@@ -1353,7 +1233,7 @@ const Ghost = () => {
                         <div className="intent-actions">
                           <button
                             type="button"
-                            className="mini-btn"
+                            className="mini-btn subtle"
                             onClick={() => handleIntentApply(intent)}
                           >
                             Create action
@@ -1439,428 +1319,6 @@ const Ghost = () => {
             </>
           )}
 
-          {showExtensions && (
-            <>
-              <button
-                type="button"
-                className="ghost-overlay"
-                onClick={() => setShowExtensions(false)}
-                aria-label="Close extensions"
-              />
-              <div
-                className="timeline-popover"
-                role="dialog"
-                aria-label="Extensions"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="timeline-header">
-                  <span>Extensions</span>
-                  <div className="timeline-actions">
-                    <button
-                      type="button"
-                      className="ghost-icon-btn compact"
-                      onClick={() => setShowExtensions(false)}
-                      aria-label="Close extensions"
-                      title="Close"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </div>
-                {extensions.length === 0 ? (
-                  <div className="timeline-empty">No extensions found.</div>
-                ) : (
-                  <div className="timeline-list">
-                    {extensions.map((ext) => (
-                      <div key={ext.id} className="timeline-item">
-                        <div className="timeline-summary">{ext.name}</div>
-                        {ext.last_error && (
-                          <div className="timeline-reason">Error: {ext.last_error}</div>
-                        )}
-                        <div className="timeline-meta">
-                          <span>{ext.version}</span>
-                          <span className="timeline-status">{ext.loaded ? "loaded" : "error"}</span>
-                        </div>
-                        {extensionTools.find((item) => item.extension_id === ext.id)?.tools?.length > 0 && (
-                          <div className="timeline-reason">
-                            {extensionTools
-                              .find((item) => item.extension_id === ext.id)
-                              .tools.map((tool) => (
-                                <div key={`${ext.id}-${tool.name}`} className="tool-row">
-                                  <span className="tool-name">{tool.name}</span>
-                                  {tool.risk_level && (
-                                    <span className={`pending-tag ${tool.risk_level}`}>
-                                      {tool.risk_level}
-                                    </span>
-                                  )}
-                                  {tool.requires_approval && (
-                                    <span className="pending-tag sandbox">Approval</span>
-                                  )}
-                                  {tool.description && (
-                                    <span className="tool-desc">{tool.description}</span>
-                                  )}
-                                  {tool.approval_reason && (
-                                    <span className="tool-desc">{tool.approval_reason}</span>
-                                  )}
-                                  {tool.args_schema && (
-                                    <span className="tool-schema">
-                                      Schema: {JSON.stringify(tool.args_schema, null, 0)}
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                          </div>
-                        )}
-                        <div className="intent-actions">
-                          <button
-                            type="button"
-                            className="mini-btn"
-                            onClick={() => safeInvoke("execute_extension", { id: ext.id, args: [] }, null)}
-                            disabled={!ext.loaded}
-                          >
-                            Run
-                          </button>
-                          {extensionTools
-                            .find((item) => item.extension_id === ext.id)
-                            ?.tools?.map((tool) => (
-                              <button
-                                key={`${ext.id}-${tool.name}`}
-                                type="button"
-                                className="mini-btn subtle"
-                                onClick={() =>
-                                  safeInvoke(
-                                    "request_extension_tool_action",
-                                    { extension_id: ext.id, tool_name: tool.name, args: [] },
-                                    null
-                                  )
-                                }
-                                disabled={!ext.loaded}
-                              >
-                                {tool.name}
-                              </button>
-                            ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {showNotes && (
-            <>
-              <button
-                type="button"
-                className="ghost-overlay"
-                onClick={() => setShowNotes(false)}
-                aria-label="Close notes"
-              />
-              <div
-                className="timeline-popover"
-                role="dialog"
-                aria-label="Notes"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="timeline-header">
-                  <span>Notes</span>
-                  <div className="timeline-actions">
-                    <button
-                      type="button"
-                      className="ghost-icon-btn compact"
-                      onClick={() => setShowNotes(false)}
-                      aria-label="Close notes"
-                      title="Close"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </div>
-                {notes.length === 0 ? (
-                  <div className="timeline-empty">No notes saved yet.</div>
-                ) : (
-                  <div className="timeline-list">
-                    {notes.slice(0, 6).map((note) => (
-                      <div key={note.id} className="timeline-item">
-                        <div className="timeline-summary">{note.title}</div>
-                        <div className="timeline-reason">{note.body}</div>
-                        <div className="timeline-meta">
-                          <span>{new Date(note.updated_at * 1000).toLocaleDateString()}</span>
-                          <span className="timeline-status">{note.pinned ? "pinned" : "note"}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {showCalendar && (
-            <>
-              <button
-                type="button"
-                className="ghost-overlay"
-                onClick={() => setShowCalendar(false)}
-                aria-label="Close calendar"
-              />
-              <div
-                className="timeline-popover"
-                role="dialog"
-                aria-label="Calendar"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="timeline-header">
-                  <span>Upcoming</span>
-                  <div className="timeline-actions">
-                    <button
-                      type="button"
-                      className="ghost-icon-btn compact"
-                      onClick={() => setShowCalendar(false)}
-                      aria-label="Close calendar"
-                      title="Close"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </div>
-                {events.length === 0 ? (
-                  <div className="timeline-empty">No upcoming events.</div>
-                ) : (
-                  <div className="timeline-list">
-                    {events.map((event) => (
-                      <div key={event.id} className="timeline-item">
-                        <div className="timeline-summary">{event.summary}</div>
-                        <div className="timeline-meta">
-                          <span>{new Date(event.starts_at * 1000).toLocaleString()}</span>
-                          {event.location && <span className="timeline-status">{event.location}</span>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {showPersona && (
-            <>
-              <button
-                type="button"
-                className="ghost-overlay"
-                onClick={() => setShowPersona(false)}
-                aria-label="Close persona"
-              />
-              <div
-                className="timeline-popover"
-                role="dialog"
-                aria-label="Persona"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="timeline-header">
-                  <span>Persona</span>
-                  <div className="timeline-actions">
-                    <button
-                      type="button"
-                      className="ghost-icon-btn compact"
-                      onClick={() => setShowPersona(false)}
-                      aria-label="Close persona"
-                      title="Close"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </div>
-                {!personaDraft ? (
-                  <div className="timeline-empty">Persona unavailable.</div>
-                ) : (
-                  <div className="timeline-list">
-                    <div className="timeline-item">
-                      <div className="timeline-summary">Profile</div>
-                      <div className="param-row">
-                        <div className="param-meta">
-                          <span className="param-label">Name</span>
-                        </div>
-                        <div className="param-input">
-                          <input
-                            className="text-input"
-                            value={personaDraft.name}
-                            onChange={(event) =>
-                              setPersonaDraft((prev) => ({ ...prev, name: event.target.value }))
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="param-row">
-                        <div className="param-meta">
-                          <span className="param-label">Description</span>
-                        </div>
-                        <div className="param-input">
-                          <input
-                            className="text-input"
-                            value={personaDraft.description}
-                            onChange={(event) =>
-                              setPersonaDraft((prev) => ({ ...prev, description: event.target.value }))
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="param-row">
-                        <div className="param-meta">
-                          <span className="param-label">Tone</span>
-                        </div>
-                        <div className="param-input">
-                          <input
-                            className="text-input"
-                            value={personaDraft.tone}
-                            onChange={(event) =>
-                              setPersonaDraft((prev) => ({ ...prev, tone: event.target.value }))
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="param-row">
-                        <div className="param-meta">
-                          <span className="param-label">Hint density</span>
-                        </div>
-                        <div className="param-input">
-                          <input
-                            className="text-input"
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={personaDraft.hint_density}
-                            onChange={(event) =>
-                              setPersonaDraft((prev) => ({
-                                ...prev,
-                                hint_density: Number(event.target.value),
-                              }))
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="param-row">
-                        <div className="param-meta">
-                          <span className="param-label">Action aggressiveness</span>
-                        </div>
-                        <div className="param-input">
-                          <input
-                            className="text-input"
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={personaDraft.action_aggressiveness}
-                            onChange={(event) =>
-                              setPersonaDraft((prev) => ({
-                                ...prev,
-                                action_aggressiveness: Number(event.target.value),
-                              }))
-                            }
-                          />
-                        </div>
-                      </div>
-                      <div className="param-row">
-                        <div className="param-meta">
-                          <span className="param-label">Auto intents</span>
-                        </div>
-                        <div className="param-input">
-                          <label className="checkbox-row compact">
-                            <input
-                              type="checkbox"
-                              checked={!!personaDraft.allow_auto_intents}
-                              onChange={(event) =>
-                                setPersonaDraft((prev) => ({
-                                  ...prev,
-                                  allow_auto_intents: event.target.checked,
-                                }))
-                              }
-                            />
-                            <span>{personaDraft.allow_auto_intents ? "Enabled" : "Disabled"}</span>
-                          </label>
-                        </div>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          onClick={async () => {
-                            if (personaSaving) return;
-                            setPersonaSaving(true);
-                            const updated = await safeInvoke("set_persona", { profile: personaDraft }, null);
-                            if (updated) {
-                              setPersona(updated);
-                              setPersonaDraft(updated);
-                            }
-                            setPersonaSaving(false);
-                          }}
-                        >
-                          {personaSaving ? "Saving…" : "Save persona"}
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-button"
-                          onClick={() => setPersonaDraft(persona)}
-                        >
-                          Reset
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {showNotifications && (
-            <>
-              <button
-                type="button"
-                className="ghost-overlay"
-                onClick={() => setShowNotifications(false)}
-                aria-label="Close notifications"
-              />
-              <div
-                className="timeline-popover"
-                role="dialog"
-                aria-label="Notifications"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="timeline-header">
-                  <span>Notifications</span>
-                  <div className="timeline-actions">
-                    <button
-                      type="button"
-                      className="ghost-icon-btn compact"
-                      onClick={() => setShowNotifications(false)}
-                      aria-label="Close notifications"
-                      title="Close"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </div>
-                {notifications.length === 0 ? (
-                  <div className="timeline-empty">No notifications.</div>
-                ) : (
-                  <div className="timeline-list">
-                    {notifications.map((note) => (
-                      <div key={note.id} className="timeline-item">
-                        <div className="timeline-summary">{note.title}</div>
-                        <div className="timeline-reason">{note.body}</div>
-                        <div className="timeline-meta">
-                          <span>{new Date(note.timestamp * 1000).toLocaleTimeString()}</span>
-                          <span className="timeline-status">{note.level}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
           {/* Feedback row - always visible when there's content */}
           <div className="feedback-row">
             <DialogueFeedback
@@ -1904,6 +1362,10 @@ const Ghost = () => {
       </main>
 
       {/* Pending Action Approval (overlay) */}
+      {(pendingActions.length > 0 || actionPreview) && (
+        <div className="pending-overlay" aria-hidden="true" />
+      )}
+
       {pendingActions.length > 0 && (
         <div className="pending-mini" role="alertdialog" aria-label="Pending action">
           <div className="pending-title">Action needs approval</div>
@@ -1941,8 +1403,7 @@ const Ghost = () => {
         </div>
       )}
 
-      {/* Action Preview (overlay) */}
-          {actionPreview && (
+      {actionPreview && (
         <div className="preview-mini" role="alertdialog" aria-label="Action preview">
           <div className="pending-title">Preview: {actionPreview.action?.action_type}</div>
           <div className="pending-desc">
