@@ -93,6 +93,9 @@ pub struct SessionState {
     pub last_analysis_at: u64,
     /// Timestamp of last auto-generated intent action
     pub last_intent_action_at: u64,
+    /// Auto intent cooldown override (seconds)
+    #[serde(default)]
+    pub intent_cooldown_secs: u64,
     /// Latest page content for analysis
     #[serde(default, skip)]
     pub current_content: Option<String>,
@@ -123,6 +126,7 @@ impl Default for SessionState {
             last_screenshot_at: 0,
             last_analysis_at: 0,
             last_intent_action_at: 0,
+            intent_cooldown_secs: 0,
             current_content: None,
         }
     }
@@ -316,6 +320,21 @@ impl SessionMemory {
                 Some(state)
             })?;
         Ok(())
+    }
+
+    pub fn set_intent_cooldown(&self, seconds: u64) -> Result<()> {
+        self.store
+            .update(SESSION_TREE, "current", |old: Option<SessionState>| {
+                let mut state = old.unwrap_or_default();
+                state.intent_cooldown_secs = seconds;
+                Some(state)
+            })?;
+        Ok(())
+    }
+
+    pub fn get_intent_cooldown(&self) -> Result<u64> {
+        let state = self.load()?;
+        Ok(state.intent_cooldown_secs)
     }
 
     /// Increment puzzles solved counter

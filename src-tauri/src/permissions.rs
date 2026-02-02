@@ -1,6 +1,40 @@
-//! Permission diagnostics for OS-level capabilities
+//! Permission policy for action execution and OS-level permission diagnostics
 
+use crate::privacy::AutonomyLevel;
 use serde::{Deserialize, Serialize};
+
+// ============================================================================
+// Action Permission Policy (new)
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionDecision {
+    Deny,
+    RequireConfirmation,
+    Allow,
+}
+
+/// Decide if an action should execute based on autonomy and risk
+pub fn evaluate_action(autonomy: AutonomyLevel, is_high_risk: bool) -> PermissionDecision {
+    if !autonomy.allows_actions() {
+        return PermissionDecision::Deny;
+    }
+
+    let profile = crate::privacy::PrivacySettings::load().trust_profile;
+    if profile == "strict" && is_high_risk {
+        return PermissionDecision::RequireConfirmation;
+    }
+
+    if autonomy.requires_confirmation(is_high_risk) {
+        return PermissionDecision::RequireConfirmation;
+    }
+
+    PermissionDecision::Allow
+}
+
+// ============================================================================
+// OS-Level Permission Diagnostics (restored)
+// ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -59,14 +93,8 @@ pub async fn get_permission_diagnostics() -> PermissionDiagnostics {
 
     PermissionDiagnostics {
         screen_recording: screen,
-        accessibility: unknown_check(
-            "Accessibility",
-            action_url_accessibility(),
-        ),
-        input_monitoring: unknown_check(
-            "Input monitoring",
-            action_url_input_monitoring(),
-        ),
+        accessibility: unknown_check("Accessibility", action_url_accessibility()),
+        input_monitoring: unknown_check("Input monitoring", action_url_input_monitoring()),
     }
 }
 

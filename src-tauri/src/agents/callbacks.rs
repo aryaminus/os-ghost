@@ -279,6 +279,21 @@ impl CallbackRegistry {
         self.tool_callbacks.push(callback);
     }
 
+    pub fn register_extension_tools(&mut self) {
+        let listings = crate::extensions::runtime::list_extension_tools();
+        for listing in listings {
+            for tool in listing.tools {
+                let name = format!("ext.{}.{}", listing.extension_id, tool.name);
+                let callback = Arc::new(ExtensionToolCallback::new(
+                    name,
+                    listing.extension_id.clone(),
+                    tool.name.clone(),
+                ));
+                self.tool_callbacks.push(callback);
+            }
+        }
+    }
+
     /// Run before_agent callbacks, return first override if any
     pub async fn run_before_agent(&self, ctx: &CallbackContext) -> Option<AgentOutput> {
         for callback in &self.agent_callbacks {
@@ -347,6 +362,66 @@ impl CallbackRegistry {
             }
         }
         None
+    }
+}
+
+pub struct ExtensionToolCallback {
+    tool_name: String,
+    extension_id: String,
+    tool_id: String,
+}
+
+impl ExtensionToolCallback {
+    pub fn new(tool_name: String, extension_id: String, tool_id: String) -> Self {
+        Self {
+            tool_name,
+            extension_id,
+            tool_id,
+        }
+    }
+}
+
+#[async_trait]
+impl ToolCallback for ExtensionToolCallback {
+    async fn before_tool(&self, _ctx: &CallbackContext, tool_call: &ToolCall) -> Option<ToolResult> {
+        if tool_call.name != self.tool_name {
+            return None;
+        }
+
+        let args: Vec<String> = {
+            // tool_call.arguments is a HashMap<String, Value>
+            // Convert it to a list of string arguments
+            if tool_call.arguments.is_empty() {
+                vec![]
+            } else {
+                // Try to extract values as strings
+                tool_call.arguments.values()
+                    .filter_map(|v| {
+                        if v.is_string() {
+                            v.as_str().map(|s| s.to_string())
+                        } else {
+                            Some(v.to_string())
+                        }
+                    })
+                    .collect()
+            }
+        };
+
+        let result = crate::extensions::runtime::execute_extension_tool_internal(
+            self.extension_id.clone(),
+            self.tool_id.clone(),
+            Some(args),
+        )
+        .await;
+
+        match result {
+            Ok(output) => Some(ToolResult::success(serde_json::json!({
+                "stdout": output.stdout,
+                "stderr": output.stderr,
+                "exit_code": output.exit_code
+            }))),
+            Err(err) => Some(ToolResult::error(err)),
+        }
     }
 }
 

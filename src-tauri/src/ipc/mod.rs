@@ -255,6 +255,7 @@ pub async fn get_settings_state(
         auto_puzzle_from_companion: session
             .get_auto_puzzle_from_companion()
             .map_err(|e| e.to_string())?,
+        intent_cooldown_secs: session.get_intent_cooldown().unwrap_or(0),
     };
     let intelligent_mode = IntelligentModeStatus {
         intelligent_mode: orchestrator.use_intelligent_mode(),
@@ -347,6 +348,7 @@ pub fn set_app_mode(
 #[derive(Debug, Serialize, Clone)]
 pub struct AutonomySettings {
     pub auto_puzzle_from_companion: bool,
+    pub intent_cooldown_secs: u64,
 }
 
 /// Get autonomy settings
@@ -358,6 +360,7 @@ pub fn get_autonomy_settings(
         .get_auto_puzzle_from_companion()
         .map(|v| AutonomySettings {
             auto_puzzle_from_companion: v,
+            intent_cooldown_secs: session.get_intent_cooldown().unwrap_or(0),
         })
         .map_err(|e| e.to_string())
 }
@@ -366,11 +369,16 @@ pub fn get_autonomy_settings(
 #[tauri::command]
 pub fn set_autonomy_settings(
     auto_puzzle_from_companion: bool,
+    intent_cooldown_secs: Option<u64>,
     session: State<'_, Arc<crate::memory::SessionMemory>>,
 ) -> Result<AutonomySettings, String> {
     session
         .set_auto_puzzle_from_companion(auto_puzzle_from_companion)
         .map_err(|e| e.to_string())?;
+
+    if let Some(secs) = intent_cooldown_secs {
+        let _ = session.set_intent_cooldown(secs);
+    }
 
     get_autonomy_settings(session)
 }
