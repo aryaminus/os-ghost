@@ -44,6 +44,12 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
     analysisCooldownSecs: 90,
   });
 
+  const PERFORMANCE_PROFILES = [
+    { value: "low", label: "Low", cooldown: 180 },
+    { value: "balanced", label: "Balanced", cooldown: 90 },
+    { value: "high", label: "High", cooldown: 45 },
+  ];
+
   const [captureFormat, setCaptureFormat] = useState("jpeg");
 
   useEffect(() => {
@@ -153,6 +159,12 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
   const handleMonitorChange = (key) => (event) => {
     const value = event.target.type === "checkbox" ? event.target.checked : Number(event.target.value);
     setMonitorForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handlePerformanceProfile = (event) => {
+    const profile = PERFORMANCE_PROFILES.find((p) => p.value === event.target.value);
+    if (!profile) return;
+    setMonitorForm((prev) => ({ ...prev, analysisCooldownSecs: profile.cooldown }));
   };
 
   const handleSaveMonitoring = useCallback(async () => {
@@ -452,6 +464,18 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
               value={monitorForm.recentCount}
               onChange={handleMonitorChange("recentCount")}
             />
+          </div>
+          <div>
+            <label className="card-label" htmlFor="performance-profile">
+              Performance budget
+            </label>
+            <select id="performance-profile" className="text-input" onChange={handlePerformanceProfile}>
+              {PERFORMANCE_PROFILES.map((profile) => (
+                <option key={profile.value} value={profile.value}>
+                  {profile.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="card-label" htmlFor="monitor-analysis-cooldown">

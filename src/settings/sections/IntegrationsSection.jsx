@@ -31,6 +31,25 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
   const [personaSaving, setPersonaSaving] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [systemNotificationsEnabled, setSystemNotificationsEnabled] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSettings = async () => {
+      try {
+        const settings = await invoke("get_notification_settings");
+        if (mounted && settings) {
+          setSystemNotificationsEnabled(!!settings.system_enabled);
+        }
+      } catch (err) {
+        console.error("Failed to load notification settings", err);
+      }
+    };
+    loadSettings();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!calendarSettings) return;
@@ -95,6 +114,25 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
       setNotificationsLoading(false);
     }
   }, []);
+
+  const clearNotifications = useCallback(async () => {
+    try {
+      await invoke("clear_notifications");
+      setNotifications([]);
+    } catch (err) {
+      console.error("Failed to clear notifications", err);
+    }
+  }, []);
+
+  const toggleSystemNotifications = useCallback(async () => {
+    const next = !systemNotificationsEnabled;
+    setSystemNotificationsEnabled(next);
+    try {
+      await invoke("set_notification_settings", { systemEnabled: next });
+    } catch (err) {
+      console.error("Failed to update notification settings", err);
+    }
+  }, [systemNotificationsEnabled]);
 
   useEffect(() => {
     refreshNotifications();
@@ -777,6 +815,14 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
 
       <div className="settings-card">
         <h3>Notifications</h3>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={systemNotificationsEnabled}
+            onChange={toggleSystemNotifications}
+          />
+          <span>Show system notifications.</span>
+        </label>
         <div className="button-row">
           <button
             type="button"
@@ -785,6 +831,9 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
             disabled={notificationsLoading}
           >
             {notificationsLoading ? "Loading…" : "Refresh"}
+          </button>
+          <button type="button" className="ghost-button" onClick={clearNotifications}>
+            Clear
           </button>
         </div>
         {notifications.length === 0 ? (

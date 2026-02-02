@@ -1297,7 +1297,9 @@ const Ghost = () => {
                         <div className="timeline-reason">Trigger: {skill.trigger}</div>
                         <div className="timeline-meta">
                           <span>Uses: {skill.usage_count}</span>
-                          <span className="timeline-status">{skill.action_type}</span>
+                          <span className="timeline-status">
+                            {skill.enabled ? "enabled" : "disabled"}
+                          </span>
                         </div>
                         {skill.description && (
                           <div className="timeline-reason">{skill.description}</div>
@@ -1309,6 +1311,55 @@ const Ghost = () => {
                             onClick={() => safeInvoke("execute_skill", { skillId: skill.id }, null)}
                           >
                             Run
+                          </button>
+                          <button
+                            type="button"
+                            className="mini-btn subtle"
+                            onClick={async () => {
+                              const title = window.prompt("Skill title", skill.title);
+                              if (!title) return;
+                              const description = window.prompt("Skill description", skill.description || "") || "";
+                              const trigger = window.prompt("Skill trigger", skill.trigger);
+                              if (!trigger) return;
+                              await safeInvoke(
+                                "update_skill",
+                                {
+                                  skillId: skill.id,
+                                  title,
+                                  description,
+                                  trigger,
+                                },
+                                null
+                              );
+                              const refreshed = await safeInvoke("list_skills", {}, []);
+                              if (Array.isArray(refreshed)) {
+                                setSkills(refreshed);
+                              }
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="mini-btn subtle"
+                            onClick={() =>
+                              safeInvoke("set_skill_enabled", { skillId: skill.id, enabled: !skill.enabled }, null)
+                            }
+                          >
+                            {skill.enabled ? "Disable" : "Enable"}
+                          </button>
+                          <button
+                            type="button"
+                            className="mini-btn subtle"
+                            onClick={async () => {
+                              await safeInvoke("delete_skill", { skillId: skill.id }, null);
+                              const refreshed = await safeInvoke("list_skills", {}, []);
+                              if (Array.isArray(refreshed)) {
+                                setSkills(refreshed);
+                              }
+                            }}
+                          >
+                            Delete
                           </button>
                         </div>
                       </div>

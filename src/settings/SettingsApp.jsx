@@ -85,6 +85,7 @@ const SettingsApp = () => {
             currentMode: state.system_status.current_mode,
             preferredMode: state.system_status.preferred_mode,
             autoPuzzleFromCompanion: state.system_status.auto_puzzle_from_companion,
+            intentCooldownSecs: state.autonomy_settings?.intent_cooldown_secs ?? 0,
           }
         : null;
 

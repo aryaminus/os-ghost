@@ -40,6 +40,7 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
   const [autonomyLevel, setAutonomyLevel] = useState("observer");
   const [previewPolicy, setPreviewPolicy] = useState("always");
   const [autoPuzzle, setAutoPuzzle] = useState(true);
+  const [intentCooldown, setIntentCooldown] = useState(15);
   const [intelligent, setIntelligent] = useState(false);
   const [reflection, setReflection] = useState(false);
   const [guardrails, setGuardrails] = useState(false);
@@ -67,7 +68,11 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
     if (typeof autonomySettings?.auto_puzzle_from_companion === "boolean") {
       setAutoPuzzle(autonomySettings.auto_puzzle_from_companion);
     }
-  }, [autonomySettings?.auto_puzzle_from_companion]);
+    if (typeof autonomySettings?.intent_cooldown_secs === "number") {
+      const minutes = Math.round(autonomySettings.intent_cooldown_secs / 60);
+      setIntentCooldown(minutes > 0 ? minutes : 15);
+    }
+  }, [autonomySettings?.auto_puzzle_from_companion, autonomySettings?.intent_cooldown_secs]);
 
   useEffect(() => {
     if (!intelligentMode) return;
@@ -122,12 +127,27 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
     try {
       await invoke("set_autonomy_settings", {
         auto_puzzle_from_companion: next,
+        intent_cooldown_secs: intentCooldown * 60,
       });
       onSettingsUpdated();
     } catch (err) {
       console.error("Failed to update auto puzzle", err);
     }
-  }, [autoPuzzle, onSettingsUpdated]);
+  }, [autoPuzzle, intentCooldown, onSettingsUpdated]);
+
+  const handleSaveIntentCadence = useCallback(async () => {
+    try {
+      await invoke("set_autonomy_settings", {
+        auto_puzzle_from_companion: autoPuzzle,
+        intent_cooldown_secs: intentCooldown * 60,
+      });
+      onSettingsUpdated();
+      setMessage("Intent cadence updated.");
+    } catch (err) {
+      console.error("Failed to update intent cadence", err);
+      setMessage("Unable to update intent cadence.");
+    }
+  }, [autoPuzzle, intentCooldown, onSettingsUpdated]);
 
   const handleIntelligentToggle = useCallback(async () => {
     const next = !intelligent;
@@ -234,6 +254,27 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
           <input type="checkbox" checked={autoPuzzle} onChange={handleAutoPuzzleToggle} />
           <span>Auto-create puzzles from companion observations.</span>
         </label>
+        <div className="param-row">
+          <div className="param-meta">
+            <span className="param-label">Auto-intent cadence</span>
+            <span className="param-help">Minutes between auto-generated intent actions.</span>
+          </div>
+          <div className="param-input">
+            <input
+              className="text-input"
+              type="number"
+              min="5"
+              max="120"
+              value={intentCooldown}
+              onChange={(event) => setIntentCooldown(Number(event.target.value))}
+            />
+          </div>
+        </div>
+        <div className="button-row">
+          <button type="button" className="ghost-button" onClick={handleSaveIntentCadence}>
+            Save intent cadence
+          </button>
+        </div>
       </div>
 
       <div className="settings-card">
@@ -287,13 +328,11 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
             className="text-input"
             value={scheduleForm.quietStart}
             onChange={handleScheduleChange("quietStart")}
-            placeholder="22:00"
           />
           <input
             className="text-input"
             value={scheduleForm.quietEnd}
             onChange={handleScheduleChange("quietEnd")}
-            placeholder="07:00"
           />
         </div>
         <div className="button-row">
@@ -313,7 +352,7 @@ AutonomySection.propTypes = {
     intelligentMode: PropTypes.object,
     schedulerSettings: PropTypes.object,
   }).isRequired,
-  onSettingsUpdated: PropTypes.func.isRequired,
+   onSettingsUpdated: PropTypes.func.isRequired,
 };
 
 export default AutonomySection;

@@ -14,6 +14,7 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
   const [protocolMessage, setProtocolMessage] = useState("");
   const [resetMessage, setResetMessage] = useState("");
   const [buildMessage, setBuildMessage] = useState("");
+  const [extensionTools, setExtensionTools] = useState([]);
 
   const status = settingsState.systemStatus;
   const pairing = settingsState.pairingStatus;
@@ -23,12 +24,30 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
     setPairingExpires(pairing?.pending_expires_at || null);
   }, [pairing?.pending_code, pairing?.pending_expires_at]);
 
+  useEffect(() => {
+    const loadTools = async () => {
+      try {
+        const tools = await invoke("list_extension_tools");
+        setExtensionTools(Array.isArray(tools) ? tools : []);
+      } catch (err) {
+        console.error("Failed to load extension tools", err);
+      }
+    };
+    loadTools();
+  }, []);
+
   const handleRefresh = useCallback(async () => {
     setError("");
     setProtocolMessage("");
     setResetMessage("");
     setBuildMessage("");
     await onSettingsUpdated();
+    try {
+      const tools = await invoke("list_extension_tools");
+      setExtensionTools(Array.isArray(tools) ? tools : []);
+    } catch (err) {
+      console.error("Failed to load extension tools", err);
+    }
   }, [onSettingsUpdated]);
 
   const handleLaunchChrome = useCallback(async () => {
@@ -250,6 +269,35 @@ const ExtensionsSection = ({ settingsState, onSettingsUpdated }) => {
       </div>
 
       <div className="settings-card">
+        <h3>Extension tools</h3>
+        {extensionTools.length === 0 ? (
+          <p className="card-note">No tools registered yet.</p>
+        ) : (
+          <div className="list-grid">
+            {extensionTools.map((toolset) => (
+              <div key={toolset.extension_id} className="list-item">
+                <div>
+                  <strong>{toolset.extension_id}</strong>
+                  {toolset.tools?.map((tool) => (
+                    <div key={`${toolset.extension_id}-${tool.name}`} className="card-note">
+                      {tool.name} · {tool.description}
+                      {tool.args_schema && (
+                        <div className="card-note">Schema: {JSON.stringify(tool.args_schema)}</div>
+                      )}
+                      {tool.risk_level && (
+                        <div className="card-note">Risk: {tool.risk_level}</div>
+                      )}
+                      {tool.requires_approval && <div className="card-note">Approval required</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="settings-card">
         <h3>Pairing</h3>
         <p className="card-note">Pairing codes are required for future remote channels.</p>
         <div className="button-row">
@@ -305,6 +353,7 @@ ExtensionsSection.propTypes = {
   settingsState: PropTypes.shape({
     systemStatus: PropTypes.object,
     pairingStatus: PropTypes.object,
+    extensionTools: PropTypes.array,
   }).isRequired,
   onSettingsUpdated: PropTypes.func.isRequired,
 };

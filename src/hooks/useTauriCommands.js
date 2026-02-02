@@ -285,6 +285,7 @@ export function useGhostGame() {
 	// Autonomy preferences (persisted via Tauri SessionMemory)
 	const [autonomySettings, setAutonomySettingsState] = useState({
 		autoPuzzleFromCompanion: true,
+		intentCooldownSecs: 0,
 	});
 	const autonomySettingsRef = useRef(autonomySettings);
 
@@ -295,28 +296,35 @@ export function useGhostGame() {
 	useEffect(() => {
 		setAutonomySettingsState({
 			autoPuzzleFromCompanion: !!systemStatus.autoPuzzleFromCompanion,
+			intentCooldownSecs: systemStatus.intentCooldownSecs || 0,
 		});
-	}, [systemStatus.autoPuzzleFromCompanion]);
+	}, [systemStatus.autoPuzzleFromCompanion, systemStatus.intentCooldownSecs]);
 
 	const setAutonomySettings = useCallback(async (updater) => {
 		const current = autonomySettingsRef.current;
 		const next = typeof updater === "function" ? updater(current) : updater;
 		const nextEnabled = !!next?.autoPuzzleFromCompanion;
+		const nextCooldown = typeof next?.intentCooldownSecs === "number" ? next.intentCooldownSecs : 0;
 
 		const updated = await safeInvoke(
 			"set_autonomy_settings",
 			{
 				autoPuzzleFromCompanion: nextEnabled,
+				intentCooldownSecs: nextCooldown,
 			},
 			null
 		);
 
 		if (updated) {
 			const enabled = !!updated?.auto_puzzle_from_companion;
-			setAutonomySettingsState({ autoPuzzleFromCompanion: enabled });
+			setAutonomySettingsState({
+				autoPuzzleFromCompanion: enabled,
+				intentCooldownSecs: updated?.intent_cooldown_secs || 0,
+			});
 			setSystemStatus((prev) => ({
 				...prev,
 				autoPuzzleFromCompanion: enabled,
+				intentCooldownSecs: updated?.intent_cooldown_secs || 0,
 			}));
 		}
 	}, []);

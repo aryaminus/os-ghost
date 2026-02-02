@@ -25,6 +25,12 @@ const DeveloperSection = ({ settingsState }) => {
   const [recentEvents, setRecentEvents] = useState([]);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [ledgerFilter, setLedgerFilter] = useState("all");
+  const [ledgerSource, setLedgerSource] = useState("all");
+  const [ledgerRisk, setLedgerRisk] = useState("all");
+  const [ledgerQuery, setLedgerQuery] = useState("");
+  const [eventBusConfig, setEventBusConfig] = useState({ max_events: 300, dedup_ttl_secs_default: 600 });
+  const [eventBusSaving, setEventBusSaving] = useState(false);
 
   const handleClearPending = async () => {
     await invoke("clear_pending_actions");
@@ -45,12 +51,22 @@ const DeveloperSection = ({ settingsState }) => {
   const refreshActionLedger = useCallback(async () => {
     setLedgerLoading(true);
     try {
-      const entries = await safeInvoke("get_action_ledger", { limit: 200 }, []);
+      const entries = await safeInvoke(
+        "get_action_ledger",
+        {
+          limit: 200,
+          status: ledgerFilter === "all" ? null : ledgerFilter,
+          source: ledgerSource === "all" ? null : ledgerSource,
+          riskLevel: ledgerRisk === "all" ? null : ledgerRisk,
+          query: ledgerQuery.trim() || null,
+        },
+        []
+      );
       setActionLedger(Array.isArray(entries) ? entries : []);
     } finally {
       setLedgerLoading(false);
     }
-  }, []);
+  }, [ledgerFilter, ledgerSource, ledgerRisk, ledgerQuery]);
 
   const refreshRecentEvents = useCallback(async () => {
     setEventsLoading(true);
@@ -61,6 +77,34 @@ const DeveloperSection = ({ settingsState }) => {
       setEventsLoading(false);
     }
   }, []);
+
+  const refreshEventBusConfig = useCallback(async () => {
+    try {
+      const config = await invoke("get_event_bus_config");
+      if (config) {
+        setEventBusConfig({
+          max_events: config.max_events,
+          dedup_ttl_secs_default: config.dedup_ttl_secs_default ?? 600,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load event bus config", err);
+    }
+  }, []);
+
+  const saveEventBusConfig = useCallback(async () => {
+    setEventBusSaving(true);
+    try {
+      await invoke("set_event_bus_config", {
+        maxEvents: eventBusConfig.max_events,
+        dedupTtlSecsDefault: eventBusConfig.dedup_ttl_secs_default,
+      });
+    } catch (err) {
+      console.error("Failed to save event bus config", err);
+    } finally {
+      setEventBusSaving(false);
+    }
+  }, [eventBusConfig]);
 
   useEffect(() => {
     let mounted = true;
@@ -79,7 +123,8 @@ const DeveloperSection = ({ settingsState }) => {
   useEffect(() => {
     refreshActionLedger();
     refreshRecentEvents();
-  }, [refreshActionLedger, refreshRecentEvents]);
+    refreshEventBusConfig();
+  }, [refreshActionLedger, refreshRecentEvents, refreshEventBusConfig]);
 
   return (
     <section className="settings-section">
@@ -229,6 +274,83 @@ const DeveloperSection = ({ settingsState }) => {
           >
             {ledgerLoading ? "Loading…" : "Refresh"}
           </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={async () => {
+              const data = await invoke("export_action_ledger");
+              if (data) {
+                await navigator.clipboard.writeText(data);
+              }
+            }}
+          >
+            Export
+          </button>
+        </div>
+        <div className="settings-grid">
+          <div>
+            <label className="card-label" htmlFor="ledger-filter">
+              Filter
+            </label>
+            <select
+              id="ledger-filter"
+              className="text-input"
+              value={ledgerFilter}
+              onChange={(event) => setLedgerFilter(event.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="denied">Denied</option>
+              <option value="executed">Executed</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+          <div>
+            <label className="card-label" htmlFor="ledger-source">
+              Origin
+            </label>
+            <select
+              id="ledger-source"
+              className="text-input"
+              value={ledgerSource}
+              onChange={(event) => setLedgerSource(event.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="intent">Intent</option>
+              <option value="sandbox">Sandbox</option>
+              <option value="browser">Browser</option>
+              <option value="extensions">Extensions</option>
+              <option value="skill">Skills</option>
+            </select>
+          </div>
+          <div>
+            <label className="card-label" htmlFor="ledger-risk">
+              Risk
+            </label>
+            <select
+              id="ledger-risk"
+              className="text-input"
+              value={ledgerRisk}
+              onChange={(event) => setLedgerRisk(event.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div>
+            <label className="card-label" htmlFor="ledger-query">
+              Search
+            </label>
+            <input
+              id="ledger-query"
+              className="text-input"
+              value={ledgerQuery}
+              onChange={(event) => setLedgerQuery(event.target.value)}
+            />
+          </div>
         </div>
         {actionLedger.length === 0 ? (
           <p className="card-note">No action ledger entries.</p>
@@ -250,6 +372,61 @@ const DeveloperSection = ({ settingsState }) => {
       </div>
 
       <div className="settings-card">
+        <div className="card-row">
+          <h3>Event stream</h3>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={saveEventBusConfig}
+            disabled={eventBusSaving}
+          >
+            {eventBusSaving ? "Saving…" : "Save"}
+          </button>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => invoke("clear_events")}
+            >
+              Clear events
+            </button>
+        </div>
+        <div className="settings-grid">
+          <div>
+            <label className="card-label" htmlFor="event-max">
+              Max events
+            </label>
+            <input
+              id="event-max"
+              className="text-input"
+              type="number"
+              min="50"
+              max="2000"
+              value={eventBusConfig.max_events}
+              onChange={(event) =>
+                setEventBusConfig((prev) => ({ ...prev, max_events: Number(event.target.value) }))
+              }
+            />
+          </div>
+          <div>
+            <label className="card-label" htmlFor="event-ttl">
+              Dedup TTL (sec)
+            </label>
+            <input
+              id="event-ttl"
+              className="text-input"
+              type="number"
+              min="0"
+              max="3600"
+              value={eventBusConfig.dedup_ttl_secs_default}
+              onChange={(event) =>
+                setEventBusConfig((prev) => ({
+                  ...prev,
+                  dedup_ttl_secs_default: Number(event.target.value),
+                }))
+              }
+            />
+          </div>
+        </div>
         <div className="card-row">
           <h3>Recent events</h3>
           <button
