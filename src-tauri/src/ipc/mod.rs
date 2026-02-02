@@ -725,6 +725,22 @@ pub fn request_extension_ping(
     Ok(())
 }
 
+/// Request a visible tab screenshot from the browser extension
+#[tauri::command]
+pub fn request_browser_tab_screenshot(
+    effect_queue: State<'_, Arc<EffectQueue>>,
+) -> Result<(), String> {
+    let msg = EffectMessage {
+        action: "capture_visible_tab".to_string(),
+        effect: None,
+        duration: None,
+        text: None,
+        url: None,
+    };
+    effect_queue.push(msg);
+    Ok(())
+}
+
 /// Capture screenshot and analyze with AI
 #[tauri::command]
 pub async fn capture_and_analyze(

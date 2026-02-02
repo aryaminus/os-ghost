@@ -3,13 +3,20 @@
 
 use crate::utils::current_timestamp;
 use anyhow::Result;
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::RwLock;
 use std::time::Duration;
 
 const STATE_FILE: &str = "ghost_state.json";
 const HINT_DELAY_SECS: u64 = 60; // First hint after 60 seconds
 const MAX_HINTS: usize = 3;
+
+lazy_static! {
+    /// Cached game state to avoid redundant disk reads
+    static ref GAME_STATE_CACHE: RwLock<Option<GameState>> = RwLock::new(None);
+}
 
 /// Message to trigger effect in extension
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,15 +98,46 @@ impl Default for GameState {
 }
 
 impl GameState {
-    /// Load state from disk or create default (Async)
+    /// Load state from cache or disk (Async)
+    /// Uses caching to avoid redundant disk reads
     pub async fn load() -> Self {
+        // Try to read from cache first
+        if let Ok(cache) = GAME_STATE_CACHE.read() {
+            if let Some(ref state) = *cache {
+                tracing::debug!("Using cached game state: {} puzzles solved", state.solved_puzzles.len());
+                return state.clone();
+            }
+        }
+
+        // Load from disk if not cached
+        let state = Self::load_from_disk().await;
+        
+        // Update cache
+        if let Ok(mut cache) = GAME_STATE_CACHE.write() {
+            *cache = Some(state.clone());
+        }
+        
+        state
+    }
+
+    /// Force reload from disk, bypassing cache
+    pub async fn reload() -> Self {
+        let state = Self::load_from_disk().await;
+        if let Ok(mut cache) = GAME_STATE_CACHE.write() {
+            *cache = Some(state.clone());
+        }
+        state
+    }
+
+    /// Internal: Load state from disk or create default (Async)
+    async fn load_from_disk() -> Self {
         let path = Self::state_path();
         if path.exists() {
             match tokio::fs::read_to_string(&path).await {
                 Ok(contents) => match serde_json::from_str::<GameState>(&contents) {
                     Ok(state) => {
                         tracing::info!(
-                            "Loaded game state: {} puzzles solved",
+                            "Loaded game state from disk: {} puzzles solved",
                             state.solved_puzzles.len()
                         );
                         return state;
@@ -114,13 +152,27 @@ impl GameState {
         Self::default()
     }
 
-    /// Save state to disk (Async)
+    /// Clear the cache (useful for testing or when state is known to be stale)
+    pub fn clear_cache() {
+        if let Ok(mut cache) = GAME_STATE_CACHE.write() {
+            *cache = None;
+            tracing::debug!("Game state cache cleared");
+        }
+    }
+
+    /// Save state to disk and update cache (Async)
     pub async fn save(&self) -> Result<()> {
         // Ensure directory exists before writing
         Self::ensure_config_dir().await?;
         let path = Self::state_path();
         let contents = serde_json::to_string_pretty(self)?;
         tokio::fs::write(&path, contents).await?;
+        
+        // Update cache after successful save
+        if let Ok(mut cache) = GAME_STATE_CACHE.write() {
+            *cache = Some(self.clone());
+        }
+        
         tracing::debug!("Saved game state to {:?}", path);
         Ok(())
     }

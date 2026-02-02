@@ -10,6 +10,8 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
     noticeAck: false,
     readOnly: false,
     redactPii: true,
+    browserContentConsent: false,
+    browserTabCaptureConsent: false,
     trustProfile: "balanced",
   });
   const [saving, setSaving] = useState(false);
@@ -51,6 +53,8 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
   ];
 
   const [captureFormat, setCaptureFormat] = useState("jpeg");
+  const [tabCapturePreview, setTabCapturePreview] = useState("");
+  const [tabCaptureMessage, setTabCaptureMessage] = useState("");
 
   useEffect(() => {
     if (!settingsState.privacy) return;
@@ -60,6 +64,8 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
       noticeAck: !!settingsState.privacy.privacy_notice_acknowledged,
       readOnly: !!settingsState.privacy.read_only_mode,
       redactPii: settingsState.privacy.redact_pii !== false,
+      browserContentConsent: !!settingsState.privacy.browser_content_consent,
+      browserTabCaptureConsent: !!settingsState.privacy.browser_tab_capture_consent,
       trustProfile: settingsState.privacy.trust_profile || "balanced",
     });
   }, [settingsState.privacy]);
@@ -126,6 +132,8 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
         readOnlyMode: formState.readOnly,
         autonomyLevel: settingsState.privacy.autonomy_level || "autonomous",
         redactPii: formState.redactPii,
+        browserContentConsent: formState.browserContentConsent,
+        browserTabCaptureConsent: formState.browserTabCaptureConsent,
         previewPolicy: settingsState.privacy.preview_policy || "always",
         trustProfile: formState.trustProfile,
       });
@@ -150,6 +158,9 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
         noticeAck: !!current.privacy_notice_acknowledged,
         readOnly: !!current.read_only_mode,
         redactPii: current.redact_pii !== false,
+        browserContentConsent: !!current.browser_content_consent,
+        browserTabCaptureConsent: !!current.browser_tab_capture_consent,
+        trustProfile: current.trust_profile || "balanced",
       });
       setSuccess("");
       setError("");
@@ -219,6 +230,34 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
       setCaptureSaving(false);
     }
   }, [captureFormat, onSettingsUpdated]);
+
+  const handleRequestTabCapture = useCallback(async () => {
+    setTabCaptureMessage("");
+    try {
+      await invoke("request_browser_tab_screenshot");
+      setTabCaptureMessage("Requested a browser tab screenshot...");
+    } catch (err) {
+      console.error("Failed to request tab screenshot", err);
+      setTabCaptureMessage("Unable to request a tab screenshot.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let unlisten;
+    (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlisten = await listen("tab_screenshot", (event) => {
+        const dataUrl = event?.payload?.data_url;
+        if (dataUrl) {
+          setTabCapturePreview(dataUrl);
+          setTabCaptureMessage("Tab screenshot received.");
+        }
+      });
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   return (
     <section className="settings-section">
@@ -329,6 +368,26 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
           />
           <span>Allow screen capture for context gathering.</span>
         </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={formState.browserContentConsent}
+            onChange={handleChange("browserContentConsent")}
+          />
+          <span>Allow browser content capture (URLs, history, page text).</span>
+        </label>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={formState.browserTabCaptureConsent}
+            onChange={handleChange("browserTabCaptureConsent")}
+            disabled={!formState.browserContentConsent}
+          />
+          <span>Allow browser tab screenshots (visible tab only).</span>
+        </label>
+        <p className="card-note">
+          Browser capture is separate from desktop screenshots and can be toggled independently.
+        </p>
         <label className="checkbox-row">
           <input
             type="checkbox"
@@ -711,6 +770,36 @@ const PrivacySection = ({ settingsState, onSettingsUpdated }) => {
           </button>
           {captureMessage && <span className="status-pill neutral">{captureMessage}</span>}
         </div>
+      </div>
+
+      <div className="settings-card">
+        <h3>Browser tab screenshots</h3>
+        <p className="card-note">
+          Captures the active browser tab via the extension (not the full desktop).
+        </p>
+        <div className="button-row">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={handleRequestTabCapture}
+            disabled={!formState.browserTabCaptureConsent}
+          >
+            Request tab screenshot
+          </button>
+          {tabCaptureMessage && <span className="status-pill neutral">{tabCaptureMessage}</span>}
+        </div>
+        {tabCapturePreview && (
+          <img
+            src={tabCapturePreview}
+            alt="Browser tab screenshot preview"
+            className="capture-preview"
+          />
+        )}
+        {settingsState?.systemStatus?.lastTabScreenshotAt && (
+          <p className="card-note">
+            Last tab screenshot: {new Date(settingsState.systemStatus.lastTabScreenshotAt * 1000).toLocaleString()}
+          </p>
+        )}
       </div>
 
       <div className="settings-card">

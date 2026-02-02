@@ -120,6 +120,13 @@ pub fn check_screen_recording_permission() -> Result<(), String> {
 /// is acceptable and provides better UX than flashing the UI
 #[tauri::command]
 pub async fn capture_screen(_app: tauri::AppHandle) -> Result<String, String> {
+    let privacy = crate::privacy::PrivacySettings::load();
+    if privacy.read_only_mode {
+        return Err("Read-only mode enabled".to_string());
+    }
+    if !privacy.capture_consent {
+        return Err("Screen capture consent not granted".to_string());
+    }
     // Perform capture in blocking thread (no window hiding - better UX)
     tokio::task::spawn_blocking(capture_primary_monitor)
         .await

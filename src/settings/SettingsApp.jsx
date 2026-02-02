@@ -81,6 +81,7 @@ const SettingsApp = () => {
             apiKeySource: state.system_status.api_key_source,
             lastKnownUrl: state.system_status.last_known_url,
             lastScreenshotAt: state.system_status.last_screenshot_at,
+            lastTabScreenshotAt: state.system_status.last_tab_screenshot_at,
             activeProvider: state.system_status.active_provider,
             currentMode: state.system_status.current_mode,
             preferredMode: state.system_status.preferred_mode,

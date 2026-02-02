@@ -83,6 +83,12 @@ pub struct PrivacySettings {
     /// Redact PII before sending to AI
     #[serde(default)]
     pub redact_pii: bool,
+    /// Allow browser data capture (URLs, history, page text)
+    #[serde(default)]
+    pub browser_content_consent: bool,
+    /// Allow browser tab screenshots (captureVisibleTab)
+    #[serde(default)]
+    pub browser_tab_capture_consent: bool,
     /// Preview policy for side-effect actions
     #[serde(default)]
     pub preview_policy: PreviewPolicy,
@@ -102,6 +108,8 @@ impl Default for PrivacySettings {
             read_only_mode: false,
             autonomy_level: AutonomyLevel::Observer,
             redact_pii: true,
+            browser_content_consent: false,
+            browser_tab_capture_consent: false,
             preview_policy: PreviewPolicy::Always,
             trust_profile: "balanced".to_string(),
             consent_timestamp: None,
@@ -165,6 +173,8 @@ pub fn update_privacy_settings(
     read_only_mode: bool,
     autonomy_level: Option<String>,
     redact_pii: Option<bool>,
+    browser_content_consent: Option<bool>,
+    browser_tab_capture_consent: Option<bool>,
     preview_policy: Option<String>,
     trust_profile: Option<String>,
 ) -> Result<PrivacySettings, String> {
@@ -187,6 +197,14 @@ pub fn update_privacy_settings(
 
     if let Some(redact) = redact_pii {
         settings.redact_pii = redact;
+    }
+
+    if let Some(allow_browser) = browser_content_consent {
+        settings.browser_content_consent = allow_browser;
+    }
+
+    if let Some(allow_tab) = browser_tab_capture_consent {
+        settings.browser_tab_capture_consent = allow_tab;
     }
 
     if let Some(policy) = preview_policy {
@@ -216,7 +234,7 @@ pub fn update_privacy_settings(
 #[tauri::command]
 pub fn can_capture_screen() -> bool {
     let settings = PrivacySettings::load();
-    settings.capture_consent
+    settings.capture_consent && !settings.read_only_mode
 }
 
 /// Check if AI analysis is allowed
@@ -224,6 +242,22 @@ pub fn can_capture_screen() -> bool {
 pub fn can_analyze_with_ai() -> bool {
     let settings = PrivacySettings::load();
     settings.ai_analysis_consent
+}
+
+/// Check if browser content capture is allowed
+#[tauri::command]
+pub fn can_capture_browser_content() -> bool {
+    let settings = PrivacySettings::load();
+    settings.browser_content_consent && !settings.read_only_mode
+}
+
+/// Check if browser tab screenshots are allowed
+#[tauri::command]
+pub fn can_capture_browser_tab() -> bool {
+    let settings = PrivacySettings::load();
+    settings.browser_tab_capture_consent
+        && settings.browser_content_consent
+        && !settings.read_only_mode
 }
 
 /// Privacy notice text
@@ -239,9 +273,18 @@ This game uses the following features that access your data:
    - Screenshots are NOT stored permanently
 
 2. BROWSER HISTORY
-   - Reads your Chrome browsing history (read-only)
-   - Used to track puzzle progress
-   - History data stays on your device
+    - Reads your Chrome browsing history (read-only)
+    - Used to track puzzle progress
+    - History data stays on your device
+
+2b. BROWSER CONTENT
+    - Reads current page URL, title, and visible text
+    - Used for puzzle context and assistant suggestions
+    - You can disable this anytime in Privacy settings
+
+2c. BROWSER TAB SCREENSHOTS (Optional)
+    - Captures only the active browser tab when enabled
+    - Requires explicit consent and can be disabled anytime
 
 3. BROWSER ACTIONS
    - The companion can request browser navigation or visual highlights

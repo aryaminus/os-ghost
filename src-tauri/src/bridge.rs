@@ -51,6 +51,7 @@ pub struct BrowserMessage {
     pub timestamp: Option<i64>,
     pub recent_history: Option<Vec<serde_json::Value>>,
     pub top_sites: Option<Vec<serde_json::Value>>,
+    pub data_url: Option<String>,
     pub protocol_version: Option<String>,
     pub extension_version: Option<String>,
     pub extension_id: Option<String>,
@@ -63,6 +64,12 @@ pub struct NativeResponse {
     pub action: String,
     pub success: bool,
     pub data: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct ExtensionPermissions {
+    allow_browser_content: bool,
+    allow_tab_capture: bool,
 }
 
 /// Connection guard that decrements counter on drop
@@ -123,6 +130,25 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
         "extension_connected",
         serde_json::json!({ "connected": true }),
     );
+
+    let privacy = crate::privacy::PrivacySettings::load();
+    let permissions = ExtensionPermissions {
+        allow_browser_content: privacy.browser_content_consent && !privacy.read_only_mode,
+        allow_tab_capture: privacy.browser_tab_capture_consent
+            && privacy.browser_content_consent
+            && !privacy.read_only_mode,
+    };
+    let permissions_response = NativeResponse {
+        action: "permissions".to_string(),
+        success: true,
+        data: serde_json::json!(permissions),
+    };
+    if let Ok(json) = serde_json::to_vec(&permissions_response) {
+        let len = (json.len() as u32).to_le_bytes();
+        let _ = stream.write_all(&len).await;
+        let _ = stream.write_all(&json).await;
+        let _ = stream.flush().await;
+    }
 
     // Log MCP manifest for debugging/discovery
     let manifest = mcp_ctx.mcp_server.manifest();
@@ -233,6 +259,11 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     emit_status_throttled(&app);
                 }
                 "page_load" | "tab_changed" => {
+                    let privacy = crate::privacy::PrivacySettings::load();
+                    if privacy.read_only_mode || !privacy.browser_content_consent {
+                        tracing::debug!("Browser content capture disabled; ignoring navigation event");
+                        continue;
+                    }
                     let url = message.url.clone().unwrap_or_default();
                     let title = message.title.clone().unwrap_or_default();
                     let timestamp = message.timestamp.unwrap_or(0);
@@ -282,6 +313,11 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     );
                 }
                 "page_content" => {
+                    let privacy = crate::privacy::PrivacySettings::load();
+                    if privacy.read_only_mode || !privacy.browser_content_consent {
+                        tracing::debug!("Browser content capture disabled; ignoring page content");
+                        continue;
+                    }
                     let url = message.url.clone().unwrap_or_default();
                     let title = message.title.clone().unwrap_or_default();
                     let body_text = message.body_text.clone().unwrap_or_default();
@@ -342,6 +378,11 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     );
                 }
                 "browsing_context" => {
+                    let privacy = crate::privacy::PrivacySettings::load();
+                    if privacy.read_only_mode || !privacy.browser_content_consent {
+                        tracing::debug!("Browser content capture disabled; ignoring browsing context");
+                        continue;
+                    }
                     let history = message.recent_history.clone().unwrap_or_default();
                     let top_sites = message.top_sites.clone().unwrap_or_default();
 
@@ -363,6 +404,43 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                         }),
                     );
                 }
+                "tab_screenshot" => {
+                    let privacy = crate::privacy::PrivacySettings::load();
+                    if privacy.read_only_mode
+                        || !privacy.browser_content_consent
+                        || !privacy.browser_tab_capture_consent
+                    {
+                        tracing::debug!("Tab capture disabled; ignoring tab_screenshot");
+                        continue;
+                    }
+                    let data_url = message.data_url.clone().unwrap_or_default();
+                    let timestamp = message.timestamp.unwrap_or(chrono::Utc::now().timestamp());
+                    system_status::update_status(|status| {
+                        status.last_tab_screenshot_at = Some(
+                            crate::utils::current_timestamp(),
+                        );
+                    });
+                    if let Some(session_mem) = app.try_state::<Arc<crate::memory::SessionMemory>>() {
+                        let _ = session_mem.record_screenshot();
+                    }
+                    let _ = app.emit(
+                        "tab_screenshot",
+                        serde_json::json!({
+                            "data_url": data_url,
+                            "timestamp": timestamp
+                        }),
+                    );
+                    record_event(
+                        EventKind::Observation,
+                        "Browser tab screenshot captured",
+                        None,
+                        std::collections::HashMap::new(),
+                        EventPriority::Low,
+                        Some("tab_screenshot".to_string()),
+                        Some(30),
+                        Some("browser".to_string()),
+                    );
+                }
                 _ => {
                     tracing::debug!("Unknown message type: {}", message.msg_type);
                 }
@@ -381,6 +459,25 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     let _ = stream.write_all(&json).await;
                     let _ = stream.flush().await;
                 }
+            }
+
+            let privacy = crate::privacy::PrivacySettings::load();
+            let permissions = ExtensionPermissions {
+                allow_browser_content: privacy.browser_content_consent && !privacy.read_only_mode,
+                allow_tab_capture: privacy.browser_tab_capture_consent
+                    && privacy.browser_content_consent
+                    && !privacy.read_only_mode,
+            };
+            let permissions_response = NativeResponse {
+                action: "permissions".to_string(),
+                success: true,
+                data: serde_json::json!(permissions),
+            };
+            if let Ok(json) = serde_json::to_vec(&permissions_response) {
+                let len = (json.len() as u32).to_le_bytes();
+                let _ = stream.write_all(&len).await;
+                let _ = stream.write_all(&json).await;
+                let _ = stream.flush().await;
             }
 
             // Check for pending effects to send (from MCP tools or legacy EffectQueue)

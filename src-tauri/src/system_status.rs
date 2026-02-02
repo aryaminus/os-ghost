@@ -12,6 +12,7 @@ pub struct SystemStatusStore {
     pub last_extension_heartbeat: Option<u64>,
     pub last_extension_hello: Option<u64>,
     pub last_page_update: Option<u64>,
+    pub last_tab_screenshot_at: Option<u64>,
     pub last_known_url: Option<String>,
     pub extension_protocol_version: Option<String>,
     pub extension_version: Option<String>,

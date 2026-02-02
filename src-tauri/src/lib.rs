@@ -599,6 +599,8 @@ pub fn run() {
                             None,
                             None,
                             None,
+                            None,
+                            None,
                         );
                         emit_settings_update(app);
                     }
@@ -626,34 +628,95 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let settings = system_settings::SystemSettings::load();
             if settings.global_shortcut_enabled {
-                match Shortcut::from_str(&settings.global_shortcut) {
-                    Ok(shortcut) => {
-                        if let Err(e) = app_handle.global_shortcut().register(shortcut) {
-                            tracing::warn!("Failed to register global shortcut: {}", e);
-                        }
+                // Normalize shortcut string (handle various formats)
+                let shortcut_str = settings.global_shortcut.trim();
+                let shortcut_str = if shortcut_str.is_empty() {
+                    "CmdOrCtrl+Shift+G" // Default fallback
+                } else {
+                    shortcut_str
+                };
 
-                        let app_handle_for_shortcut = app_handle.clone();
-                        if let Err(e) = app_handle.global_shortcut().on_shortcut(
-                            shortcut,
-                            move |_, _, _| {
-                                if let Some(window) =
-                                    app_handle_for_shortcut.get_webview_window("main")
-                                {
-                                    let visible = window.is_visible().unwrap_or(true);
-                                    if visible {
-                                        let _ = window.hide();
-                                    } else {
-                                        let _ = window.show();
-                                        let _ = window.set_focus();
+                match Shortcut::from_str(shortcut_str) {
+                    Ok(shortcut) => {
+                        tracing::info!("Registering global shortcut: {}", shortcut_str);
+                        
+                        // Try to register the shortcut
+                        match app_handle.global_shortcut().register(shortcut) {
+                            Ok(_) => {
+                                tracing::info!("Global shortcut registered successfully");
+                                
+                                let app_handle_for_shortcut = app_handle.clone();
+                                if let Err(e) = app_handle.global_shortcut().on_shortcut(
+                                    shortcut,
+                                    move |_, _, _| {
+                                        if let Some(window) =
+                                            app_handle_for_shortcut.get_webview_window("main")
+                                        {
+                                            let visible = window.is_visible().unwrap_or(true);
+                                            if visible {
+                                                let _ = window.hide();
+                                            } else {
+                                                let _ = window.show();
+                                                let _ = window.set_focus();
+                                            }
+                                        }
+                                    },
+                                ) {
+                                    tracing::warn!("Failed to set shortcut handler: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to register global shortcut '{}': {}. Shortcut may already be in use by another application.", shortcut_str, e);
+                                if let Ok(fallback) = Shortcut::from_str("CmdOrCtrl+Shift+G") {
+                                    if app_handle.global_shortcut().register(fallback).is_ok() {
+                                        let app_handle_for_shortcut = app_handle.clone();
+                                        let _ = app_handle.global_shortcut().on_shortcut(
+                                            fallback,
+                                            move |_, _, _| {
+                                                if let Some(window) =
+                                                    app_handle_for_shortcut.get_webview_window("main")
+                                                {
+                                                    let visible = window.is_visible().unwrap_or(true);
+                                                    if visible {
+                                                        let _ = window.hide();
+                                                    } else {
+                                                        let _ = window.show();
+                                                        let _ = window.set_focus();
+                                                    }
+                                                }
+                                            },
+                                        );
+                                        tracing::info!("Using fallback global shortcut: CmdOrCtrl+Shift+G");
                                     }
                                 }
-                            },
-                        ) {
-                            tracing::warn!("Failed to set shortcut handler: {}", e);
+                            }
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Invalid global shortcut: {}", e);
+                        tracing::warn!("Invalid global shortcut '{}': {}. Falling back to CmdOrCtrl+Shift+G", shortcut_str, e);
+                        // Try fallback shortcut
+                        if let Ok(fallback) = Shortcut::from_str("CmdOrCtrl+Shift+G") {
+                            if let Ok(_) = app_handle.global_shortcut().register(fallback) {
+                                let app_handle_for_shortcut = app_handle.clone();
+                                let _ = app_handle.global_shortcut().on_shortcut(
+                                    fallback,
+                                    move |_, _, _| {
+                                        if let Some(window) =
+                                            app_handle_for_shortcut.get_webview_window("main")
+                                        {
+                                            let visible = window.is_visible().unwrap_or(true);
+                                            if visible {
+                                                let _ = window.hide();
+                                            } else {
+                                                let _ = window.show();
+                                                let _ = window.set_focus();
+                                            }
+                                        }
+                                    },
+                                );
+                                tracing::info!("Using fallback global shortcut: CmdOrCtrl+Shift+G");
+                            }
+                        }
                     }
                 }
             }

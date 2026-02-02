@@ -109,6 +109,8 @@ const AutonomySection = ({ settingsState, onSettingsUpdated }) => {
         readOnlyMode: !!privacy.read_only_mode,
         autonomyLevel: autonomyLevel,
         redactPii: privacy.redact_pii !== false,
+        browserContentConsent: !!privacy.browser_content_consent,
+        browserTabCaptureConsent: !!privacy.browser_tab_capture_consent,
         previewPolicy: previewPolicy,
       });
       setMessage("Autonomy updated.");

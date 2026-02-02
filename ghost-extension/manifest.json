@@ -8,7 +8,8 @@
     "nativeMessaging",
     "storage",
     "history",
-    "topSites"
+    "topSites",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"

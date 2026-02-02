@@ -588,6 +588,8 @@ const Ghost = () => {
       readOnlyMode: !privacySettings.read_only_mode,
       autonomyLevel: privacySettings.autonomy_level || "autonomous",
       redactPii: privacySettings.redact_pii !== false,
+      browserContentConsent: privacySettings.browser_content_consent,
+      browserTabCaptureConsent: privacySettings.browser_tab_capture_consent,
       previewPolicy: privacySettings.preview_policy || "always",
     }, null);
     if (updated) setPrivacySettings(updated);

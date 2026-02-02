@@ -51,6 +51,12 @@ let port = null;
 /** @type {boolean} */
 let isConnected = false;
 
+/** @type {{ allowBrowserContent: boolean, allowTabCapture: boolean }} */
+let permissions = {
+	allowBrowserContent: false,
+	allowTabCapture: false,
+};
+
 /** @type {number} */
 let reconnectAttempts = 0;
 
@@ -120,6 +126,10 @@ async function fetchTopSites() {
  * This enables immediate puzzle generation without waiting for page visits
  */
 async function sendBrowsingContext() {
+	if (!permissions.allowBrowserContent) {
+		log("Browser content capture disabled by consent");
+		return;
+	}
 	let history = [];
 	let topSites = [];
 
@@ -171,6 +181,9 @@ async function sendBrowsingContext() {
  * @param {chrome.tabs.Tab} tab
  */
 function fetchContentForTab(tab) {
+	if (!permissions.allowBrowserContent) {
+		return;
+	}
 	// Skip non-http URLs (chrome://, about:, edge://, file://, etc.)
 	if (!tab?.id || !tab?.url) return;
 	if (!tab.url.startsWith("http://") && !tab.url.startsWith("https://"))
@@ -323,6 +336,39 @@ function handleNativeMessage(message) {
 			case "ping":
 				sendToNative({ type: "heartbeat", timestamp: Date.now() });
 				break;
+			case "permissions":
+				permissions = {
+					allowBrowserContent: !!message.data?.allow_browser_content,
+					allowTabCapture: !!message.data?.allow_tab_capture,
+				};
+				log("Updated permissions:", permissions);
+				break;
+			case "capture_visible_tab":
+				if (!permissions.allowTabCapture) {
+					warn("Tab capture blocked by consent");
+					break;
+				}
+				chrome.action?.setBadgeText({ text: "CAP" });
+				chrome.action?.setBadgeBackgroundColor({ color: "#DAA24A" });
+				chrome.tabs.captureVisibleTab(
+					undefined,
+					{ format: "jpeg", quality: 85 },
+					(dataUrl) => {
+						const lastError = chrome.runtime.lastError;
+						if (lastError || !dataUrl) {
+							warn("captureVisibleTab failed", lastError);
+							chrome.action?.setBadgeText({ text: "" });
+							return;
+						}
+						sendToNative({
+							type: "tab_screenshot",
+							data_url: dataUrl,
+							timestamp: Date.now(),
+						});
+						setTimeout(() => chrome.action?.setBadgeText({ text: "" }), 1200);
+					}
+				);
+				break;
 		case "inject_effect":
 			// Send effect to active tab's content script
 			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -432,6 +478,7 @@ function sendToNative(message) {
 // Listen for tab updates (page loads)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 	if (changeInfo.status === "complete" && tab.url) {
+		if (!permissions.allowBrowserContent) return;
 		// Send page load event to native app
 		sendToNative({
 			type: "page_load",
@@ -449,6 +496,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.tabs.onActivated.addListener((activeInfo) => {
 	chrome.tabs.get(activeInfo.tabId, (tab) => {
 		if (tab?.url) {
+			if (!permissions.allowBrowserContent) return;
 			sendToNative({
 				type: "tab_changed",
 				url: tab.url,
