@@ -89,6 +89,10 @@ jobs:
                   echo "=== Setting key partition list ==="
                   security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
 
+                  echo "=== Adding keychain to search list ==="
+                  security list-keychains -s build.keychain login.keychain
+                  security list-keychains
+
                   echo "=== All identities in build.keychain ==="
                   security find-identity -v build.keychain
 
@@ -167,6 +171,19 @@ jobs:
               run: |
                   echo "$APPLE_API_PRIVATE_KEY" > "${{ runner.temp }}/AuthKey_${APPLE_API_KEY}.p8"
                   ls -la "${{ runner.temp }}/AuthKey_${APPLE_API_KEY}.p8"
+
+            - name: Prepare keychain for signing
+              if: matrix.platform == 'macos-latest'
+              env:
+                  KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+              run: |
+                  echo "=== Ensuring keychain is unlocked and accessible ==="
+                  security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+                  security list-keychains
+                  security default-keychain
+                  echo "=== Available signing identities ==="
+                  security find-identity -v -p codesigning
+                  echo "=== Keychain prepared for signing ==="
 
             - name: Build and Publish
               uses: tauri-apps/tauri-action@v0
