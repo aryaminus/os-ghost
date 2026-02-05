@@ -26,13 +26,17 @@
 pub mod loop_agent;
 pub mod parallel;
 pub mod planning;
+pub mod recording;
 pub mod reflection;
+pub mod replay;
 pub mod sequential;
 
 pub use loop_agent::{LoopWorkflow, create_adaptive_loop};
 pub use parallel::ParallelWorkflow;
 pub use planning::{PlanningWorkflow, create_intelligent_pipeline};
+pub use recording::{Workflow as RecordedWorkflow, WorkflowStep, WorkflowActionType, WorkflowRecorder, WorkflowStore, RecordingProgress};
 pub use reflection::{ReflectionWorkflow, ReflectionConfig, create_narrator_with_reflection};
+pub use replay::{WorkflowReplayer, ReplayResult, ReplayProgress, StepResult, VerificationResult};
 pub use sequential::SequentialWorkflow;
 
 use crate::agents::traits::{AgentContext, AgentError, AgentOutput, AgentResult};
