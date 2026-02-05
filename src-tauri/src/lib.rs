@@ -66,37 +66,20 @@ use std::str::FromStr;
 use core::window::GhostWindow;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_updater::UpdaterExt;
+use core::window;
 
-// Backwards-compatible re-exports for gradual migration
-pub use actions as action_confirmation;
-pub use actions::action_ledger;
-pub use actions::action_preview;
-pub use actions::rollback;
-pub use actions::workflows;
-pub use ai as ai_providers;
-pub use capture as screen_capture;
-pub use config as settings;
-pub use core::game_state;
-pub use core::notifications;
-pub use core::utils as core_utils;
-pub use data::events_bus;
-pub use data::history;
-pub use data::skills;
-pub use data::timeline;
-pub use data::persona;
-pub use data::pairing as pairing_code;
-pub use intent as intent_engine;
-pub use integrations as external_integrations;
-pub use monitoring::monitor as system_monitor;
-pub use monitoring::perf as performance;
-pub use config::privacy;
-pub use config::system_settings;
-pub use config::permissions;
-pub use config::system_status;
-pub use config::scheduler;
-pub use data::pairing;
-pub use monitoring::perf;
-pub use core::window;
+// Import commonly used modules for command handlers
+use data::pairing;
+use data::timeline;
+use data::events_bus;
+use data::skills;
+use data::persona;
+use monitoring::perf;
+use core::notifications;
+use config::privacy;
+use extensions;
+
+
 
 /// Default puzzles for the game
 fn default_puzzles() -> Vec<Puzzle> {
@@ -844,7 +827,7 @@ pub fn run() {
             app.manage(ipc::AutonomousTask(tokio::sync::Mutex::new(None)));
 
             // Initialize scheduler state
-            let scheduler_state = Arc::new(RwLock::new(scheduler::SchedulerState::default()));
+            let scheduler_state = Arc::new(RwLock::new(config::scheduler::SchedulerState::default()));
             app.manage(scheduler_state.clone());
 
             // Initialize EffectQueue for browser visual effects
@@ -946,7 +929,7 @@ pub fn run() {
             });
 
             // Start scheduler loop
-            scheduler::start_scheduler_loop(app.handle().clone(), scheduler_state);
+            config::scheduler::start_scheduler_loop(app.handle().clone(), scheduler_state);
 
             // Start Native Messaging bridge for Chrome extension
             let app_handle = app.handle().clone();
@@ -976,6 +959,7 @@ pub fn run() {
             ipc::enable_autonomous_mode,
             ipc::trigger_browser_effect,
             ipc::request_extension_ping,
+            ipc::request_browser_tab_screenshot,
             // System detection commands
             ipc::detect_chrome,
             ipc::launch_chrome,
@@ -1020,8 +1004,8 @@ pub fn run() {
             integrations::integrations::update_note,
             integrations::integrations::delete_note,
             // Scheduler commands
-            scheduler::get_scheduler_settings,
-            scheduler::update_scheduler_settings,
+            config::scheduler::get_scheduler_settings,
+            config::scheduler::update_scheduler_settings,
             // Pairing commands
             pairing::get_pairing_status,
             pairing::create_pairing_code,
