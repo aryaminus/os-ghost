@@ -207,6 +207,8 @@ impl WorkflowRecorder {
             return Err("Already recording a workflow".to_string());
         }
 
+        let workflow_name = name.clone();
+
         let workflow = Workflow {
             id: generate_workflow_id(),
             name,
@@ -228,7 +230,7 @@ impl WorkflowRecorder {
         *self.recording_start.lock().unwrap() = Some(Instant::now());
         *self.step_counter.lock().unwrap() = 0;
 
-        tracing::info!("Started recording workflow: {}", name);
+        tracing::info!("Started recording workflow: {}", workflow_name);
 
         Ok(self
             .current_workflow
@@ -433,6 +435,7 @@ pub struct RecordingProgress {
 }
 
 /// Workflow storage/management
+#[derive(Clone)]
 pub struct WorkflowStore {
     workflows: Arc<Mutex<HashMap<String, Workflow>>>,
 }
@@ -447,9 +450,10 @@ impl WorkflowStore {
 
     /// Save a workflow
     pub fn save(&self, workflow: Workflow) {
+        let workflow_id = workflow.id.clone();
         let mut workflows = self.workflows.lock().unwrap();
-        workflows.insert(workflow.id.clone(), workflow);
-        tracing::info!("Saved workflow '{}'", workflow.id);
+        workflows.insert(workflow_id.clone(), workflow);
+        tracing::info!("Saved workflow '{}'", workflow_id);
     }
 
     /// Get a workflow by ID

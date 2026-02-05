@@ -1711,3 +1711,183 @@ pub fn poll_agent_status(
         timestamp_ms,
     }
 }
+
+// ============================================================================
+// Workflow Recording & Replay Commands (Phase 3)
+// ============================================================================
+
+use crate::workflow::{WorkflowRecorder, WorkflowStore, WorkflowReplayer, RecordedWorkflow, ReplayResult, RecordingProgress, ReplayProgress};
+use crate::workflow::recording::{WorkflowActionType, ScrollDirection, WaitCondition};
+use crate::config::privacy::AutonomyLevel;
+use std::sync::Mutex;
+
+/// Global workflow store (lazy initialization)
+static WORKFLOW_STORE: Mutex<Option<WorkflowStore>> = Mutex::new(None);
+
+fn get_workflow_store() -> WorkflowStore {
+    WORKFLOW_STORE.lock().unwrap().clone().unwrap_or_default()
+}
+
+/// Start recording a new workflow
+#[tauri::command]
+pub fn start_workflow_recording(
+    name: String,
+    description: String,
+    start_url: String,
+) -> Result<String, String> {
+    let recorder = WorkflowRecorder::new(std::sync::Arc::new(
+        crate::capture::vision::VisionCapture::new(None)
+    ));
+    
+    recorder.start_recording(name, description, start_url)
+}
+
+/// Stop recording and save workflow
+#[tauri::command]
+pub fn stop_workflow_recording() -> Result<RecordedWorkflow, String> {
+    let recorder = WorkflowRecorder::new(std::sync::Arc::new(
+        crate::capture::vision::VisionCapture::new(None)
+    ));
+    
+    let workflow = recorder.stop_recording()?;
+    
+    // Save to store
+    let store = get_workflow_store();
+    store.save(workflow.clone());
+    
+    Ok(workflow)
+}
+
+/// Cancel current recording
+#[tauri::command]
+pub fn cancel_workflow_recording() {
+    let recorder = WorkflowRecorder::new(std::sync::Arc::new(
+        crate::capture::vision::VisionCapture::new(None)
+    ));
+    
+    recorder.cancel_recording();
+}
+
+/// Get recording progress
+#[tauri::command]
+pub fn get_recording_progress() -> Option<RecordingProgress> {
+    let recorder = WorkflowRecorder::new(std::sync::Arc::new(
+        crate::capture::vision::VisionCapture::new(None)
+    ));
+    
+    recorder.get_progress()
+}
+
+/// Record a click action
+#[tauri::command]
+pub fn record_workflow_click(
+    element_description: String,
+    coordinates: Option<(f32, f32)>,
+) -> Result<(), String> {
+    let recorder = WorkflowRecorder::new(std::sync::Arc::new(
+        crate::capture::vision::VisionCapture::new(None)
+    ));
+    
+    recorder.record_click(element_description, coordinates)
+}
+
+/// Record a fill action
+#[tauri::command]
+pub fn record_workflow_fill(
+    field_description: String,
+    value: String,
+) -> Result<(), String> {
+    let recorder = WorkflowRecorder::new(std::sync::Arc::new(
+        crate::capture::vision::VisionCapture::new(None)
+    ));
+    
+    recorder.record_fill(field_description, value)
+}
+
+/// Record navigation
+#[tauri::command]
+pub fn record_workflow_navigation(url: String) -> Result<(), String> {
+    let recorder = WorkflowRecorder::new(std::sync::Arc::new(
+        crate::capture::vision::VisionCapture::new(None)
+    ));
+    
+    recorder.record_navigation(url)
+}
+
+/// Get all workflows
+#[tauri::command]
+pub fn get_all_workflows() -> Vec<RecordedWorkflow> {
+    let store = get_workflow_store();
+    store.get_all()
+}
+
+/// Get workflow by ID
+#[tauri::command]
+pub fn get_workflow(id: String) -> Option<RecordedWorkflow> {
+    let store = get_workflow_store();
+    store.get(&id)
+}
+
+/// Delete workflow
+#[tauri::command]
+pub fn delete_workflow(id: String) -> bool {
+    let store = get_workflow_store();
+    store.delete(&id)
+}
+
+/// Execute workflow
+#[tauri::command]
+pub async fn execute_workflow(
+    workflow_id: String,
+    autonomy_level: String,
+) -> Result<ReplayResult, String> {
+    let store = get_workflow_store();
+    
+    let workflow = store.get(&workflow_id)
+        .ok_or_else(|| "Workflow not found".to_string())?;
+    
+    let autonomy = match autonomy_level.as_str() {
+        "observer" => AutonomyLevel::Observer,
+        "suggester" => AutonomyLevel::Suggester,
+        "supervised" => AutonomyLevel::Supervised,
+        "autonomous" => AutonomyLevel::Autonomous,
+        _ => AutonomyLevel::Supervised,
+    };
+    
+    let mut replayer = WorkflowReplayer::new(
+        crate::config::privacy::PrivacySettings::load(),
+        autonomy,
+        None,
+    );
+    
+    let result = replayer.replay(&workflow).await
+        .map_err(|e| format!("Replay failed: {}", e))?;
+    
+    // Update stats
+    store.record_execution(
+        &workflow_id,
+        result.success,
+        result.duration_secs,
+    );
+    
+    Ok(result)
+}
+
+/// Pause workflow execution
+#[tauri::command]
+pub fn pause_workflow_execution() {
+    // Would need to store replayer instance globally
+    tracing::info!("Workflow pause requested");
+}
+
+/// Resume workflow execution
+#[tauri::command]
+pub fn resume_workflow_execution() {
+    tracing::info!("Workflow resume requested");
+}
+
+/// Cancel workflow execution
+#[tauri::command]
+pub fn cancel_workflow_execution() {
+    tracing::info!("Workflow cancel requested");
+}
