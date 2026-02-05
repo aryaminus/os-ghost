@@ -1,5 +1,6 @@
 //! Intent engine (lightweight heuristic prototype)
 
+use crate::actions::action_preview;
 use crate::data::events_bus::{EventEntry, EventKind, EventPriority};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -374,7 +375,7 @@ fn create_intent_action_internal(
         Some(args),
     );
 
-    let _preview_id = if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+    let _preview_id = if let Some(manager) = action_preview::get_preview_manager_mut() {
         let preview = manager.start_preview(&pending);
         manager.update_progress(&preview.id, 1.0);
         Some(preview.id)

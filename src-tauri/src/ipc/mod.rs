@@ -1,6 +1,7 @@
 //! IPC commands for Tauri frontend-backend communication
 //! Exposes Rust functionality to JavaScript via Tauri commands
 
+use crate::actions::action_preview;
 use crate::ai::ai_provider::SmartAiRouter;
 use crate::capture::capture;
 use crate::core::game_state::{EffectMessage, EffectQueue};
@@ -1650,7 +1651,7 @@ pub struct AgentPollStatus {
     /// Pending actions requiring confirmation
     pub pending_actions: Vec<crate::actions::PendingAction>,
     /// Active action preview (if any)
-    pub action_preview: Option<crate::action_preview::ActionPreview>,
+    pub action_preview: Option<action_preview::ActionPreview>,
     /// Rollback/undo status
     pub rollback_status: crate::actions::rollback::RollbackStatus,
     /// Token usage stats
@@ -1670,7 +1671,7 @@ pub fn poll_agent_status(
     let pending_actions = crate::actions::ACTION_QUEUE.get_pending();
     
     // Get action preview
-    let action_preview = crate::action_preview::get_preview_manager()
+    let action_preview = action_preview::get_preview_manager()
         .and_then(|m| m.get_active_preview());
     
     // Get rollback status

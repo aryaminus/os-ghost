@@ -77,7 +77,7 @@ use data::persona;
 use monitoring::perf;
 use core::notifications;
 use config::privacy;
-use extensions;
+use config::system_status;
 
 
 
@@ -782,8 +782,8 @@ pub fn run() {
             app.manage(ai_router.clone());
 
             // Initialize system status store
-            let status_store = Arc::new(RwLock::new(system_status::SystemStatusStore::default()));
-            system_status::init_system_status_store(status_store.clone());
+            let status_store = Arc::new(RwLock::new(config::system_status::SystemStatusStore::default()));
+            config::system_status::init_system_status_store(status_store.clone());
             app.manage(status_store);
 
             // Create shared memory instances (used by both Orchestrator and Monitor)
