@@ -1,4 +1,5 @@
 import Ghost from "./components/Ghost";
+
 import "./styles/App.css";
 
 function App() {

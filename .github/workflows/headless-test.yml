@@ -147,7 +147,7 @@ jobs:
 
       - name: Run Input Tests
         working-directory: ./src-tauri
-        run: cargo test --lib input::
+        run: cargo test --lib -- "input::"
 
       - name: Verify Safety Checks
         working-directory: ./src-tauri
