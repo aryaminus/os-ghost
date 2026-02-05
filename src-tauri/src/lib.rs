@@ -1113,6 +1113,18 @@ pub fn run() {
             core::game_state::reset_game,
             core::game_state::check_hint_available,
             core::game_state::get_next_hint,
+            // Visual automation and workflow commands
+            ipc::start_workflow_recording,
+            ipc::stop_workflow_recording,
+            ipc::cancel_workflow_recording,
+            ipc::get_recording_progress,
+            ipc::get_all_workflows,
+            ipc::get_workflow,
+            ipc::delete_workflow,
+            ipc::execute_workflow,
+            ipc::pause_workflow_execution,
+            ipc::resume_workflow_execution,
+            ipc::cancel_workflow_execution,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

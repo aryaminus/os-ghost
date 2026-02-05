@@ -11,6 +11,8 @@ import AutonomySection from "./sections/AutonomySection";
 import SandboxSection from "./sections/SandboxSection";
 import DeveloperSection from "./sections/DeveloperSection";
 import IntegrationsSection from "./sections/IntegrationsSection";
+import VisualAutomationSection from "./sections/VisualAutomationSection";
+import WorkflowsSection from "./sections/WorkflowsSection";
 
 const DEFAULT_SETTINGS_STATE = {
   privacy: null,
@@ -34,6 +36,8 @@ const DEFAULT_SETTINGS_STATE = {
 const SECTIONS = Object.freeze([
   { id: "general", label: "General" },
   { id: "privacy", label: "Privacy & Security" },
+  { id: "visual", label: "Visual Automation" },
+  { id: "workflows", label: "Workflows" },
   { id: "extensions", label: "Extensions" },
   { id: "keys", label: "Keys & Models" },
   { id: "autonomy", label: "Autonomy" },
@@ -216,6 +220,17 @@ const SettingsApp = () => {
                 <PrivacySection
                   settingsState={settingsState}
                   onSettingsUpdated={handleSettingsUpdated}
+                />
+              )}
+              {activeSection === "visual" && (
+                <VisualAutomationSection
+                  settingsState={settingsState}
+                  onSettingsUpdated={handleSettingsUpdated}
+                />
+              )}
+              {activeSection === "workflows" && (
+                <WorkflowsSection
+                  settingsState={settingsState}
                 />
               )}
               {activeSection === "extensions" && (
