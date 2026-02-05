@@ -48,6 +48,9 @@ pub mod ipc;
 // Monitoring & Activity
 pub mod monitoring;
 
+// Headless Server & CLI (Phase 4: Match UI-TARS capabilities)
+pub mod server;
+
 use ai::ai_provider::SmartAiRouter;
 use core::game_state::{EffectMessage, EffectQueue};
 use ai::gemini_client::GeminiClient;
