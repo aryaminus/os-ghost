@@ -101,18 +101,18 @@ pub async fn get_permission_diagnostics() -> PermissionDiagnostics {
 fn action_url_screen_recording() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        return Some(
+        Some(
             "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
                 .to_string(),
-        );
+        )
     }
     #[cfg(target_os = "windows")]
     {
-        return Some("ms-settings:privacy-screenrecording".to_string());
+        Some("ms-settings:privacy-screenrecording".to_string())
     }
     #[cfg(target_os = "linux")]
     {
-        return Some("https://help.gnome.org/users/gnome-help/stable/privacy.html.en".to_string());
+        Some("https://help.gnome.org/users/gnome-help/stable/privacy.html.en".to_string())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
@@ -123,21 +123,21 @@ fn action_url_screen_recording() -> Option<String> {
 fn action_url_accessibility() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        return Some(
+        Some(
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
                 .to_string(),
-        );
+        )
     }
     #[cfg(target_os = "windows")]
     {
-        return Some("ms-settings:easeofaccess".to_string());
+        Some("ms-settings:easeofaccess".to_string())
     }
     #[cfg(target_os = "linux")]
     {
-        return Some(
+        Some(
             "https://help.gnome.org/users/gnome-help/stable/assistive-technologies.html.en"
                 .to_string(),
-        );
+        )
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
@@ -148,18 +148,18 @@ fn action_url_accessibility() -> Option<String> {
 fn action_url_input_monitoring() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        return Some(
+        Some(
             "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
                 .to_string(),
-        );
+        )
     }
     #[cfg(target_os = "windows")]
     {
-        return Some("ms-settings:privacy-speechtyping".to_string());
+        Some("ms-settings:privacy-speechtyping".to_string())
     }
     #[cfg(target_os = "linux")]
     {
-        return Some("https://help.gnome.org/users/gnome-help/stable/privacy.html.en".to_string());
+        Some("https://help.gnome.org/users/gnome-help/stable/privacy.html.en".to_string())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {

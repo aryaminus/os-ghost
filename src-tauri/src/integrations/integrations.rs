@@ -406,10 +406,9 @@ pub fn list_email_inbox(limit: Option<usize>) -> Vec<EmailMessage> {
     }
     let count = limit.unwrap_or(settings.inbox_limit).clamp(1, 50);
     tauri::async_runtime::block_on(async {
-        match crate::integrations::email::list_inbox(count).await {
-            Ok(items) => items,
-            Err(_) => Vec::new(),
-        }
+        crate::integrations::email::list_inbox(count)
+            .await
+            .unwrap_or_default()
     })
 }
 
@@ -424,10 +423,9 @@ pub fn triage_email_inbox(
     }
     let count = limit.unwrap_or(settings.inbox_limit).clamp(1, 50);
     tauri::async_runtime::block_on(async {
-        match crate::integrations::email::triage_inbox(count, Some(ai_router.as_ref())).await {
-            Ok(items) => items,
-            Err(_) => Vec::new(),
-        }
+        crate::integrations::email::triage_inbox(count, Some(ai_router.as_ref()))
+            .await
+            .unwrap_or_default()
     })
 }
 
@@ -595,9 +593,7 @@ fn unfold_ics_lines(contents: &str) -> Vec<String> {
 }
 
 fn split_ics_line(line: &str) -> Option<(&str, &str)> {
-    let mut parts = line.splitn(2, ':');
-    let key = parts.next()?;
-    let value = parts.next()?;
+    let (key, value) = line.split_once(':')?;
     let key = key.split(';').next().unwrap_or(key);
     Some((key, value))
 }

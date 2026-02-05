@@ -735,7 +735,7 @@ pub fn run() {
                         tracing::warn!("Invalid global shortcut '{}': {}. Falling back to CmdOrCtrl+Shift+G", shortcut_str, e);
                         // Try fallback shortcut
                         if let Ok(fallback) = Shortcut::from_str("CmdOrCtrl+Shift+G") {
-                            if let Ok(_) = app_handle.global_shortcut().register(fallback) {
+                            if app_handle.global_shortcut().register(fallback).is_ok() {
                                 let app_handle_for_shortcut = app_handle.clone();
                                 let _ = app_handle.global_shortcut().on_shortcut(
                                     fallback,

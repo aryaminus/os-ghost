@@ -350,8 +350,7 @@ pub async fn execute_extension(id: String, args: Option<Vec<String>>) -> Result<
         cmd.arg(entry_str);
         cmd
     } else {
-        let cmd = Command::new(entry_str);
-        cmd
+        Command::new(entry_str)
     };
 
     command.args(args);

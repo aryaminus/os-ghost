@@ -183,11 +183,11 @@ pub async fn start_monitor_loop(
             }
         };
 
-        if settings.monitor_only_companion {
-            if mode != Some(crate::memory::AppMode::Companion) {
-                tracing::debug!("Monitor: not in companion mode; skipping");
-                continue;
-            }
+        if settings.monitor_only_companion
+            && mode != Some(crate::memory::AppMode::Companion)
+        {
+            tracing::debug!("Monitor: not in companion mode; skipping");
+            continue;
         }
 
         // Check idle status using try_lock
@@ -202,11 +202,12 @@ pub async fn start_monitor_loop(
         };
 
         let now = current_timestamp();
-        if !settings.monitor_ignore_idle {
-            if last_activity > 0 && now.saturating_sub(last_activity) > settings.monitor_idle_secs {
-                tracing::debug!("Monitor: user idle; skipping");
-                continue;
-            }
+        if !settings.monitor_ignore_idle
+            && last_activity > 0
+            && now.saturating_sub(last_activity) > settings.monitor_idle_secs
+        {
+            tracing::debug!("Monitor: user idle; skipping");
+            continue;
         }
 
         // Check analysis cooldown using try_lock

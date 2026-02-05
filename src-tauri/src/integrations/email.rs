@@ -325,7 +325,7 @@ pub async fn begin_oauth() -> Result<EmailSettings> {
         Some("email".to_string()),
     );
 
-    let _ = tauri_plugin_opener::open_url(&auth_url.to_string(), None::<String>);
+    let _ = tauri_plugin_opener::open_url(auth_url.as_str(), None::<String>);
 
     let code = rx
         .recv_timeout(Duration::from_secs(120))

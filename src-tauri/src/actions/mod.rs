@@ -2,6 +2,7 @@
 
 pub mod action_ledger;
 pub mod action_preview;
+#[allow(clippy::module_inception)]
 pub mod actions;
 pub mod rollback;
 pub mod workflows;

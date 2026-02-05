@@ -317,7 +317,7 @@ fn print_status(status: &serde_json::Value, format: OutputFormat) -> Result<(), 
         }
         OutputFormat::Table => {
             // Simple table format
-            println!("{:<20} {}", "Property", "Value");
+            println!("{:<20} Value", "Property");
             println!("{}", "-".repeat(40));
             if let Some(data) = status.get("data") {
                 println!("{:<20} {}", "Connected:", data["connected"].as_bool().unwrap_or(false));

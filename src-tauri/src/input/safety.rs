@@ -26,8 +26,20 @@ impl InputSafetyChecker {
         Self {
             screen_width: width,
             screen_height: height,
-            last_action_time: std::time::Instant::now(),
+            // Set last_action_time in the past to avoid rate limit on first call
+            last_action_time: std::time::Instant::now() - std::time::Duration::from_millis(100),
             min_action_interval_ms: 10, // Minimum 10ms between actions
+        }
+    }
+
+    /// Create a new safety checker with custom screen dimensions (for testing)
+    #[cfg(test)]
+    pub fn new_with_dimensions(width: i32, height: i32) -> Self {
+        Self {
+            screen_width: width,
+            screen_height: height,
+            last_action_time: std::time::Instant::now() - std::time::Duration::from_millis(100),
+            min_action_interval_ms: 10,
         }
     }
 
@@ -284,19 +296,20 @@ mod tests {
 
     #[test]
     fn test_validate_coordinates() {
-        let checker = InputSafetyChecker::new();
+        // Use custom dimensions for predictable testing
+        let checker = InputSafetyChecker::new_with_dimensions(1920, 1080);
 
         // Valid coordinates
         assert!(checker.validate_mouse_move(100, 100).is_ok());
 
-        // Out of bounds
+        // Out of bounds (using large negative values)
         assert!(checker.validate_mouse_move(-1000, 100).is_err());
         assert!(checker.validate_mouse_move(100, -1000).is_err());
     }
 
     #[test]
     fn test_sensitive_text_detection() {
-        let checker = InputSafetyChecker::new();
+        let checker = InputSafetyChecker::new_with_dimensions(1920, 1080);
 
         // Normal text
         assert!(checker.validate_text_input("Hello world").is_ok());
@@ -308,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_dangerous_combos() {
-        let checker = InputSafetyChecker::new();
+        let checker = InputSafetyChecker::new_with_dimensions(1920, 1080);
 
         // Normal combo
         assert!(checker.validate_key_combo(&[Key::Command, Key::C]).is_ok());

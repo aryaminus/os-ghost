@@ -13,19 +13,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 /// Authentication configuration
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AuthConfig {
     pub api_key: Option<String>,
+    #[serde(default)]
     pub require_auth: bool,
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        Self {
-            api_key: None,
-            require_auth: false,
-        }
-    }
 }
 
 /// API key authentication middleware

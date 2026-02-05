@@ -108,6 +108,7 @@ pub fn get_system_settings() -> SystemSettings {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn update_system_settings(
     monitor_enabled: bool,
     monitor_interval_secs: u64,
@@ -133,8 +134,8 @@ pub fn update_system_settings(
 ) -> Result<SystemSettings, String> {
     let mut settings = SystemSettings::load();
     settings.monitor_enabled = monitor_enabled;
-    settings.monitor_interval_secs = monitor_interval_secs.max(10).min(3600);
-    settings.monitor_idle_secs = monitor_idle_secs.max(60).min(60 * 60 * 12);
+    settings.monitor_interval_secs = monitor_interval_secs.clamp(10, 3600);
+    settings.monitor_idle_secs = monitor_idle_secs.clamp(60, 60 * 60 * 12);
     settings.monitor_ignore_idle = monitor_ignore_idle;
     settings.monitor_allow_hidden = monitor_allow_hidden;
     settings.monitor_only_companion = monitor_only_companion;
@@ -143,17 +144,17 @@ pub fn update_system_settings(
     settings.monitor_category_window = monitor_category_window.clamp(5, 30);
     settings.global_shortcut_enabled = global_shortcut_enabled;
     settings.adaptive_capture_enabled = adaptive_capture_enabled;
-    settings.adaptive_min_interval_secs = adaptive_min_interval_secs.max(5).min(60);
-    settings.adaptive_max_interval_secs = adaptive_max_interval_secs.max(60).min(3600);
-    settings.adaptive_idle_threshold_secs = adaptive_idle_threshold_secs.max(30).min(3600);
+    settings.adaptive_min_interval_secs = adaptive_min_interval_secs.clamp(5, 60);
+    settings.adaptive_max_interval_secs = adaptive_max_interval_secs.clamp(60, 3600);
+    settings.adaptive_idle_threshold_secs = adaptive_idle_threshold_secs.clamp(30, 3600);
     settings.adaptive_low_activity_threshold_secs =
-        adaptive_low_activity_threshold_secs.max(10).min(300);
+        adaptive_low_activity_threshold_secs.clamp(10, 300);
     settings.adaptive_high_activity_count = adaptive_high_activity_count.clamp(5, 100);
     settings.change_detection_enabled = change_detection_enabled;
-    settings.change_pixel_threshold = change_pixel_threshold.min(255);
-    settings.change_min_changed_percentage = change_min_changed_percentage.max(0.0).min(1.0);
-    settings.change_max_changed_percentage = change_max_changed_percentage.max(0.0).min(1.0);
-    settings.analysis_cooldown_secs = analysis_cooldown_secs.max(30).min(3600);
+    settings.change_pixel_threshold = change_pixel_threshold;
+    settings.change_min_changed_percentage = change_min_changed_percentage.clamp(0.0, 1.0);
+    settings.change_max_changed_percentage = change_max_changed_percentage.clamp(0.0, 1.0);
+    settings.analysis_cooldown_secs = analysis_cooldown_secs.clamp(30, 3600);
 
     settings.save().map_err(|e| e.to_string())?;
     Ok(settings)
@@ -260,9 +261,9 @@ pub fn set_change_detection_settings(
     max_changed_percentage: f32,
 ) -> Result<SystemSettings, String> {
     let mut settings = SystemSettings::load();
-    settings.change_pixel_threshold = pixel_threshold.min(255);
-    settings.change_min_changed_percentage = min_changed_percentage.max(0.0).min(1.0);
-    settings.change_max_changed_percentage = max_changed_percentage.max(0.0).min(1.0);
+    settings.change_pixel_threshold = pixel_threshold;
+    settings.change_min_changed_percentage = min_changed_percentage.clamp(0.0, 1.0);
+    settings.change_max_changed_percentage = max_changed_percentage.clamp(0.0, 1.0);
     settings.save().map_err(|e| e.to_string())?;
     Ok(settings)
 }

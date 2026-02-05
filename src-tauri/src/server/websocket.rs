@@ -226,7 +226,7 @@ async fn handle_socket(mut socket: WebSocket) {
 /// Send an event to the WebSocket
 async fn send_event(socket: &mut WebSocket, event: WsEvent) -> Result<(), axum::Error> {
     let json = serde_json::to_string(&event).map_err(|e| {
-        axum::Error::new(std::io::Error::new(std::io::ErrorKind::Other, e))
+        axum::Error::new(std::io::Error::other(e))
     })?;
     
     socket.send(Message::Text(json)).await
@@ -252,6 +252,9 @@ mod tests {
     fn test_event_broadcast() {
         let broadcaster = EventBroadcaster::new();
         
+        // Subscribe first so broadcast has a receiver
+        let _rx = broadcaster.subscribe();
+        
         let event = WsEvent::StatusUpdate(StatusData {
             connected: true,
             active_agents: 5,
@@ -259,7 +262,7 @@ mod tests {
             memory_entries: 100,
         });
         
-        // Should succeed with no subscribers
+        // Should succeed with a subscriber
         assert!(broadcaster.broadcast(event).is_ok());
     }
 

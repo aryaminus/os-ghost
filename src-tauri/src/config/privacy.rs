@@ -185,11 +185,7 @@ impl PrivacySettings {
         let path = Self::settings_path();
         let settings = if path.exists() {
             if let Ok(contents) = fs::read_to_string(&path) {
-                if let Ok(settings) = serde_json::from_str(&contents) {
-                    settings
-                } else {
-                    Self::default()
-                }
+                serde_json::from_str::<Self>(&contents).unwrap_or_default()
             } else {
                 Self::default()
             }
@@ -330,6 +326,7 @@ pub fn get_privacy_settings() -> PrivacySettings {
 
 /// Update privacy settings (grant consent)
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn update_privacy_settings(
     capture_consent: bool,
     ai_analysis_consent: bool,

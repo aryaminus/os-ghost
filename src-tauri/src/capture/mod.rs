@@ -1,5 +1,6 @@
 //! Capture module - handles screen capture and change detection
 
+#[allow(clippy::module_inception)]
 pub mod capture;
 pub mod change_detection;
 pub mod vision;

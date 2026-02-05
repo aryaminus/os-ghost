@@ -2,6 +2,7 @@
 
 pub mod bridge;
 pub mod email;
+#[allow(clippy::module_inception)]
 pub mod integrations;
 
 // Re-export commonly used types and Tauri commands from integrations.rs

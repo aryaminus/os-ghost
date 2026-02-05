@@ -103,7 +103,7 @@ pub fn set_skill_enabled(skill_id: String, enabled: bool) -> Result<SkillEntry, 
         .find(|s| s.id == skill_id)
         .cloned()
         .ok_or_else(|| "Skill not found".to_string())?;
-    return Ok(updated);
+    Ok(updated)
 }
 
 #[tauri::command]

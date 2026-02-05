@@ -1,6 +1,7 @@
 //! Intent module - intent recognition, autorun, idle detection, and smart suggestions
 
 pub mod idle_detection;
+#[allow(clippy::module_inception)]
 pub mod intent;
 pub mod intent_autorun;
 pub mod smart_suggestions;

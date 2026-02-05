@@ -51,6 +51,7 @@ pub struct EventEntry {
 
 impl EventEntry {
     /// Create a new event entry with shared metadata
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         timestamp: u64,
@@ -133,7 +134,7 @@ impl EventBus {
 
         // Trim to max_events (remove from front, which is O(1) for VecDeque)
         // Using Vec for now but with Arc it's still efficient
-        let limit = max_events.max(50).min(2000);
+        let limit = max_events.clamp(50, 2000);
         if self.events.len() > limit {
             // Remove oldest events from the front
             let excess = self.events.len() - limit;
@@ -162,6 +163,11 @@ impl EventBus {
         self.events.len()
     }
 
+    /// Check if the event bus is empty
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+
     /// Clear all events
     pub fn clear(&mut self) {
         self.events.clear();
@@ -175,6 +181,7 @@ lazy_static::lazy_static! {
 
 /// Record an event to the global event bus
 /// Non-blocking, best-effort delivery
+#[allow(clippy::too_many_arguments)]
 pub fn record_event(
     kind: EventKind,
     summary: impl Into<String>,
@@ -261,9 +268,10 @@ pub fn set_event_bus_config(
     max_events: usize,
     dedup_ttl_secs_default: Option<u64>,
 ) -> EventBusConfig {
-    let mut cfg = EventBusConfig::default();
-    cfg.max_events = max_events.max(50).min(2000);
-    cfg.dedup_ttl_secs_default = dedup_ttl_secs_default;
+    let cfg = EventBusConfig {
+        max_events: max_events.clamp(50, 2000),
+        dedup_ttl_secs_default,
+    };
     if let Ok(mut store) = EVENT_BUS_CONFIG.write() {
         *store = cfg.clone();
     }

@@ -193,7 +193,7 @@ impl AppContextDetector {
     async fn detect_macos(&self) -> Result<Option<AppContext>, String> {
         // Use AppleScript to get frontmost app
         let output = tokio::process::Command::new("osascript")
-            .args(&[
+            .args([
                 "-e",
                 "tell application \"System Events\" to get name of first application process whose frontmost is true",
             ])
@@ -215,7 +215,7 @@ impl AppContextDetector {
 
         // Get bundle identifier
         let bundle_output = tokio::process::Command::new("osascript")
-            .args(&[
+            .args([
                 "-e",
                 &format!(
                     "tell application \"System Events\" to get bundle identifier of application process \"{}\"",

@@ -306,13 +306,11 @@ impl SmartSuggestionEngine {
 
     /// Check calendar for upcoming events
     fn check_calendar_events(&self) -> Vec<SmartSuggestion> {
-        let mut suggestions = Vec::new();
-
         // Mock calendar check - in real implementation, integrate with calendar API
         // This would check PrivacySettings.calendar_consent first
 
         // Example: Meeting in 15 minutes
-        suggestions.push(SmartSuggestion {
+        vec![SmartSuggestion {
             id: generate_suggestion_id(),
             trigger: SuggestionTrigger::CalendarEvent {
                 event_title: "Team Standup".to_string(),
@@ -327,19 +325,15 @@ impl SmartSuggestionEngine {
             timestamp: current_timestamp_secs(),
             seen: false,
             feedback: None,
-        });
-
-        suggestions
+        }]
     }
 
     /// Check email backlog
     fn check_email_backlog(&self) -> Vec<SmartSuggestion> {
-        let mut suggestions = Vec::new();
-
         // Mock email check - would integrate with email API
         // Check PrivacySettings.email_consent
 
-        suggestions.push(SmartSuggestion {
+        vec![SmartSuggestion {
             id: generate_suggestion_id(),
             trigger: SuggestionTrigger::EmailBacklog {
                 unread_count: 12,
@@ -354,9 +348,7 @@ impl SmartSuggestionEngine {
             timestamp: current_timestamp_secs(),
             seen: false,
             feedback: None,
-        });
-
-        suggestions
+        }]
     }
 
     /// Check for idle-time suggestions

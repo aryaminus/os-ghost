@@ -157,6 +157,7 @@ impl ActionLedger {
     }
 
     /// Record a new action (non-blocking, sends to channel)
+    #[allow(clippy::too_many_arguments)]
     pub async fn record_action_created(
         &self,
         action_id: u64,
@@ -273,6 +274,7 @@ fn ledger_path() -> PathBuf {
 }
 
 /// Legacy sync functions for backward compatibility - now delegate to async ledger
+#[allow(clippy::too_many_arguments)]
 pub fn record_action_created(
     action_id: u64,
     action_type: String,

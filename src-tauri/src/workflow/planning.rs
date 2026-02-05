@@ -180,6 +180,8 @@ pub fn create_intelligent_pipeline(
 mod tests {
     #[test]
     fn test_agent_selection() {
-        assert!(true);
+        // Basic sanity test for planning workflow compilation
+        // Real tests would require mock agents
+        let _ = "Planning workflow module compiles successfully";
     }
 }
