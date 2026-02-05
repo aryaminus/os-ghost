@@ -130,6 +130,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "as-raw-xcb-connection"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175571dd1d178ced59193a6fc02dde1b972eb0bc56c892cde9beeceac5bf0f6b"
+
+[[package]]
 name = "ascii"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3704,6 +3710,8 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "core-foundation 0.10.1",
+ "core-graphics 0.23.2",
  "dirs 5.0.1",
  "dotenvy",
  "futures",
@@ -3732,6 +3740,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-updater",
  "tempfile",
+ "thiserror 1.0.69",
  "tiny_http",
  "tokio",
  "tokio-tungstenite",
@@ -3743,6 +3752,7 @@ dependencies = [
  "url",
  "uuid",
  "windows 0.58.0",
+ "x11rb",
 ]
 
 [[package]]
@@ -7693,7 +7703,9 @@ version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9993aa5be5a26815fe2c3eacfc1fde061fc1a1f094bf1ad2a18bf9c495dd7414"
 dependencies = [
+ "as-raw-xcb-connection",
  "gethostname",
+ "libc",
  "rustix 1.1.3",
  "x11rb-protocol",
 ]

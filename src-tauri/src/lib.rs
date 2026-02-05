@@ -51,6 +51,9 @@ pub mod monitoring;
 // Headless Server & CLI (Phase 4: Match UI-TARS capabilities)
 pub mod server;
 
+// Native OS Input Control (Phase 5: Native automation like UI-TARS)
+pub mod input;
+
 use ai::ai_provider::SmartAiRouter;
 use core::game_state::{EffectMessage, EffectQueue};
 use ai::gemini_client::GeminiClient;
