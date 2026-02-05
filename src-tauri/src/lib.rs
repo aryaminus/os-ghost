@@ -260,6 +260,22 @@ pub fn run() {
                 None::<&str>,
             )
             .map_err(|e| e.to_string())?;
+            let settings_visual = MenuItem::with_id(
+                app,
+                "settings_visual",
+                "Visual Automation",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
+            let settings_workflows = MenuItem::with_id(
+                app,
+                "settings_workflows",
+                "Workflows",
+                true,
+                None::<&str>,
+            )
+            .map_err(|e| e.to_string())?;
             let settings_submenu = Submenu::with_items(
                 app,
                 "Settings",
@@ -269,6 +285,8 @@ pub fn run() {
                     &PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?,
                     &settings_general,
                     &settings_privacy,
+                    &settings_visual,
+                    &settings_workflows,
                     &settings_extensions,
                     &settings_keys,
                     &settings_autonomy,
@@ -526,6 +544,12 @@ pub fn run() {
                     }
                     "settings_sandbox" => {
                         let _ = crate::ipc::open_settings(Some("sandbox".to_string()), app.clone());
+                    }
+                    "settings_visual" => {
+                        let _ = crate::ipc::open_settings(Some("visual".to_string()), app.clone());
+                    }
+                    "settings_workflows" => {
+                        let _ = crate::ipc::open_settings(Some("workflows".to_string()), app.clone());
                     }
                     "check_updates" => {
                         let handle = app.clone();
