@@ -93,6 +93,21 @@ pub struct PrivacySettings {
     /// Allow browser tab screenshots (captureVisibleTab)
     #[serde(default)]
     pub browser_tab_capture_consent: bool,
+    /// Allow visual automation (AI clicking/filling forms)
+    #[serde(default)]
+    pub visual_automation_consent: bool,
+    /// Sites allowed for visual automation (empty = all allowed)
+    #[serde(default)]
+    pub visual_automation_allowlist: Vec<String>,
+    /// Sites blocked for visual automation
+    #[serde(default)]
+    pub visual_automation_blocklist: Vec<String>,
+    /// Maximum visual actions per minute (rate limiting)
+    #[serde(default = "default_max_visual_actions")]
+    pub max_visual_actions_per_minute: u32,
+    /// Require confirmation for visual actions on new sites
+    #[serde(default)]
+    pub confirm_new_sites: bool,
     /// Preview policy for side-effect actions
     #[serde(default)]
     pub preview_policy: PreviewPolicy,
@@ -101,6 +116,11 @@ pub struct PrivacySettings {
     pub trust_profile: String,
     /// Timestamp of consent
     pub consent_timestamp: Option<u64>,
+}
+
+/// Default max visual actions per minute
+fn default_max_visual_actions() -> u32 {
+    10
 }
 
 impl Default for PrivacySettings {
@@ -114,6 +134,11 @@ impl Default for PrivacySettings {
             redact_pii: true,
             browser_content_consent: false,
             browser_tab_capture_consent: false,
+            visual_automation_consent: false,
+            visual_automation_allowlist: Vec::new(),
+            visual_automation_blocklist: Vec::new(),
+            max_visual_actions_per_minute: default_max_visual_actions(),
+            confirm_new_sites: true,
             preview_policy: PreviewPolicy::Always,
             trust_profile: "balanced".to_string(),
             consent_timestamp: None,
@@ -185,6 +210,90 @@ impl PrivacySettings {
             && self.ai_analysis_consent
             && self.privacy_notice_acknowledged
             && !self.read_only_mode
+    }
+
+    /// Check if visual automation is allowed for a given site
+    pub fn can_use_visual_automation(&self, site: &str) -> bool {
+        // Check general consent
+        if !self.visual_automation_consent {
+            return false;
+        }
+
+        // Check read-only mode
+        if self.read_only_mode {
+            return false;
+        }
+
+        // Check autonomy level (Observer blocks all actions)
+        if matches!(self.autonomy_level, AutonomyLevel::Observer) {
+            return false;
+        }
+
+        // Check blocklist
+        let site_lower = site.to_lowercase();
+        if self
+            .visual_automation_blocklist
+            .iter()
+            .any(|blocked| site_lower.contains(&blocked.to_lowercase()))
+        {
+            return false;
+        }
+
+        // Check allowlist (if not empty, site must be in it)
+        if !self.visual_automation_allowlist.is_empty() {
+            return self
+                .visual_automation_allowlist
+                .iter()
+                .any(|allowed| site_lower.contains(&allowed.to_lowercase()));
+        }
+
+        true
+    }
+
+    /// Check if visual action requires confirmation for a site
+    pub fn visual_action_requires_confirmation(&self, site: &str, is_new_site: bool) -> bool {
+        // Always confirm if policy requires it
+        if matches!(self.preview_policy, PreviewPolicy::Always) {
+            return true;
+        }
+
+        // Confirm if new site and confirm_new_sites is enabled
+        if is_new_site && self.confirm_new_sites {
+            return true;
+        }
+
+        // Otherwise, depend on autonomy level
+        match self.autonomy_level {
+            AutonomyLevel::Observer | AutonomyLevel::Suggester => true,
+            AutonomyLevel::Supervised => false, // Risk-based elsewhere
+            AutonomyLevel::Autonomous => false,
+        }
+    }
+
+    /// Check if site is in allowlist (or allowlist is empty)
+    pub fn is_site_allowed(&self, site: &str) -> bool {
+        if self.visual_automation_allowlist.is_empty() {
+            return true;
+        }
+
+        let site_lower = site.to_lowercase();
+        self.visual_automation_allowlist
+            .iter()
+            .any(|allowed| site_lower.contains(&allowed.to_lowercase()))
+    }
+
+    /// Add site to allowlist
+    pub fn allow_site(&mut self, site: String) {
+        if !self.visual_automation_allowlist.contains(&site) {
+            self.visual_automation_allowlist.push(site);
+        }
+    }
+
+    /// Add site to blocklist
+    pub fn block_site(&mut self, site: String) {
+        if !self.visual_automation_blocklist.contains(&site) {
+            self.visual_automation_blocklist.push(site);
+        }
     }
 }
 

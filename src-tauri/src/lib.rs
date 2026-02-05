@@ -2,11 +2,7 @@
 //! A screen-aware meta-game where an AI entity lives in your desktop
 
 // AI Providers
-pub mod ai {
-    pub mod ai_provider;
-    pub mod gemini_client;
-    pub mod ollama_client;
-}
+pub mod ai;
 
 // Action System
 pub mod actions;

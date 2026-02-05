@@ -258,7 +258,7 @@ impl VisionAnalyzer {
         image_bytes: &[u8],
     ) -> Result<VisionAnalysis> {
         // Convert image to base64
-        let base64_image = base64::encode(image_bytes);
+        let base64_image = base64_encode(image_bytes);
 
         // Build prompt for element detection
         let prompt = r#"Analyze this browser screenshot and identify all interactive UI elements.
@@ -277,7 +277,7 @@ Focus on elements users would want to click or interact with. Be precise with co
 
         // Call Gemini API
         let response = client
-            .generate_with_image(prompt, &base64_image, "image/png")
+            .analyze_image(&base64_image, prompt)
             .await
             .map_err(|e| anyhow!("Gemini vision API error: {}", e))?;
 
@@ -292,7 +292,7 @@ Focus on elements users would want to click or interact with. Be precise with co
         image_bytes: &[u8],
     ) -> Result<VisionAnalysis> {
         // Convert image to base64
-        let base64_image = base64::encode(image_bytes);
+        let base64_image = base64_encode(image_bytes);
 
         // Build prompt
         let prompt = r#"Analyze this screenshot and identify interactive UI elements.
@@ -314,7 +314,7 @@ Respond with JSON:
 
         // Call Ollama
         let response = client
-            .generate_with_image(prompt, &base64_image)
+            .analyze_image(&base64_image, prompt)
             .await
             .map_err(|e| anyhow!("Ollama vision error: {}", e))?;
 
@@ -464,43 +464,10 @@ Respond with JSON:
     }
 }
 
-/// Helper module for base64 encoding
-mod base64 {
-    pub fn encode(input: &[u8]) -> String {
-        use std::io::Write;
-        let mut buf = Vec::new();
-        base64_lib::write(&mut buf, input).unwrap();
-        String::from_utf8(buf).unwrap()
-    }
-}
-
-mod base64_lib {
-    use std::io::{self, Write};
-
-    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    pub fn write<W: Write>(writer: &mut W, input: &[u8]) -> io::Result<()> {
-        for chunk in input.chunks(3) {
-            let mut buf = [0u8; 4];
-            let len = chunk.len();
-
-            buf[0] = ALPHABET[(chunk[0] >> 2) as usize];
-            buf[1] = ALPHABET[(((chunk[0] & 0b11) << 4) | (chunk.get(1).unwrap_or(&0) >> 4)) as usize];
-            buf[2] = if len > 1 {
-                ALPHABET[(((chunk[1] & 0b1111) << 2) | (chunk.get(2).unwrap_or(&0) >> 6)) as usize]
-            } else {
-                b'='
-            };
-            buf[3] = if len > 2 {
-                ALPHABET[(chunk[2] & 0b111111) as usize]
-            } else {
-                b'='
-            };
-
-            writer.write_all(&buf)?;
-        }
-        Ok(())
-    }
+/// Helper function for base64 encoding
+fn base64_encode(input: &[u8]) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(input)
 }
 
 #[cfg(test)]

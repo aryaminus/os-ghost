@@ -783,7 +783,7 @@ impl SmartAiRouter {
 
     /// Get a VisionAnalyzer instance configured with available providers
     /// Uses Gemini if available and not failing, falls back to Ollama
-    pub fn get_vision_analyzer(&self) -> Option<super::vision::VisionAnalyzer> {
+    pub fn get_vision_analyzer(&self) -> Option<crate::ai::VisionAnalyzer> {
         // Check if we have at least one vision-capable provider
         let has_gemini = self.gemini.is_some() && !self.is_gemini_circuit_open();
         let has_ollama = self.ollama_available.load(Ordering::SeqCst);
@@ -800,12 +800,12 @@ impl SmartAiRouter {
             None
         };
 
-        Some(super::vision::VisionAnalyzer::new(gemini_clone, ollama_clone))
+        Some(crate::ai::VisionAnalyzer::new(gemini_clone, ollama_clone))
     }
 
     /// Analyze a screenshot and detect visual elements
     /// Returns None if no vision provider available
-    pub async fn analyze_screenshot(&self, image_bytes: &[u8]) -> Result<super::vision::VisionAnalysis> {
+    pub async fn analyze_screenshot(&self, image_bytes: &[u8]) -> Result<crate::ai::VisionAnalysis> {
         self.check_rate_limit()?;
         
         match self.get_vision_analyzer() {
@@ -822,7 +822,7 @@ impl SmartAiRouter {
         &self,
         image_bytes: &[u8],
         description: &str,
-    ) -> Option<super::vision::VisualElement> {
+    ) -> Option<crate::ai::VisualElement> {
         match self.get_vision_analyzer() {
             Some(analyzer) => {
                 analyzer.find_element(image_bytes, description).await
@@ -842,11 +842,11 @@ impl SmartAiRouter {
     }
 
     /// Get vision provider status for display
-    pub fn vision_provider(&self) -> Option<super::vision::VisionProvider> {
+    pub fn vision_provider(&self) -> Option<crate::ai::VisionProvider> {
         if self.gemini.is_some() && !self.is_gemini_circuit_open() {
-            Some(super::vision::VisionProvider::Gemini)
+            Some(crate::ai::VisionProvider::Gemini)
         } else if self.ollama_available.load(Ordering::SeqCst) {
-            Some(super::vision::VisionProvider::Ollama)
+            Some(crate::ai::VisionProvider::Ollama)
         } else {
             None
         }

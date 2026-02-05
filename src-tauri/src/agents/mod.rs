@@ -25,6 +25,7 @@ pub mod events;
 pub mod guardrail;
 pub mod narrator;
 pub mod observer;
+pub mod operator;
 pub mod orchestrator;
 pub mod planner;
 pub mod traits;
@@ -33,6 +34,7 @@ pub mod watchdog;
 
 pub use critic::CriticAgent;
 pub use guardrail::{GuardrailAgent, SafetyEvaluation, ContentType};
+pub use operator::{OperatorAgent, VisualTaskPlanner, VisualTaskResult, VisualTaskStep};
 pub use orchestrator::AgentOrchestrator;
 pub use planner::PlannerAgent;
 pub use traits::{

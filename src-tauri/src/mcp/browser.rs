@@ -582,6 +582,16 @@ pub struct BrowserMcpServer {
 impl BrowserMcpServer {
     /// Create a new browser MCP server
     pub fn new(state: Arc<BrowserState>, effect_sender: EffectSender) -> Self {
+        Self::new_with_vision(state, effect_sender, None, crate::config::privacy::AutonomyLevel::Observer)
+    }
+
+    /// Create a new browser MCP server with visual capabilities
+    pub fn new_with_vision(
+        state: Arc<BrowserState>,
+        effect_sender: EffectSender,
+        vision_capture: Option<Arc<crate::capture::vision::VisionCapture>>,
+        autonomy_level: crate::config::privacy::AutonomyLevel,
+    ) -> Self {
         // Initialize resources
         let resources: Vec<Box<dyn McpResource>> = vec![
             Box::new(CurrentPageResource::new(state.clone())),
@@ -590,12 +600,22 @@ impl BrowserMcpServer {
         ];
 
         // Initialize tools
-        let tools: Vec<Box<dyn McpTool>> = vec![
+        let mut tools: Vec<Box<dyn McpTool>> = vec![
             Box::new(NavigateTool::new(effect_sender.clone())),
             Box::new(InjectEffectTool::new(effect_sender.clone())),
             Box::new(HighlightTextTool::new(effect_sender.clone())),
             Box::new(GetContentTool::new(effect_sender.clone(), state.clone())),
         ];
+
+        // Add visual tools if vision is available
+        if let Some(vision) = vision_capture {
+            use crate::mcp::visual_tools::*;
+            
+            tools.push(Box::new(FindElementTool::new(Arc::clone(&vision))));
+            tools.push(Box::new(ClickElementTool::new(Arc::clone(&vision), autonomy_level)));
+            tools.push(Box::new(FillFieldTool::new(Arc::clone(&vision), autonomy_level)));
+            tools.push(Box::new(GetPageElementsTool::new(vision)));
+        }
 
         // Initialize prompts
         let prompts: Vec<Box<dyn McpPrompt>> = vec![Box::new(AnalyzePagePrompt)];

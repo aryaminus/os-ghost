@@ -3,7 +3,7 @@
 //! Provides high-level interface for analyzing browser screenshots
 //! and detecting interactive elements for automation.
 
-use crate::ai::vision::{VisionAnalysis, VisionAnalyzer, VisualElement, NormalizedCoords};
+use crate::ai::{VisionAnalysis, VisionAnalyzer, VisualElement};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -108,10 +108,10 @@ impl VisionCapture {
     }
 
     /// Find interactive elements
-    pub fn find_interactive_elements(
+    pub fn find_interactive_elements<'a>(
         &self,
-        screenshot: &AnalyzedScreenshot,
-    ) -> Vec<&VisualElement> {
+        screenshot: &'a AnalyzedScreenshot,
+    ) -> Vec<&'a VisualElement> {
         screenshot
             .analysis
             .elements
