@@ -66,12 +66,22 @@ const VisualAutomationSection = ({ settingsState, onSettingsUpdated }) => {
   };
 
   const handleSave = useCallback(async () => {
+    if (!settingsState.privacy) return;
     setSaving(true);
     setError("");
     setSuccess("");
     try {
       await invoke("update_privacy_settings", {
-        ...settingsState.privacy,
+        captureConsent: settingsState.privacy.capture_consent,
+        aiAnalysisConsent: settingsState.privacy.ai_analysis_consent,
+        privacyNoticeAcknowledged: settingsState.privacy.privacy_notice_acknowledged,
+        readOnlyMode: settingsState.privacy.read_only_mode,
+        autonomyLevel: settingsState.privacy.autonomy_level || "supervised",
+        redactPii: settingsState.privacy.redact_pii !== false,
+        browserContentConsent: settingsState.privacy.browser_content_consent,
+        browserTabCaptureConsent: settingsState.privacy.browser_tab_capture_consent,
+        previewPolicy: settingsState.privacy.preview_policy || "always",
+        trustProfile: settingsState.privacy.trust_profile || "standard",
         visualAutomationConsent: formState.visualAutomationConsent,
         visualAutomationAllowlist: formState.visualAutomationAllowlist,
         visualAutomationBlocklist: formState.visualAutomationBlocklist,
