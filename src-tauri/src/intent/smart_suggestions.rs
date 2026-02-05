@@ -10,10 +10,10 @@
 //! Respects privacy by only using metadata, never content.
 
 use crate::config::privacy::{AutonomyLevel, PrivacySettings};
-use crate::monitoring::app_context::{AppCategory, AppContext, AppSwitchEvent};
+use crate::monitoring::app_context::{AppCategory, AppContext};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
+
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// A smart suggestion for the user

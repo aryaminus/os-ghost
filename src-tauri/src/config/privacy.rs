@@ -276,7 +276,7 @@ impl PrivacySettings {
     }
 
     /// Check if visual action requires confirmation for a site
-    pub fn visual_action_requires_confirmation(&self, site: &str, is_new_site: bool) -> bool {
+    pub fn visual_action_requires_confirmation(&self, _site: &str, is_new_site: bool) -> bool {
         // Always confirm if policy requires it
         if matches!(self.preview_policy, PreviewPolicy::Always) {
             return true;

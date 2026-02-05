@@ -90,7 +90,7 @@ impl ServerConfig {
     /// Validate configuration
     pub fn validate(&self) -> Result<(), String> {
         // Check port range
-        if self.port == 0 || self.port > 65535 {
+        if self.port == 0 {
             return Err(format!("Invalid port: {}", self.port));
         }
 

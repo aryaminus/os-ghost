@@ -4,7 +4,7 @@
 
 use super::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, AgentPriority};
 use crate::capture::vision::VisionCapture;
-use crate::config::privacy::{AutonomyLevel, PrivacySettings};
+use crate::config::privacy::PrivacySettings;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

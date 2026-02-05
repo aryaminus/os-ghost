@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use serde_json::json;
 use tracing::info;
 use std::collections::HashMap;
+use base64::Engine;
 
 use crate::mcp::traits::McpTool;
 use crate::mcp::types::{ToolDescriptor, McpError, JsonSchema, PropertySchema};
@@ -220,8 +221,8 @@ impl McpTool for CaptureTool {
         // Use desktop capture from input module
         let screenshot = crate::input::desktop_capture::capture_desktop().await
             .map_err(|e| McpError::ExecutionFailed(format!("Capture failed: {}", e)))?;
-        
-        let base64_image = base64::encode(&screenshot);
+
+        let base64_image = base64::engine::general_purpose::STANDARD.encode(&screenshot);
         
         Ok(json!({
             "success": true,

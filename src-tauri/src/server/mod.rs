@@ -16,7 +16,7 @@ use axum::{
     Router,
 };
 use tokio::sync::RwLock;
-use tracing::{info, error};
+use tracing::info;
 
 use crate::server::state::ServerState;
 use crate::server::api::{

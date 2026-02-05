@@ -6,16 +6,16 @@
 //! - Workflow recording progress
 //! - System events and logs
 
-use std::sync::Arc;
+
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
 };
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::broadcast;
 use serde::{Deserialize, Serialize};
 use tracing::{info, error, debug};
 
-use crate::server::state::ServerState;
+
 
 /// WebSocket event types
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -3,10 +3,10 @@
 //! Replays recorded workflows with safety verification. Checks context,
 //! verifies outcomes, and allows user intervention.
 
-use crate::actions::action_preview::VisualPreview;
+
 use crate::config::privacy::{AutonomyLevel, PrivacySettings};
 use crate::capture::vision::VisionCapture;
-use super::recording::{Workflow, WorkflowStep, WorkflowActionType, WaitCondition};
+use super::recording::{Workflow, WorkflowStep, WorkflowActionType};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -324,7 +324,7 @@ impl WorkflowReplayer {
     }
 
     /// Verify step outcome
-    async fn verify_step(&self, step: &WorkflowStep) -> Option<VerificationResult> {
+    async fn verify_step(&self, _step: &WorkflowStep) -> Option<VerificationResult> {
         // In real implementation, would:
         // 1. Take screenshot
         // 2. Compare with expected visual context

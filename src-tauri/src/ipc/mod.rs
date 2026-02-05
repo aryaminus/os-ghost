@@ -1716,8 +1716,7 @@ pub fn poll_agent_status(
 // Workflow Recording & Replay Commands (Phase 3)
 // ============================================================================
 
-use crate::workflow::{WorkflowRecorder, WorkflowStore, WorkflowReplayer, RecordedWorkflow, ReplayResult, RecordingProgress, ReplayProgress};
-use crate::workflow::recording::{WorkflowActionType, ScrollDirection, WaitCondition};
+use crate::workflow::{WorkflowRecorder, WorkflowStore, WorkflowReplayer, RecordedWorkflow, ReplayResult, RecordingProgress};
 use crate::config::privacy::AutonomyLevel;
 use std::sync::Mutex;
 

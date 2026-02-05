@@ -85,6 +85,10 @@ async fn main() {
         enable_websocket: !args.no_websocket,
         enable_cors: !args.no_cors,
         headless: args.headless,
+        data_dir: dirs::data_dir().unwrap_or_default().join("os-ghost"),
+        log_level: if args.verbose { "debug".to_string() } else { "info".to_string() },
+        max_request_size: 10 * 1024 * 1024, // 10MB
+        request_timeout_secs: 60,
     };
     
     info!("Starting OS-Ghost server with config: {:?}", config);

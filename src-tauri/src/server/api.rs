@@ -17,13 +17,13 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::sync::RwLock;
 use tracing::{info, error};
 
 use crate::server::state::{
-    ServerState, ExecuteRequest, ExecuteResponse, RecordingRequest, 
-    RecordingResponse, PendingAction, WorkflowInfo
+    ServerState, ExecuteRequest, ExecuteResponse, RecordingRequest,
+    RecordingResponse
 };
 
 /// Standard API response wrapper
@@ -214,9 +214,9 @@ pub async fn stop_recording(
     State(state): State<Arc<RwLock<ServerState>>>,
 ) -> impl IntoResponse {
     info!("Stopping workflow recording");
-    
-    let state = state.read().await;
-    
+
+    let _state = state.read().await;
+
     Json(ApiResponse::success(serde_json::json!({
         "status": "stopped",
         "actions_recorded": 0,
