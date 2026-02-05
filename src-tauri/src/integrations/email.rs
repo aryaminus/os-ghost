@@ -1,4 +1,4 @@
-use crate::integrations::integrations::{EmailMessage, EmailSettings, EmailTriageDecision};
+use crate::integrations::integrations::{EmailMessage, EmailSettings};
 use anyhow::{Context, Result};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
