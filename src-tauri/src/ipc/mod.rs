@@ -673,9 +673,22 @@ pub async fn quick_ask(
         let state = session.load().unwrap_or_default();
         let redacted_url = crate::config::privacy::redact_with_settings(&state.current_url);
         let redacted_title = crate::config::privacy::redact_with_settings(&state.current_title);
+
+        // Add recent timeline context if available
+        let timeline = crate::data::timeline::get_recent_timeline(3);
+        let timeline_str = timeline
+            .iter()
+            .map(|e| format!("- {:?}: {}", e.entry_type, e.summary))
+            .collect::<Vec<_>>()
+            .join("\n");
+
         format!(
-            "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\nUser question: {}\n\nContext (if relevant):\n- Current URL: {}\n- Page title: {}",
-            trimmed, redacted_url, redacted_title
+            "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\n\
+            User question: {}\n\n\
+            Context (if relevant):\n\
+            - Current URL: {}\n- Page title: {}\n\n\
+            Recent Activity:\n{}",
+            trimmed, redacted_url, redacted_title, timeline_str
         )
     } else {
         format!(
