@@ -13,6 +13,7 @@ use crate::capture::capture;
 use crate::core::utils::{clean_json_response, current_timestamp};
 use crate::data::events_bus::{record_event, EventKind, EventPriority};
 use crate::memory::{ActivityEntry, LongTermMemory, SessionMemory};
+use crate::resources::monitor::ResourceMonitor;
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -153,6 +154,7 @@ pub async fn start_monitor_loop(
 
     // Initialize state
     let mut state = MonitorState::new(10);
+    let resource_monitor = ResourceMonitor::new();
 
     loop {
         let settings = crate::config::system_settings::SystemSettings::load();
@@ -170,6 +172,15 @@ pub async fn start_monitor_loop(
 
         // Wait for next tick
         tokio::time::sleep(Duration::from_secs(sleep_duration)).await;
+
+        // Check resource limits before proceeding
+        if resource_monitor.should_pause(settings.performance_mode) {
+            tracing::info!(
+                "Monitor: Pausing due to high system load (Performance Mode: {:?})",
+                settings.performance_mode
+            );
+            continue;
+        }
 
         if !settings.monitor_enabled {
             // ... existing checks ...

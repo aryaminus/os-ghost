@@ -40,6 +40,22 @@ pub struct SystemSettings {
     /// Minimum seconds between AI analysis calls
     #[serde(default)]
     pub analysis_cooldown_secs: u64,
+    /// Performance mode for resource management
+    #[serde(default)]
+    pub performance_mode: PerformanceMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PerformanceMode {
+    Eco,
+    Balanced,
+    High,
+}
+
+impl Default for PerformanceMode {
+    fn default() -> Self {
+        Self::Balanced
+    }
 }
 
 impl Default for SystemSettings {
@@ -67,6 +83,7 @@ impl Default for SystemSettings {
             change_min_changed_percentage: 0.01,
             change_max_changed_percentage: 0.95,
             analysis_cooldown_secs: 90,
+            performance_mode: PerformanceMode::Balanced,
         }
     }
 }
@@ -131,6 +148,7 @@ pub fn update_system_settings(
     change_min_changed_percentage: f32,
     change_max_changed_percentage: f32,
     analysis_cooldown_secs: u64,
+    performance_mode: Option<String>,
 ) -> Result<SystemSettings, String> {
     let mut settings = SystemSettings::load();
     settings.monitor_enabled = monitor_enabled;
@@ -155,6 +173,11 @@ pub fn update_system_settings(
     settings.change_min_changed_percentage = change_min_changed_percentage.clamp(0.0, 1.0);
     settings.change_max_changed_percentage = change_max_changed_percentage.clamp(0.0, 1.0);
     settings.analysis_cooldown_secs = analysis_cooldown_secs.clamp(30, 3600);
+    if let Some(mode_str) = performance_mode {
+        if let Ok(mode) = serde_json::from_str::<PerformanceMode>(&format!("\"{}\"", mode_str)) {
+            settings.performance_mode = mode;
+        }
+    }
 
     settings.save().map_err(|e| e.to_string())?;
     Ok(settings)

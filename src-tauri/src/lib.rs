@@ -42,6 +42,9 @@ pub mod ipc;
 // Monitoring & Activity
 pub mod monitoring;
 
+// Resource Management
+pub mod resources;
+
 // Headless Server & CLI (Phase 4: Match UI-TARS capabilities)
 pub mod server;
 
