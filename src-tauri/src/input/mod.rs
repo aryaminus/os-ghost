@@ -344,11 +344,12 @@ mod tests {
 
     #[test]
     fn test_input_controller_creation() {
-        let privacy = PrivacySettings::default();
-        let controller = InputController::new(AutonomyLevel::Supervised, privacy);
+        let privacy1 = PrivacySettings::default();
+        let controller = InputController::new(AutonomyLevel::Supervised, privacy1);
         assert!(controller.can_automate());
 
-        let controller = InputController::new(AutonomyLevel::Observer, privacy);
+        let privacy2 = PrivacySettings::default();
+        let controller = InputController::new(AutonomyLevel::Observer, privacy2);
         assert!(!controller.can_automate());
     }
 }
