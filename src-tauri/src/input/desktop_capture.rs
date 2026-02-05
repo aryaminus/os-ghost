@@ -101,7 +101,7 @@ pub mod windows {
             use ::windows::Win32::Foundation::HWND;
             
             // Get desktop DC
-            let hwnd = HWND(0); // Desktop window
+            let hwnd = HWND(std::ptr::null_mut()); // Desktop window (NULL = entire screen)
             let hdc = GetDC(hwnd);
             
             // Get screen dimensions

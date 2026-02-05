@@ -2,11 +2,17 @@
 
 A screen-aware meta-game where an AI entity lives in your desktop, transforming your browser into an interactive puzzle box.
 
+![Terminal View](terminal-view.png)
+
 ## Features
 
 - **Transparent overlay** - Ghost floats above your desktop
 - **Browser integration** - Chrome extension tracks navigation
 - **AI-powered** - Gemini Vision analyzes your screen
+- **Local AI Support** - Optional Ollama integration for privacy
+- **Multi-Agent System** - Specialized agents for different tasks
+- **Workflow Automation** - Automate repetitive actions
+- **Privacy & Sandbox** - Strict security boundaries and read-only modes
 - **Hot/cold feedback** - Get closer to solving mysteries
 - **Persistent memory** - Progress saves between sessions
 
@@ -19,7 +25,7 @@ A screen-aware meta-game where an AI entity lives in your desktop, transforming 
 3. Run the app - it automatically registers the Chrome extension bridge on first launch
 
 | Platform | Download |
-|----------|----------|
+| :--- | :--- |
 | macOS (Apple Silicon) | `The.OS.Ghost_x.x.x_aarch64.dmg` |
 | macOS (Intel) | `The.OS.Ghost_x.x.x_x64.dmg` |
 | Windows | `The.OS.Ghost_x.x.x_x64-setup.exe` |
@@ -69,36 +75,14 @@ The Ghost communicates with your browser through a Chrome extension.
 
 ## Configuration
 
-### API Key
+The Ghost supports extensive configuration for AI providers (Gemini/Ollama), privacy settings, and autonomy levels.
 
-The Ghost uses Google Gemini for AI features. Set your API key:
+For detailed configuration instructions, see [Configuration Guide](docs/CONFIGURATION.md).
 
-**Option A: Environment variable**
+### Quick Start: API Key
 
 ```bash
 export GEMINI_API_KEY='your-api-key-here'
-```
-
-**Option B: Config file** (for production builds)
-
-Create `~/.config/os-ghost/config.json`:
-
-```json
-{
-  "gemini_api_key": "your-api-key-here"
-}
-```
-
-### Ollama (Optional)
-
-For local AI processing, you can configure Ollama as an alternative/fallback:
-
-```json
-{
-  "ollama_url": "http://localhost:11434",
-  "ollama_vision_model": "llava",
-  "ollama_text_model": "llama3"
-}
 ```
 
 ## How to Play
@@ -108,6 +92,11 @@ For local AI processing, you can configure Ollama as an alternative/fallback:
 3. Browse the web to find the answer
 4. Watch the proximity indicator heat up as you get closer
 5. Find the correct page to unlock the next memory fragment
+
+## Architecture
+
+The OS Ghost uses a hybrid architecture with Rust (Tauri), React, and a Chrome Extension.
+For a deep dive into the system design, Agents, and IPC, see [Architecture Guide](docs/ARCHITECTURE.md).
 
 ## Project Structure
 
@@ -121,6 +110,7 @@ os-ghost/
 │   │   └── bin/
 │   │       └── native_bridge.rs  # Native messaging binary
 ├── ghost-extension/        # Chrome extension source
+├── docs/                   # Documentation
 └── scripts/                # Development scripts
 ```
 

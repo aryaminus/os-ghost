@@ -251,13 +251,16 @@ impl InputSafetyChecker {
     #[cfg(target_os = "windows")]
     fn get_screen_dimensions() -> (i32, i32) {
         unsafe {
-            use windows::Win32::Graphics::Gdi::GetDeviceCaps;
-            use windows::Win32::Graphics::Gdi::{HORZRES, VERTRES};
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::Graphics::Gdi::{
+                GetDC, GetDeviceCaps, ReleaseDC, HORZRES, VERTRES,
+            };
 
-            let hdc = windows::Win32::Graphics::Gdi::GetDC(None);
+            let hwnd = HWND(std::ptr::null_mut());
+            let hdc = GetDC(hwnd);
             let width = GetDeviceCaps(hdc, HORZRES);
             let height = GetDeviceCaps(hdc, VERTRES);
-            windows::Win32::Graphics::Gdi::ReleaseDC(None, hdc);
+            ReleaseDC(hwnd, hdc);
 
             (width, height)
         }

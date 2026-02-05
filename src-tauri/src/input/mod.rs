@@ -360,6 +360,13 @@ impl From<x11rb::errors::ReplyError> for InputError {
     }
 }
 
+#[cfg(target_os = "windows")]
+impl From<::windows::core::Error> for InputError {
+    fn from(err: ::windows::core::Error) -> Self {
+        InputError::PlatformError(format!("Windows error: {}", err))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -13,6 +13,8 @@ permissions:
 jobs:
   test-headless-mode:
     name: Test Headless Server and CLI
+    # Skip version bump commits
+    if: "!contains(github.event.head_commit.message, 'chore(release)') && !contains(github.event.head_commit.message, 'chore(extension):')"
     runs-on: ubuntu-22.04
     
     steps:
@@ -34,7 +36,12 @@ jobs:
       - name: Build Native Bridge Sidecar
         working-directory: ./src-tauri
         run: |
+          # Create placeholder sidecar first (required by Tauri build script for release builds)
+          touch native_bridge-x86_64-unknown-linux-gnu
+          chmod +x native_bridge-x86_64-unknown-linux-gnu
+          # Now build the actual binary
           cargo build --release --bin native_bridge
+          # Replace placeholder with real binary
           cp target/release/native_bridge native_bridge-x86_64-unknown-linux-gnu
 
       - name: Build Server
@@ -124,6 +131,8 @@ jobs:
 
   test-input-module:
     name: Test Input Module
+    # Skip version bump commits
+    if: "!contains(github.event.head_commit.message, 'chore(release)') && !contains(github.event.head_commit.message, 'chore(extension):')"
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -163,6 +172,8 @@ jobs:
 
   verify-all-targets:
     name: Verify All Build Targets
+    # Skip version bump commits
+    if: "!contains(github.event.head_commit.message, 'chore(release)') && !contains(github.event.head_commit.message, 'chore(extension):')"
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -186,7 +197,10 @@ jobs:
         working-directory: ./src-tauri
         run: |
           echo "Checking all binary targets..."
-          # Build native_bridge first to create sidecar for Tauri
+          # Create placeholder sidecar (build.rs does this for debug, but ensure it exists)
+          touch native_bridge-x86_64-unknown-linux-gnu
+          chmod +x native_bridge-x86_64-unknown-linux-gnu
+          # Check all binaries compile
           cargo check --bin native_bridge
           cargo check --bin os-ghost
           cargo check --bin os-ghost-server

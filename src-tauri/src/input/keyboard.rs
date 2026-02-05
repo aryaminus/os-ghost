@@ -46,7 +46,7 @@ pub mod macos {
 pub mod windows {
     use super::*;
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+        SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYBD_EVENT_FLAGS,
         VK_SHIFT, VK_CONTROL, VK_MENU, VK_DELETE, VK_ESCAPE, VK_BACK, VK_TAB,
         VK_SPACE, VK_RETURN, VK_HOME, VK_END, VK_PRIOR, VK_NEXT,
         VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_F1, VK_F2, VK_F3, VK_F4,
@@ -72,7 +72,7 @@ pub mod windows {
                 Anonymous: std::mem::transmute(KEYBDINPUT {
                     wVk: VIRTUAL_KEY(vk),
                     wScan: 0,
-                    dwFlags: 0,
+                    dwFlags: KEYBD_EVENT_FLAGS(0),
                     time: 0,
                     dwExtraInfo: 0,
                 }),
@@ -109,7 +109,7 @@ pub mod windows {
                 Anonymous: std::mem::transmute(KEYBDINPUT {
                     wVk: VIRTUAL_KEY(vk),
                     wScan: 0,
-                    dwFlags: 0,
+                    dwFlags: KEYBD_EVENT_FLAGS(0),
                     time: 0,
                     dwExtraInfo: 0,
                 }),
@@ -145,7 +145,7 @@ pub mod windows {
                     Anonymous: std::mem::transmute(KEYBDINPUT {
                         wVk: VIRTUAL_KEY(vk),
                         wScan: 0,
-                        dwFlags: 0,
+                        dwFlags: KEYBD_EVENT_FLAGS(0),
                         time: 0,
                         dwExtraInfo: 0,
                     }),
@@ -161,7 +161,7 @@ pub mod windows {
                     Anonymous: std::mem::transmute(KEYBDINPUT {
                         wVk: VIRTUAL_KEY(vk),
                         wScan: 0,
-                        dwFlags: 0,
+                        dwFlags: KEYBD_EVENT_FLAGS(0),
                         time: 0,
                         dwExtraInfo: 0,
                     }),
