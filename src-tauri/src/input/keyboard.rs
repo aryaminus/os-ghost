@@ -45,7 +45,7 @@ pub mod macos {
 #[cfg(target_os = "windows")]
 pub mod windows {
     use super::*;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
+    use ::windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
         VK_SHIFT, VK_CONTROL, VK_MENU, VK_DELETE, VK_ESCAPE, VK_BACK, VK_TAB,
         VK_SPACE, VK_RETURN, VK_HOME, VK_END, VK_PRIOR, VK_NEXT,
@@ -139,7 +139,7 @@ pub mod windows {
         unsafe {
             // Press modifier keys
             for key in keys.iter().filter(|&&k| is_modifier(k)) {
-                let vk = map_key_to_vk(**key);
+                let vk = map_key_to_vk(*key);
                 let input = INPUT {
                     r#type: INPUT_KEYBOARD,
                     Anonymous: std::mem::transmute(KEYBDINPUT {
@@ -204,7 +204,7 @@ pub mod windows {
     }
     
     fn map_key_to_vk(key: Key) -> u16 {
-        use windows::Win32::UI::Input::KeyboardAndMouse::*;
+        use ::windows::Win32::UI::Input::KeyboardAndMouse::*;
         
         match key {
             Key::A => VK_A.0,
@@ -316,26 +316,23 @@ pub mod linux {
     
     async fn type_char(ch: char) -> Result<(), InputError> {
         use x11rb::connection::Connection;
-        use x11rb::protocol::xtest::ConnectionExt;
+        use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
         
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
         
-        // Map char to keysym
-        let keysym = char_to_keysym(ch);
+        // Map char to keycode (simplified - production would use proper keysym to keycode mapping)
+        let keycode = char_to_keycode(ch);
         
-        // In X11, we'd need to use XKeysymToKeycode
-        // For simplicity, using xtest_fake_input
-        // Production would need proper keycode mapping
-        
+        // Key press - detail is the keycode
         conn.xtest_fake_input(
             x11rb::protocol::xproto::KEY_PRESS_EVENT,
-            false,
+            keycode, // detail (keycode)
             x11rb::CURRENT_TIME,
             root,
             0,
             0,
-            keysym as u8,
+            0, // deviceid
         )?;
         
         conn.flush()?;
@@ -343,12 +340,12 @@ pub mod linux {
         // Key release
         conn.xtest_fake_input(
             x11rb::protocol::xproto::KEY_RELEASE_EVENT,
-            false,
+            keycode, // detail (keycode)
             x11rb::CURRENT_TIME,
             root,
             0,
             0,
-            keysym as u8,
+            0, // deviceid
         )?;
         
         conn.flush()?;
@@ -360,33 +357,34 @@ pub mod linux {
     
     pub async fn press_key(key: Key) -> Result<(), InputError> {
         use x11rb::connection::Connection;
-        use x11rb::protocol::xtest::ConnectionExt;
+        use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
         
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
         
         let keycode = map_key_to_keycode(key);
         
+        // Key press - detail is the keycode
         conn.xtest_fake_input(
             x11rb::protocol::xproto::KEY_PRESS_EVENT,
-            false,
+            keycode, // detail (keycode)
             x11rb::CURRENT_TIME,
             root,
             0,
             0,
-            keycode,
+            0, // deviceid
         )?;
         
         conn.flush()?;
         
         conn.xtest_fake_input(
             x11rb::protocol::xproto::KEY_RELEASE_EVENT,
-            false,
+            keycode, // detail (keycode)
             x11rb::CURRENT_TIME,
             root,
             0,
             0,
-            keycode,
+            0, // deviceid
         )?;
         
         conn.flush()?;
@@ -396,22 +394,22 @@ pub mod linux {
     
     pub async fn press_combo(keys: &[Key]) -> Result<(), InputError> {
         use x11rb::connection::Connection;
-        use x11rb::protocol::xtest::ConnectionExt;
+        use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
         
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
         
         // Press modifier keys
         for key in keys.iter().filter(|&&k| is_modifier(k)) {
-            let keycode = map_key_to_keycode(**key);
+            let keycode = map_key_to_keycode(*key);
             conn.xtest_fake_input(
                 x11rb::protocol::xproto::KEY_PRESS_EVENT,
-                false,
+                keycode, // detail (keycode)
                 x11rb::CURRENT_TIME,
                 root,
                 0,
                 0,
-                keycode,
+                0, // deviceid
             )?;
             conn.flush()?;
         }
@@ -421,12 +419,12 @@ pub mod linux {
             let keycode = map_key_to_keycode(*main_key);
             conn.xtest_fake_input(
                 x11rb::protocol::xproto::KEY_PRESS_EVENT,
-                false,
+                keycode, // detail (keycode)
                 x11rb::CURRENT_TIME,
                 root,
                 0,
                 0,
-                keycode,
+                0, // deviceid
             )?;
             conn.flush()?;
             
@@ -434,12 +432,12 @@ pub mod linux {
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             conn.xtest_fake_input(
                 x11rb::protocol::xproto::KEY_RELEASE_EVENT,
-                false,
+                keycode, // detail (keycode)
                 x11rb::CURRENT_TIME,
                 root,
                 0,
                 0,
-                keycode,
+                0, // deviceid
             )?;
             conn.flush()?;
         }
@@ -449,12 +447,12 @@ pub mod linux {
             let keycode = map_key_to_keycode(*key);
             conn.xtest_fake_input(
                 x11rb::protocol::xproto::KEY_RELEASE_EVENT,
-                false,
+                keycode, // detail (keycode)
                 x11rb::CURRENT_TIME,
                 root,
                 0,
                 0,
-                keycode,
+                0, // deviceid
             )?;
             conn.flush()?;
         }
@@ -508,16 +506,39 @@ pub mod linux {
         }
     }
     
-    fn char_to_keysym(ch: char) -> u32 {
-        use x11rb::protocol::xproto::*;
-        
+    fn char_to_keycode(ch: char) -> u8 {
+        // X11 keycodes for common characters (simplified)
+        // Production would use proper keysym to keycode lookup via the keyboard mapping
         match ch {
-            'a' | 'A' => 0x0061,
-            'b' | 'B' => 0x0062,
-            'c' | 'C' => 0x0063,
-            ' ' => 0x0020,
-            '\n' => 0xFF0D, // Return
-            '\t' => 0xFF09, // Tab
+            'a' | 'A' => 38,
+            'b' | 'B' => 56,
+            'c' | 'C' => 54,
+            'd' | 'D' => 40,
+            'e' | 'E' => 26,
+            'f' | 'F' => 41,
+            'g' | 'G' => 42,
+            'h' | 'H' => 43,
+            'i' | 'I' => 31,
+            'j' | 'J' => 44,
+            'k' | 'K' => 45,
+            'l' | 'L' => 46,
+            'm' | 'M' => 58,
+            'n' | 'N' => 57,
+            'o' | 'O' => 32,
+            'p' | 'P' => 33,
+            'q' | 'Q' => 24,
+            'r' | 'R' => 27,
+            's' | 'S' => 39,
+            't' | 'T' => 28,
+            'u' | 'U' => 30,
+            'v' | 'V' => 55,
+            'w' | 'W' => 25,
+            'x' | 'X' => 53,
+            'y' | 'Y' => 29,
+            'z' | 'Z' => 52,
+            ' ' => 65,      // Space
+            '\n' => 36,     // Return
+            '\t' => 23,     // Tab
             _ => 0,
         }
     }

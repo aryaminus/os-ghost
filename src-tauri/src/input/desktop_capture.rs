@@ -93,12 +93,12 @@ pub mod windows {
     
     pub async fn capture_desktop() -> Result<Vec<u8>, InputError> {
         unsafe {
-            use windows::Win32::Graphics::Gdi::{
+            use ::windows::Win32::Graphics::Gdi::{
                 CreateCompatibleDC, CreateCompatibleBitmap, SelectObject,
                 BitBlt, SRCCOPY, GetDC, ReleaseDC, DeleteDC, DeleteObject,
                 GetDeviceCaps, HORZRES, VERTRES,
             };
-            use windows::Win32::Foundation::HWND;
+            use ::windows::Win32::Foundation::HWND;
             
             // Get desktop DC
             let hwnd = HWND(0); // Desktop window
@@ -157,7 +157,7 @@ pub mod linux {
     
     pub async fn capture_desktop() -> Result<Vec<u8>, InputError> {
         use x11rb::connection::Connection;
-        use x11rb::protocol::xproto::*;
+        use x11rb::protocol::xproto::{ConnectionExt as XprotoConnectionExt, ImageFormat};
         
         let (conn, _) = x11rb::connect(None)?;
         let screen = &conn.setup().roots[0];
@@ -167,7 +167,7 @@ pub mod linux {
         let width = screen.width_in_pixels;
         let height = screen.height_in_pixels;
         
-        // Capture the screen
+        // Capture the screen - get_image returns a Cookie, need to call reply()
         let image = conn.get_image(
             ImageFormat::Z_PIXMAP,
             root,
@@ -176,10 +176,10 @@ pub mod linux {
             width,
             height,
             !0, // plane mask
-        )?;
+        )?.reply()?;
         
-        // Convert to PNG (simplified)
-        let data = image.data().to_vec();
+        // The reply contains the image data directly
+        let data = image.data.to_vec();
         
         Ok(data)
     }

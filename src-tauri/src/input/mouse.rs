@@ -43,14 +43,14 @@ pub mod macos {
 #[cfg(target_os = "windows")]
 pub mod windows {
     use super::*;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
+    use ::windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
         MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
         MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
         MOUSEEVENTF_WHEEL, MOUSE_EVENT_FLAGS, MOUSEINPUT,
     };
-    use windows::Win32::Foundation::POINT;
-    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    use ::windows::Win32::Foundation::POINT;
+    use ::windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
     
     pub fn move_mouse(x: i32, y: i32) -> Result<(), InputError> {
         unsafe {
@@ -169,20 +169,20 @@ pub mod linux {
     
     pub async fn move_mouse(x: i32, y: i32) -> Result<(), InputError> {
         use x11rb::connection::Connection;
-        use x11rb::protocol::xtest::ConnectionExt;
+        use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
         
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
         
-        // Move pointer
+        // Move pointer - detail=0 for motion events
         conn.xtest_fake_input(
             x11rb::protocol::xproto::MOTION_NOTIFY_EVENT,
-            false,
+            0, // detail (unused for motion)
             x11rb::CURRENT_TIME,
             root,
             x as i16,
             y as i16,
-            0,
+            0, // deviceid
         )?;
         
         conn.flush()?;
@@ -192,26 +192,26 @@ pub mod linux {
     
     pub async fn click_mouse(button: MouseButton) -> Result<(), InputError> {
         use x11rb::connection::Connection;
-        use x11rb::protocol::xtest::ConnectionExt;
+        use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
         
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
         
-        let button_num = match button {
+        let button_num: u8 = match button {
             MouseButton::Left => 1,
             MouseButton::Middle => 2,
             MouseButton::Right => 3,
         };
         
-        // Button press
+        // Button press - detail is the button number
         conn.xtest_fake_input(
             x11rb::protocol::xproto::BUTTON_PRESS_EVENT,
-            false,
+            button_num, // detail (button number)
             x11rb::CURRENT_TIME,
             root,
             0,
             0,
-            button_num as u8,
+            0, // deviceid
         )?;
         
         conn.flush()?;
@@ -222,12 +222,12 @@ pub mod linux {
         // Button release
         conn.xtest_fake_input(
             x11rb::protocol::xproto::BUTTON_RELEASE_EVENT,
-            false,
+            button_num, // detail (button number)
             x11rb::CURRENT_TIME,
             root,
             0,
             0,
-            button_num as u8,
+            0, // deviceid
         )?;
         
         conn.flush()?;
@@ -237,12 +237,12 @@ pub mod linux {
     
     pub async fn scroll(direction: ScrollDirection, amount: i32) -> Result<(), InputError> {
         use x11rb::connection::Connection;
-        use x11rb::protocol::xtest::ConnectionExt;
+        use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
         
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
         
-        let button = match direction {
+        let button: u8 = match direction {
             ScrollDirection::Up => 4,
             ScrollDirection::Down => 5,
             ScrollDirection::Left => 6,
@@ -250,15 +250,15 @@ pub mod linux {
         };
         
         for _ in 0..amount {
-            // Button press
+            // Button press - detail is the button number
             conn.xtest_fake_input(
                 x11rb::protocol::xproto::BUTTON_PRESS_EVENT,
-                false,
+                button, // detail (button number)
                 x11rb::CURRENT_TIME,
                 root,
                 0,
                 0,
-                button as u8,
+                0, // deviceid
             )?;
             
             conn.flush()?;
@@ -266,12 +266,12 @@ pub mod linux {
             // Button release
             conn.xtest_fake_input(
                 x11rb::protocol::xproto::BUTTON_RELEASE_EVENT,
-                false,
+                button, // detail (button number)
                 x11rb::CURRENT_TIME,
                 root,
                 0,
                 0,
-                button as u8,
+                0, // deviceid
             )?;
             
             conn.flush()?;
@@ -282,12 +282,12 @@ pub mod linux {
     
     pub fn get_mouse_position() -> Result<(i32, i32), InputError> {
         use x11rb::connection::Connection;
-        use x11rb::protocol::xproto::QueryPointerReply;
+        use x11rb::protocol::xproto::ConnectionExt as XprotoConnectionExt;
         
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
         
-        let reply = conn.query_pointer(root)?;
+        let reply = conn.query_pointer(root)?.reply()?;
         
         Ok((reply.root_x as i32, reply.root_y as i32))
     }

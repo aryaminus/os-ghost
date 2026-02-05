@@ -12,7 +12,7 @@ pub mod desktop_capture;
 
 
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 use crate::config::privacy::{AutonomyLevel, PrivacySettings};
 use crate::input::safety::InputSafetyChecker;
@@ -336,6 +336,27 @@ impl From<std::io::Error> for InputError {
 impl From<anyhow::Error> for InputError {
     fn from(err: anyhow::Error) -> Self {
         InputError::Other(err.to_string())
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl From<x11rb::errors::ConnectError> for InputError {
+    fn from(err: x11rb::errors::ConnectError) -> Self {
+        InputError::PlatformError(format!("X11 connection error: {}", err))
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl From<x11rb::errors::ConnectionError> for InputError {
+    fn from(err: x11rb::errors::ConnectionError) -> Self {
+        InputError::PlatformError(format!("X11 error: {}", err))
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl From<x11rb::errors::ReplyError> for InputError {
+    fn from(err: x11rb::errors::ReplyError) -> Self {
+        InputError::PlatformError(format!("X11 reply error: {}", err))
     }
 }
 
