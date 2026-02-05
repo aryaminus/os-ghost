@@ -8,7 +8,7 @@ pub mod workflows;
 
 // Re-export commonly used types from actions.rs
 pub use actions::{
-    ActionRiskLevel, HandlerContext, PendingAction, 
+    ActionRiskLevel, ActionStatus, HandlerContext, PendingAction, 
     ACTION_QUEUE, get_pending_actions, approve_action, deny_action, 
     get_action_history, clear_pending_actions, clear_action_history,
     execute_approved_action
