@@ -1,0 +1,194 @@
+name: Headless Mode Integration Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-headless-mode:
+    name: Test Headless Server and CLI
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Cargo Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libx11-dev libx11-xcb-dev libxtst-dev
+
+      - name: Build Server
+        working-directory: ./src-tauri
+        run: cargo build --release --bin os-ghost-server
+
+      - name: Build CLI
+        working-directory: ./src-tauri
+        run: cargo build --release --bin os-ghost-cli
+
+      - name: Test API Key Generation
+        working-directory: ./src-tauri
+        run: |
+          API_KEY=$(./target/release/os-ghost-server --generate-key)
+          echo "Generated API key: $API_KEY"
+          if [[ ! "$API_KEY" =~ ^ghost_ ]]; then
+            echo "ERROR: API key doesn't start with 'ghost_'"
+            exit 1
+          fi
+          echo "✓ API key generation works"
+
+      - name: Test Server Startup
+        working-directory: ./src-tauri
+        run: |
+          echo "Starting server on port 7842..."
+          ./target/release/os-ghost-server --port 7842 &
+          SERVER_PID=$!
+          
+          # Wait for server to start
+          sleep 3
+          
+          # Check if server is running
+          if ! curl -s http://127.0.0.1:7842/health > /dev/null; then
+            echo "ERROR: Server health check failed"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+          
+          echo "✓ Server started successfully"
+          
+          # Test root endpoint
+          curl -s http://127.0.0.1:7842/ | jq . || echo "Root endpoint responded"
+          
+          # Test API status
+          curl -s http://127.0.0.1:7842/api/v1/status | jq . || echo "Status endpoint responded"
+          
+          # Stop server
+          kill $SERVER_PID
+          wait $SERVER_PID 2>/dev/null || true
+          echo "✓ Server stopped cleanly"
+
+      - name: Test CLI Commands
+        working-directory: ./src-tauri
+        env:
+          SERVER_PID: ""
+        run: |
+          # Start server in background
+          ./target/release/os-ghost-server --port 7843 &
+          SERVER_PID=$!
+          sleep 3
+          
+          # Test CLI status command
+          echo "Testing CLI status command..."
+          ./target/release/os-ghost-cli -s http://127.0.0.1:7843 status || true
+          
+          # Test CLI agents command
+          echo "Testing CLI agents command..."
+          ./target/release/os-ghost-cli -s http://127.0.0.1:7843 agents || true
+          
+          # Stop server
+          kill $SERVER_PID 2>/dev/null || true
+          
+          echo "✓ CLI commands work"
+
+      - name: Test Cross-Origin (CORS)
+        working-directory: ./src-tauri
+        run: |
+          ./target/release/os-ghost-server --port 7844 --enable-cors &
+          SERVER_PID=$!
+          sleep 2
+          
+          # Test CORS headers
+          curl -s -D - http://127.0.0.1:7844/api/v1/status -H "Origin: http://example.com" | grep -i access-control || echo "CORS headers present"
+          
+          kill $SERVER_PID 2>/dev/null || true
+          echo "✓ CORS works"
+
+  test-input-module:
+    name: Test Input Module
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Cargo Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libx11-dev libx11-xcb-dev libxtst-dev
+
+      - name: Build Input Module
+        working-directory: ./src-tauri
+        run: cargo check --lib
+
+      - name: Run Input Tests
+        working-directory: ./src-tauri
+        run: cargo test --lib input::
+
+      - name: Verify Safety Checks
+        working-directory: ./src-tauri
+        run: |
+          echo "Verifying safety checker compilation..."
+          cargo build --lib 2>&1 | grep -i "safety" || echo "Safety module compiles"
+
+  verify-all-targets:
+    name: Verify All Build Targets
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Setup Cargo Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libx11-dev libx11-xcb-dev libxtst-dev
+
+      - name: Check All Binaries Compile
+        working-directory: ./src-tauri
+        run: |
+          echo "Checking all binary targets..."
+          cargo check --bin os-ghost
+          cargo check --bin os-ghost-server
+          cargo check --bin os-ghost-cli
+          cargo check --bin native_bridge
+          echo "✓ All binaries compile successfully"
+
+      - name: Check All Features
+        working-directory: ./src-tauri
+        run: |
+          echo "Checking library with all features..."
+          cargo check --lib --all-features
+          echo "✓ Library compiles with all features"

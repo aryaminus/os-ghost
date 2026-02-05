@@ -34,29 +34,8 @@ use crate::server::api::{
 };
 use crate::server::websocket::ws_handler;
 
-/// Server configuration
-#[derive(Clone, Debug)]
-pub struct ServerConfig {
-    pub host: String,
-    pub port: u16,
-    pub api_key: Option<String>,
-    pub enable_websocket: bool,
-    pub enable_cors: bool,
-    pub headless: bool,
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self {
-            host: "127.0.0.1".to_string(),
-            port: 7842, // OS-Ghost default port (GHOST on keypad)
-            api_key: None,
-            enable_websocket: true,
-            enable_cors: true,
-            headless: false,
-        }
-    }
-}
+// Re-export ServerConfig from config module
+pub use crate::config::server::ServerConfig;
 
 /// OS-Ghost Server instance
 pub struct GhostServer {

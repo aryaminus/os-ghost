@@ -11,13 +11,7 @@ pub mod actions;
 pub mod capture;
 
 // Configuration & Settings
-pub mod config {
-    pub mod permissions;
-    pub mod privacy;
-    pub mod scheduler;
-    pub mod system_settings;
-    pub mod system_status;
-}
+pub mod config;
 
 // Core Utilities
 pub mod core;

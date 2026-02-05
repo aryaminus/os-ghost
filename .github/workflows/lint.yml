@@ -46,5 +46,25 @@ jobs:
               working-directory: ./src-tauri
               run: cargo test
 
-            - name: Try Build
+            - name: Try Build App
               run: npm run build
+
+            - name: Build Server Binary
+              working-directory: ./src-tauri
+              run: cargo build --release --bin os-ghost-server
+
+            - name: Build CLI Binary
+              working-directory: ./src-tauri
+              run: cargo build --release --bin os-ghost-cli
+
+            - name: Verify Server Binary
+              working-directory: ./src-tauri
+              run: |
+                ./target/release/os-ghost-server --version
+                ./target/release/os-ghost-server --help
+
+            - name: Verify CLI Binary
+              working-directory: ./src-tauri
+              run: |
+                ./target/release/os-ghost-cli --version
+                ./target/release/os-ghost-cli --help
