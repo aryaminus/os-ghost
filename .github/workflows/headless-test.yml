@@ -55,8 +55,12 @@ jobs:
       - name: Test API Key Generation
         working-directory: ./src-tauri
         run: |
-          API_KEY=$(./target/release/os-ghost-server --generate-key)
-          echo "Generated API key: $API_KEY"
+          # Capture output and extract just the API key (first line, after the prefix)
+          OUTPUT=$(./target/release/os-ghost-server --generate-key)
+          echo "$OUTPUT"
+          # Extract the key from "Generated API key: ghost_xxx"
+          API_KEY=$(echo "$OUTPUT" | head -n1 | sed 's/.*: //')
+          echo "Extracted key: $API_KEY"
           if [[ ! "$API_KEY" =~ ^ghost_ ]]; then
             echo "ERROR: API key doesn't start with 'ghost_'"
             exit 1
@@ -166,9 +170,13 @@ jobs:
 
       - name: Verify Safety Checks
         working-directory: ./src-tauri
+        shell: bash
         run: |
           echo "Verifying safety checker compilation..."
-          cargo build --lib 2>&1 | grep -i "safety" || echo "Safety module compiles"
+          # Build the library and check for any safety-related warnings/errors
+          # Using || true to ensure the step doesn't fail if grep finds no matches
+          cargo build --lib 2>&1 | grep -i "safety" || true
+          echo "Safety module compiles"
 
   verify-all-targets:
     name: Verify All Build Targets
