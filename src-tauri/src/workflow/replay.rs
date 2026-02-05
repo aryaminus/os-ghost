@@ -81,6 +81,7 @@ pub enum VerificationType {
 }
 
 /// Workflow replayer with safety controls
+#[allow(dead_code)]
 pub struct WorkflowReplayer {
     /// Privacy settings
     privacy_settings: PrivacySettings,

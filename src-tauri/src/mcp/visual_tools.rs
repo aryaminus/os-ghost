@@ -70,6 +70,7 @@ impl McpTool for FindElementTool {
 
 /// Tool: browser.click_element
 /// Clicks on an element found by description
+#[allow(dead_code)]
 pub struct ClickElementTool {
     vision_capture: Arc<VisionCapture>,
     autonomy_level: AutonomyLevel,
@@ -134,6 +135,7 @@ impl McpTool for ClickElementTool {
 
 /// Tool: browser.fill_field
 /// Fills an input field with text
+#[allow(dead_code)]
 pub struct FillFieldTool {
     vision_capture: Arc<VisionCapture>,
     autonomy_level: AutonomyLevel,

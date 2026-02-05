@@ -169,6 +169,7 @@ pub enum WorkflowTrigger {
 }
 
 /// Workflow recorder
+#[allow(dead_code)]
 pub struct WorkflowRecorder {
     /// Currently recording workflow
     current_workflow: Arc<Mutex<Option<Workflow>>>,

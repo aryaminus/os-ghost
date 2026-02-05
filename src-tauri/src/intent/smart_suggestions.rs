@@ -135,6 +135,7 @@ pub enum SuggestionPriority {
 }
 
 /// Smart suggestion engine
+#[allow(dead_code)]
 pub struct SmartSuggestionEngine {
     /// Autonomy level (controls how chatty Ghost is)
     autonomy_level: AutonomyLevel,

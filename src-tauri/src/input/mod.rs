@@ -18,6 +18,7 @@ use crate::config::privacy::{AutonomyLevel, PrivacySettings};
 use crate::input::safety::InputSafetyChecker;
 
 /// Input controller for native OS automation
+#[allow(dead_code)]
 pub struct InputController {
     safety_checker: InputSafetyChecker,
     autonomy_level: AutonomyLevel,
