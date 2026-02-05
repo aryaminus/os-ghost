@@ -20,6 +20,7 @@ pub mod browser;
 pub mod sandbox;
 pub mod traits;
 pub mod types;
+pub mod visual_tools;
 
 pub use browser::BrowserMcpServer;
 pub use sandbox::{
@@ -28,3 +29,4 @@ pub use sandbox::{
 };
 pub use traits::{McpPrompt, McpResource, McpServer, McpTool};
 pub use types::*;
+pub use visual_tools::{FindElementTool, ClickElementTool, FillFieldTool, GetPageElementsTool, VisualToolRegistry};
