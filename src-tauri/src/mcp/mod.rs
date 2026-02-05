@@ -21,8 +21,10 @@ pub mod sandbox;
 pub mod traits;
 pub mod types;
 pub mod visual_tools;
+pub mod os_tools;
 
 pub use browser::BrowserMcpServer;
+pub use os_tools::OsToolProvider;
 pub use sandbox::{
     get_sandbox_config, update_sandbox_config, categorize_command, is_command_blocked,
     SandboxConfig, SandboxError, ShellCategory, TrustLevel,
