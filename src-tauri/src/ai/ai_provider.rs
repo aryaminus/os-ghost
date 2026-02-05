@@ -776,4 +776,79 @@ impl SmartAiRouter {
 
         Ok("...".to_string())
     }
+
+    // ========================================================================
+    // Vision Analysis Methods (Phase 1: Visual Intelligence Core)
+    // ========================================================================
+
+    /// Get a VisionAnalyzer instance configured with available providers
+    /// Uses Gemini if available and not failing, falls back to Ollama
+    pub fn get_vision_analyzer(&self) -> Option<super::vision::VisionAnalyzer> {
+        // Check if we have at least one vision-capable provider
+        let has_gemini = self.gemini.is_some() && !self.is_gemini_circuit_open();
+        let has_ollama = self.ollama_available.load(Ordering::SeqCst);
+
+        if !has_gemini && !has_ollama {
+            tracing::warn!("No vision provider available");
+            return None;
+        }
+
+        let gemini_clone = self.gemini.clone();
+        let ollama_clone = if has_ollama {
+            Some(Arc::clone(&self.ollama))
+        } else {
+            None
+        };
+
+        Some(super::vision::VisionAnalyzer::new(gemini_clone, ollama_clone))
+    }
+
+    /// Analyze a screenshot and detect visual elements
+    /// Returns None if no vision provider available
+    pub async fn analyze_screenshot(&self, image_bytes: &[u8]) -> Result<super::vision::VisionAnalysis> {
+        self.check_rate_limit()?;
+        
+        match self.get_vision_analyzer() {
+            Some(analyzer) => {
+                analyzer.analyze_screenshot(image_bytes).await
+            }
+            None => Err(anyhow::anyhow!("No vision provider available")),
+        }
+    }
+
+    /// Find a specific element by description in a screenshot
+    /// Returns None if element not found or no provider available
+    pub async fn find_visual_element(
+        &self,
+        image_bytes: &[u8],
+        description: &str,
+    ) -> Option<super::vision::VisualElement> {
+        match self.get_vision_analyzer() {
+            Some(analyzer) => {
+                analyzer.find_element(image_bytes, description).await
+            }
+            None => {
+                tracing::warn!("Cannot find element: no vision provider available");
+                None
+            }
+        }
+    }
+
+    /// Check if vision capabilities are available
+    pub fn has_vision(&self) -> bool {
+        let has_gemini = self.gemini.is_some();
+        let has_ollama = self.ollama_available.load(Ordering::SeqCst);
+        has_gemini || has_ollama
+    }
+
+    /// Get vision provider status for display
+    pub fn vision_provider(&self) -> Option<super::vision::VisionProvider> {
+        if self.gemini.is_some() && !self.is_gemini_circuit_open() {
+            Some(super::vision::VisionProvider::Gemini)
+        } else if self.ollama_available.load(Ordering::SeqCst) {
+            Some(super::vision::VisionProvider::Ollama)
+        } else {
+            None
+        }
+    }
 }
