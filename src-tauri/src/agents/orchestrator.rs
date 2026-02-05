@@ -23,6 +23,7 @@ use super::events::{AgentEvent, EventActions, EventStream};
 use super::guardrail::GuardrailAgent;
 use super::narrator::NarratorAgent;
 use super::observer::ObserverAgent;
+use super::operator::OperatorAgent;
 use super::planner::PlannerAgent;
 use super::traits::{
     Agent, AgentContext, AgentMode, AgentOutput, AgentResult, NextAction, PlanningContext,
@@ -80,6 +81,7 @@ pub struct AgentOrchestrator {
     planner: Arc<PlannerAgent>,
     critic: Arc<CriticAgent>,
     guardrail: Arc<GuardrailAgent>,
+    operator: Arc<OperatorAgent>,
     /// Security watchdog agent
     watchdog: Arc<WatchdogAgent>,
     /// AI router reference for telemetry access
@@ -120,6 +122,7 @@ impl AgentOrchestrator {
         ai_router: Arc<SmartAiRouter>,
         long_term: SharedLongTermMemory,
         session: SharedSessionMemory,
+        operator: Arc<OperatorAgent>,
     ) -> anyhow::Result<Self> {
         // Create core agents
         let observer = Arc::new(ObserverAgent::new(Arc::clone(&ai_router)));
@@ -166,6 +169,7 @@ impl AgentOrchestrator {
             planner,
             critic,
             guardrail,
+            operator,
             watchdog,
             ai_router,
             session,
@@ -174,6 +178,29 @@ impl AgentOrchestrator {
             callbacks,
             metrics: Arc::new(MetricsCollector::default()),
         })
+    }
+
+    /// Request assistance (activates "Help Me" workflow)
+    pub async fn handle_assistance_request(&self, prompt: String) -> anyhow::Result<String> {
+        tracing::info!("Handling assistance request: {}", prompt);
+
+        // 1. Plan the task (MVP: Use the planner stub, later upgrade to AI)
+        // In a real implementation we would Ask PlannerAgent -> VisualTaskPlanner
+        let steps = crate::agents::operator::VisualTaskPlanner::plan_task(&prompt).await;
+
+        // 2. Execute via Operator
+        let operator = self.operator.clone();
+        let prompt_clone = prompt.clone();
+
+        // Spawn so we don't block IPC
+        tokio::spawn(async move {
+            match operator.execute_visual_task(&prompt_clone, steps).await {
+                Ok(result) => tracing::info!("Assistance task completed: {:?}", result),
+                Err(e) => tracing::error!("Assistance task failed: {}", e),
+            }
+        });
+
+        Ok("Assistance started".to_string())
     }
 
     // -------------------------------------------------------------------------
@@ -288,7 +315,7 @@ impl AgentOrchestrator {
     /// Run the full agent pipeline
     /// Uses intelligent planning workflow if enabled, otherwise legacy sequential
     /// Applies guardrails for input/output safety filtering
-    /// 
+    ///
     /// ADK Integration:
     /// - Clears temp: scoped state at start of each invocation
     /// - Runs before/after agent callbacks
@@ -300,8 +327,12 @@ impl AgentOrchestrator {
     ) -> AgentResult<OrchestrationResult> {
         let invocation_id = generate_invocation_id();
         let start_time = Instant::now();
-        let workflow_name = if self.use_intelligent_mode() { "planning" } else { "sequential" };
-        
+        let workflow_name = if self.use_intelligent_mode() {
+            "planning"
+        } else {
+            "sequential"
+        };
+
         // ADK: Clear temp-scoped state at start of each invocation
         if let Ok(session) = self.session.lock() {
             if let Err(e) = session.clear_temp_state() {
@@ -310,7 +341,8 @@ impl AgentOrchestrator {
         }
 
         // ADK: Run before_agent callbacks
-        let callback_context = CallbackContext::new(context.clone(), "Orchestrator", &invocation_id);
+        let callback_context =
+            CallbackContext::new(context.clone(), "Orchestrator", &invocation_id);
         if let Some(override_output) = {
             let registry = self.callbacks.lock().await;
             registry.run_before_agent(&callback_context).await
@@ -326,7 +358,10 @@ impl AgentOrchestrator {
             return Ok(OrchestrationResult {
                 message: override_message,
                 proximity: override_confidence,
-                solved: matches!(override_next_action.as_ref(), Some(NextAction::PuzzleSolved)),
+                solved: matches!(
+                    override_next_action.as_ref(),
+                    Some(NextAction::PuzzleSolved)
+                ),
                 show_hint: override_next_action.as_ref().and_then(|action| {
                     if let NextAction::ShowHint(idx) = action {
                         Some(*idx)
@@ -381,7 +416,8 @@ impl AgentOrchestrator {
                                 .complete_failure(elapsed_ms, "watchdog_blocked");
                             self.metrics.record(metrics);
                             return Ok(OrchestrationResult {
-                                message: "The ghost senses a security risk and refuses to proceed.".to_string(),
+                                message: "The ghost senses a security risk and refuses to proceed."
+                                    .to_string(),
                                 proximity: 0.0,
                                 solved: false,
                                 show_hint: None,
@@ -395,7 +431,9 @@ impl AgentOrchestrator {
                                 .complete_failure(elapsed_ms, "watchdog_confirmation_required");
                             self.metrics.record(metrics);
                             return Ok(OrchestrationResult {
-                                message: "Potential risk detected. Please review before continuing.".to_string(),
+                                message:
+                                    "Potential risk detected. Please review before continuing."
+                                        .to_string(),
                                 proximity: 0.0,
                                 solved: false,
                                 show_hint: None,
@@ -618,14 +656,18 @@ impl AgentOrchestrator {
             ghost_state,
             agent_outputs: outputs,
         };
-        
+
         if let Some(override_output) = {
             let registry = self.callbacks.lock().await;
             let output = AgentOutput {
                 agent_name: "Orchestrator".to_string(),
                 result: result.message.clone(),
                 confidence: result.proximity,
-                next_action: if result.solved { Some(NextAction::PuzzleSolved) } else { None },
+                next_action: if result.solved {
+                    Some(NextAction::PuzzleSolved)
+                } else {
+                    None
+                },
                 data: HashMap::new(),
             };
             registry.run_after_agent(&callback_context, &output).await
@@ -636,7 +678,10 @@ impl AgentOrchestrator {
             return Ok(OrchestrationResult {
                 message: override_message,
                 proximity: override_confidence,
-                solved: matches!(override_next_action.as_ref(), Some(NextAction::PuzzleSolved)),
+                solved: matches!(
+                    override_next_action.as_ref(),
+                    Some(NextAction::PuzzleSolved)
+                ),
                 show_hint: override_next_action.as_ref().and_then(|action| {
                     if let NextAction::ShowHint(idx) = action {
                         Some(*idx)
@@ -1111,5 +1156,15 @@ impl AgentOrchestrator {
 
         // Check all agents
         self.observer.health_check() && self.verifier.health_check() && self.narrator.health_check()
+    }
+}
+
+impl std::fmt::Debug for AgentOrchestrator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentOrchestrator")
+            .field("narrator", &"NarratorAgent")
+            // Skip complex workflows/fields that might not implemenent Debug
+            .field("mode", &self.mode)
+            .finish()
     }
 }

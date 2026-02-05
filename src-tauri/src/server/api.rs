@@ -10,7 +10,6 @@
 //! - /api/v1/agents - List active agents
 //! - /api/v1/memory - Get memory statistics
 
-use std::sync::Arc;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -18,13 +17,11 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, error};
+use tracing::{error, info};
 
-use crate::server::state::{
-    ServerState, ExecuteRequest, ExecuteResponse, RecordingRequest,
-    RecordingResponse
-};
+use crate::server::state::{ExecuteRequest, RecordingRequest, RecordingResponse, ServerState};
 
 /// Standard API response wrapper
 #[derive(Serialize)]
@@ -57,11 +54,9 @@ impl<T: Serialize> ApiResponse<T> {
 // ============================================================================
 
 /// Get server status
-pub async fn get_status(
-    State(state): State<Arc<RwLock<ServerState>>>,
-) -> impl IntoResponse {
+pub async fn get_status(State(state): State<Arc<RwLock<ServerState>>>) -> impl IntoResponse {
     let state = state.read().await;
-    
+
     let status = serde_json::json!({
         "connected": state.connected,
         "uptime_secs": state.uptime_secs(),
@@ -72,7 +67,7 @@ pub async fn get_status(
         "api_version": state.api_config.version,
         "timestamp": chrono::Utc::now().to_rfc3339(),
     });
-    
+
     Json(ApiResponse::success(status))
 }
 
@@ -86,34 +81,46 @@ pub async fn execute_task(
     Json(request): Json<ExecuteRequest>,
 ) -> impl IntoResponse {
     info!("Received execute request: {}", request.task);
-    
+
     let mut state = state.write().await;
-    
+
     // Generate task ID
     let task_id = format!("task-{}", uuid::Uuid::new_v4());
-    
-    // TODO: Integrate with AgentOrchestrator
-    // For now, return a placeholder response
-    let response = ExecuteResponse {
-        task_id: task_id.clone(),
-        status: "pending".to_string(),
-        result: None,
-        error: None,
-        actions_created: vec![],
-    };
-    
+
+    // Integrate with AgentOrchestrator if available
+    if let Some(orchestrator) = &state.orchestrator {
+        info!("Delegating task to orchestrator: {}", request.task);
+        if let Err(e) = orchestrator
+            .handle_assistance_request(request.task.clone())
+            .await
+        {
+            error!("Orchestrator failed to start task: {}", e);
+            return Json(ApiResponse::<serde_json::Value>::error(&format!(
+                "Failed to start task: {}",
+                e
+            )))
+            .into_response();
+        }
+    } else {
+        info!("No orchestrator available, task queued only");
+    }
+
     // Add an agent for this task
     state.add_agent(
         task_id.clone(),
-        format!("Task: {}", request.task.chars().take(30).collect::<String>()),
+        format!(
+            "Task: {}",
+            request.task.chars().take(30).collect::<String>()
+        ),
         "executor".to_string(),
     );
-    
+
     Json(ApiResponse::success(serde_json::json!({
-        "task_id": response.task_id,
-        "status": response.status,
-        "message": "Task queued for execution",
+        "task_id": task_id,
+        "status": "pending",
+        "message": "Task queued/delegated for execution",
     })))
+    .into_response()
 }
 
 // ============================================================================
@@ -121,23 +128,25 @@ pub async fn execute_task(
 // ============================================================================
 
 /// Get all workflows
-pub async fn get_workflows(
-    State(state): State<Arc<RwLock<ServerState>>>,
-) -> impl IntoResponse {
+pub async fn get_workflows(State(state): State<Arc<RwLock<ServerState>>>) -> impl IntoResponse {
     let state = state.read().await;
-    
-    let workflows: Vec<_> = state.workflows.iter().map(|w| {
-        serde_json::json!({
-            "id": w.id,
-            "name": w.name,
-            "description": w.description,
-            "step_count": w.step_count,
-            "execution_count": w.execution_count,
-            "success_rate": w.success_rate,
-            "enabled": w.enabled,
+
+    let workflows: Vec<_> = state
+        .workflows
+        .iter()
+        .map(|w| {
+            serde_json::json!({
+                "id": w.id,
+                "name": w.name,
+                "description": w.description,
+                "step_count": w.step_count,
+                "execution_count": w.execution_count,
+                "success_rate": w.success_rate,
+                "enabled": w.enabled,
+            })
         })
-    }).collect();
-    
+        .collect();
+
     Json(ApiResponse::success(workflows))
 }
 
@@ -147,18 +156,18 @@ pub async fn execute_workflow(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let state = state.read().await;
-    
+
     match state.get_workflow(&id) {
         Some(workflow) => {
             info!("Executing workflow: {} ({})", workflow.name, id);
-            
+
             let response = serde_json::json!({
                 "workflow_id": id,
                 "name": workflow.name,
                 "status": "executing",
                 "execution_id": format!("exec-{}", uuid::Uuid::new_v4()),
             });
-            
+
             (StatusCode::OK, Json(ApiResponse::success(response))).into_response()
         }
         None => {
@@ -182,25 +191,25 @@ pub async fn start_recording(
     Json(request): Json<RecordingRequest>,
 ) -> impl IntoResponse {
     info!("Starting workflow recording: {}", request.name);
-    
+
     let mut state = state.write().await;
-    
+
     let recording_id = format!("rec-{}", uuid::Uuid::new_v4());
-    
+
     let response = RecordingResponse {
         recording_id: recording_id.clone(),
         status: "recording".to_string(),
         steps_recorded: 0,
         started_at: chrono::Utc::now(),
     };
-    
+
     // Add recording as an agent
     state.add_agent(
         recording_id.clone(),
         format!("Recording: {}", request.name),
         "recorder".to_string(),
     );
-    
+
     Json(ApiResponse::success(serde_json::json!({
         "recording_id": response.recording_id,
         "status": response.status,
@@ -210,9 +219,7 @@ pub async fn start_recording(
 }
 
 /// Stop workflow recording
-pub async fn stop_recording(
-    State(state): State<Arc<RwLock<ServerState>>>,
-) -> impl IntoResponse {
+pub async fn stop_recording(State(state): State<Arc<RwLock<ServerState>>>) -> impl IntoResponse {
     info!("Stopping workflow recording");
 
     let _state = state.read().await;
@@ -229,21 +236,23 @@ pub async fn stop_recording(
 // ============================================================================
 
 /// Get all active agents
-pub async fn get_agents(
-    State(state): State<Arc<RwLock<ServerState>>>,
-) -> impl IntoResponse {
+pub async fn get_agents(State(state): State<Arc<RwLock<ServerState>>>) -> impl IntoResponse {
     let state = state.read().await;
-    
-    let agents: Vec<_> = state.active_agents.values().map(|agent| {
-        serde_json::json!({
-            "id": agent.id,
-            "name": agent.name,
-            "type": agent.agent_type,
-            "status": agent.status,
-            "last_activity": agent.last_activity,
+
+    let agents: Vec<_> = state
+        .active_agents
+        .values()
+        .map(|agent| {
+            serde_json::json!({
+                "id": agent.id,
+                "name": agent.name,
+                "type": agent.agent_type,
+                "status": agent.status,
+                "last_activity": agent.last_activity,
+            })
         })
-    }).collect();
-    
+        .collect();
+
     Json(ApiResponse::success(agents))
 }
 
@@ -252,16 +261,14 @@ pub async fn get_agents(
 // ============================================================================
 
 /// Get memory statistics
-pub async fn get_memory(
-    State(state): State<Arc<RwLock<ServerState>>>,
-) -> impl IntoResponse {
+pub async fn get_memory(State(state): State<Arc<RwLock<ServerState>>>) -> impl IntoResponse {
     let state = state.read().await;
-    
+
     let stats = serde_json::json!({
         "total_entries": state.memory_entries,
         "last_updated": chrono::Utc::now().to_rfc3339(),
     });
-    
+
     Json(ApiResponse::success(stats))
 }
 
@@ -274,18 +281,22 @@ pub async fn get_pending_actions(
     State(state): State<Arc<RwLock<ServerState>>>,
 ) -> impl IntoResponse {
     let state = state.read().await;
-    
-    let actions: Vec<_> = state.pending_actions.iter().map(|action| {
-        serde_json::json!({
-            "id": action.id,
-            "type": action.action_type,
-            "description": action.description,
-            "risk_level": action.risk_level,
-            "requires_approval": action.requires_approval,
-            "requested_at": action.requested_at,
+
+    let actions: Vec<_> = state
+        .pending_actions
+        .iter()
+        .map(|action| {
+            serde_json::json!({
+                "id": action.id,
+                "type": action.action_type,
+                "description": action.description,
+                "risk_level": action.risk_level,
+                "requires_approval": action.requires_approval,
+                "requested_at": action.requested_at,
+            })
         })
-    }).collect();
-    
+        .collect();
+
     Json(ApiResponse::success(actions))
 }
 
@@ -295,23 +306,25 @@ pub async fn approve_action(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let mut state = state.write().await;
-    
+
     match state.remove_pending_action(&id) {
         Some(action) => {
             info!("Approved action: {}", id);
-            (StatusCode::OK, Json(ApiResponse::success(serde_json::json!({
-                "action_id": id,
-                "status": "approved",
-                "action_type": action.action_type,
-            })))).into_response()
-        }
-        None => {
             (
-                StatusCode::NOT_FOUND,
-                Json(ApiResponse::<()>::error("Action not found")),
+                StatusCode::OK,
+                Json(ApiResponse::success(serde_json::json!({
+                    "action_id": id,
+                    "status": "approved",
+                    "action_type": action.action_type,
+                }))),
             )
                 .into_response()
         }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<()>::error("Action not found")),
+        )
+            .into_response(),
     }
 }
 
@@ -321,22 +334,24 @@ pub async fn deny_action(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let mut state = state.write().await;
-    
+
     match state.remove_pending_action(&id) {
         Some(action) => {
             info!("Denied action: {}", id);
-            (StatusCode::OK, Json(ApiResponse::success(serde_json::json!({
-                "action_id": id,
-                "status": "denied",
-                "action_type": action.action_type,
-            })))).into_response()
-        }
-        None => {
             (
-                StatusCode::NOT_FOUND,
-                Json(ApiResponse::<()>::error("Action not found")),
+                StatusCode::OK,
+                Json(ApiResponse::success(serde_json::json!({
+                    "action_id": id,
+                    "status": "denied",
+                    "action_type": action.action_type,
+                }))),
             )
                 .into_response()
         }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<()>::error("Action not found")),
+        )
+            .into_response(),
     }
 }

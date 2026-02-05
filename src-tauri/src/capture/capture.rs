@@ -77,19 +77,22 @@ fn resolve_image_format() -> ImageFormat {
 
 /// Capture the primary monitor's screen and return as base64-encoded image
 pub fn capture_primary_monitor() -> Result<String> {
+    let raw = capture_primary_monitor_raw()?;
+    Ok(general_purpose::STANDARD.encode(&raw))
+}
+
+/// Capture the primary monitor's screen and return as raw bytes
+pub fn capture_primary_monitor_raw() -> Result<Vec<u8>> {
     let primary = get_primary_screen()?;
 
     // Capture screenshot - returns an ImageBuffer<Rgba<u8>, Vec<u8>>
     let image = primary.capture()?;
 
     // Write to configured format (JPEG default for speed)
-    let mut jpeg_buffer = Vec::new();
-    image.write_to(&mut Cursor::new(&mut jpeg_buffer), resolve_image_format())?;
+    let mut buffer = Vec::new();
+    image.write_to(&mut Cursor::new(&mut buffer), resolve_image_format())?;
 
-    // Base64 encode
-    let base64_image = general_purpose::STANDARD.encode(&jpeg_buffer);
-
-    Ok(base64_image)
+    Ok(buffer)
 }
 
 /// Capture a specific region of the screen

@@ -27,6 +27,10 @@ pub enum AgentError {
     RateLimited(String),
     /// Circuit breaker is open (service temporarily unavailable)
     CircuitOpen(String),
+    /// Execution failed (e.g., input simulation or vision analysis failed)
+    ExecutionError(String),
+    /// Safety violation (caught by safe guards)
+    SafetyViolation(String),
 }
 
 impl std::fmt::Display for AgentError {
@@ -39,6 +43,8 @@ impl std::fmt::Display for AgentError {
             AgentError::Cancelled => write!(f, "Agent was cancelled"),
             AgentError::RateLimited(msg) => write!(f, "Rate limited: {}", msg),
             AgentError::CircuitOpen(msg) => write!(f, "Circuit open: {}", msg),
+            AgentError::ExecutionError(msg) => write!(f, "Execution error: {}", msg),
+            AgentError::SafetyViolation(msg) => write!(f, "Safety violation: {}", msg),
         }
     }
 }
@@ -106,7 +112,10 @@ impl AgentMode {
 
     /// Check if guardrails are enabled in this mode
     pub fn use_guardrails(&self) -> bool {
-        matches!(self, AgentMode::Standard | AgentMode::Full | AgentMode::Minimal)
+        matches!(
+            self,
+            AgentMode::Standard | AgentMode::Full | AgentMode::Minimal
+        )
     }
 
     /// Get mode from individual flags (for backward compatibility)
@@ -196,9 +205,8 @@ pub struct AgentContext {
     pub hints: Vec<String>,
     /// Custom metadata
     pub metadata: HashMap<String, String>,
-    
+
     // === NEW: Planning & Reflection Artifacts ===
-    
     /// Planning context from PlannerAgent (sub-goals, keywords, strategy)
     pub planning: PlanningContext,
     /// Last reflection feedback from CriticAgent
@@ -363,7 +371,7 @@ impl RateLimiter {
         if let Ok(mut last) = self.last_refill.lock() {
             let elapsed = last.elapsed();
             let tokens_to_add = (elapsed.as_secs_f32() * self.refill_rate) as u32;
-            
+
             if tokens_to_add > 0 {
                 let current = self.tokens.load(Ordering::Relaxed);
                 let new_tokens = (current + tokens_to_add).min(self.max_tokens);
@@ -378,12 +386,11 @@ impl RateLimiter {
             if current == 0 {
                 return false;
             }
-            if self.tokens.compare_exchange(
-                current,
-                current - 1,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ).is_ok() {
+            if self
+                .tokens
+                .compare_exchange(current, current - 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 return true;
             }
         }
@@ -411,12 +418,12 @@ mod tests {
     #[test]
     fn test_rate_limiter_basic() {
         let limiter = RateLimiter::new(5); // 5 per minute for testing
-        
+
         // Should allow 5 immediate calls
         for _ in 0..5 {
             assert!(limiter.try_acquire());
         }
-        
+
         // 6th call should be rejected
         assert!(!limiter.try_acquire());
         assert_eq!(limiter.remaining(), 0);
@@ -444,9 +451,18 @@ mod tests {
     #[test]
     fn test_agent_mode_from_flags() {
         assert_eq!(AgentMode::from_flags(true, true, true), AgentMode::Full);
-        assert_eq!(AgentMode::from_flags(true, false, true), AgentMode::Standard);
-        assert_eq!(AgentMode::from_flags(false, false, true), AgentMode::Minimal);
-        assert_eq!(AgentMode::from_flags(false, false, false), AgentMode::Legacy);
+        assert_eq!(
+            AgentMode::from_flags(true, false, true),
+            AgentMode::Standard
+        );
+        assert_eq!(
+            AgentMode::from_flags(false, false, true),
+            AgentMode::Minimal
+        );
+        assert_eq!(
+            AgentMode::from_flags(false, false, false),
+            AgentMode::Legacy
+        );
     }
 
     #[test]

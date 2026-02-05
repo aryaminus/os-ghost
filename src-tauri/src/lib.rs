@@ -789,7 +789,7 @@ pub fn run() {
             let ollama_client = Arc::new(OllamaClient::new());
 
             // Create SmartAiRouter with both providers
-            let ai_router = Arc::new(SmartAiRouter::new(gemini_client.clone(), ollama_client));
+            let ai_router = Arc::new(SmartAiRouter::new(gemini_client.clone(), ollama_client.clone()));
 
             // Initialize router (check Ollama availability)
             let router_init = ai_router.clone();
@@ -829,11 +829,36 @@ pub fn run() {
             app.manage(ltm_for_ipc);
             app.manage(notes_store);
 
+            // Create Vision Analyzer & Capture (Phase 2: Vision Pipeline)
+            let vision_analyzer = Arc::new(crate::ai::VisionAnalyzer::new(
+                gemini_client.clone(),
+                Some(ollama_client.clone()), // Available as fallback
+            ));
+            let vision_capture = Arc::new(crate::capture::vision::VisionCapture::new(Some(vision_analyzer)));
+            app.manage(vision_capture.clone());
+
+            // Create Input Controller (Phase 2: Active Automation)
+            let privacy_settings = crate::config::privacy::PrivacySettings::load();
+            let input_controller = Arc::new(crate::input::InputController::new(
+                privacy_settings.autonomy_level,
+                privacy_settings.clone(),
+            ));
+            app.manage(input_controller.clone());
+
+            // Create Operator Agent (Phase 2: The "Hands")
+            let operator = Arc::new(crate::agents::OperatorAgent::new(
+                vision_capture.clone(),
+                input_controller.clone(),
+                privacy_settings,
+            ));
+            app.manage(operator.clone());
+
             // Create Orchestrator with shared memory (uses AI router)
             match crate::agents::AgentOrchestrator::new(
                 ai_router.clone(),
                 shared_ltm.clone(),
                 shared_session.clone(),
+                operator.clone(),
             ) {
                 Ok(orchestrator) => {
                     app.manage(Arc::new(orchestrator));
@@ -1003,6 +1028,7 @@ pub fn run() {
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,
             ipc::quick_ask,
+            ipc::request_assistance,
             // Integrations: calendar + notes + email
             integrations::integrations::get_calendar_settings,
             integrations::integrations::update_calendar_settings,

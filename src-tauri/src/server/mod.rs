@@ -5,33 +5,24 @@
 //! unique companion features.
 
 pub mod api;
-pub mod websocket;
 pub mod auth;
 pub mod state;
+pub mod websocket;
 
-use std::net::SocketAddr;
-use std::sync::Arc;
 use axum::{
     routing::{get, post},
     Router,
 };
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
-use crate::server::state::ServerState;
 use crate::server::api::{
-    execute_task,
-    get_status,
-    get_workflows,
-    start_recording,
-    stop_recording,
-    execute_workflow,
-    get_agents,
-    get_memory,
-    get_pending_actions,
-    approve_action,
-    deny_action,
+    approve_action, deny_action, execute_task, execute_workflow, get_agents, get_memory,
+    get_pending_actions, get_status, get_workflows, start_recording, stop_recording,
 };
+use crate::server::state::ServerState;
 use crate::server::websocket::ws_handler;
 
 // Re-export ServerConfig from config module
@@ -45,9 +36,14 @@ pub struct GhostServer {
 
 impl GhostServer {
     /// Create a new server instance
-    pub fn new(config: ServerConfig) -> Self {
-        let state = Arc::new(RwLock::new(ServerState::new()));
-        
+    pub fn new(
+        config: ServerConfig,
+        orchestrator: Option<Arc<crate::agents::AgentOrchestrator>>,
+    ) -> Self {
+        let mut state_data = ServerState::new();
+        state_data.orchestrator = orchestrator;
+        let state = Arc::new(RwLock::new(state_data));
+
         Self { config, state }
     }
 
@@ -63,17 +59,19 @@ impl GhostServer {
         let app = self.build_router().await?;
 
         // Start server
-        let listener = tokio::net::TcpListener::bind(addr).await
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to bind: {}", e))?;
-        
+
         info!("OS-Ghost server listening on {}", addr);
         info!("API endpoints available at http://{}/api/v1", addr);
-        
+
         if self.config.enable_websocket {
             info!("WebSocket endpoint available at ws://{}/ws", addr);
         }
 
-        axum::serve(listener, app).await
+        axum::serve(listener, app)
+            .await
             .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
 
         Ok(())
@@ -82,7 +80,7 @@ impl GhostServer {
     /// Build the Axum router
     async fn build_router(&self) -> anyhow::Result<Router> {
         let state = self.state.clone();
-        
+
         // CORS middleware
         let cors = if self.config.enable_cors {
             tower_http::cors::CorsLayer::permissive()
@@ -138,7 +136,7 @@ async fn health_handler(
     axum::extract::State(state): axum::extract::State<Arc<RwLock<ServerState>>>,
 ) -> impl axum::response::IntoResponse {
     let state = state.read().await;
-    
+
     axum::Json(serde_json::json!({
         "status": "healthy",
         "version": env!("CARGO_PKG_VERSION"),

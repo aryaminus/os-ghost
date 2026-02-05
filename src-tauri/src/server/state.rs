@@ -7,11 +7,13 @@
 //! - Memory entries and statistics
 //! - Connection status
 
+use crate::agents::AgentOrchestrator;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Server runtime state
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerState {
     /// Whether the server is connected to AI providers
     pub connected: bool,
@@ -27,6 +29,9 @@ pub struct ServerState {
     pub start_time: chrono::DateTime<chrono::Utc>,
     /// API configuration
     pub api_config: ApiConfig,
+    /// Reference to the Agent Orchestrator (for task execution)
+    #[serde(skip)]
+    pub orchestrator: Option<Arc<AgentOrchestrator>>,
 }
 
 impl ServerState {
@@ -40,6 +45,7 @@ impl ServerState {
             memory_entries: 0,
             start_time: chrono::Utc::now(),
             api_config: ApiConfig::default(),
+            orchestrator: None,
         }
     }
 

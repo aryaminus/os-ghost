@@ -136,7 +136,10 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
         .or_else(|| session_state.as_ref().map(|s| s.current_url.clone()))
         .filter(|url| !url.is_empty());
 
-    let last_screenshot_at = session_state.as_ref().map(|s| s.last_screenshot_at).filter(|v| *v > 0);
+    let last_screenshot_at = session_state
+        .as_ref()
+        .map(|s| s.last_screenshot_at)
+        .filter(|v| *v > 0);
 
     SystemStatus {
         chrome_path,
@@ -158,7 +161,9 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
         extension_version: status_snapshot
             .as_ref()
             .and_then(|s| s.extension_version.clone()),
-        extension_id: status_snapshot.as_ref().and_then(|s| s.extension_id.clone()),
+        extension_id: status_snapshot
+            .as_ref()
+            .and_then(|s| s.extension_id.clone()),
         extension_capabilities: status_snapshot
             .as_ref()
             .and_then(|s| s.extension_capabilities.clone()),
@@ -683,6 +688,18 @@ pub async fn quick_ask(
         .map_err(|e| e.to_string())
 }
 
+/// Request assistance (activates "Help Me" workflow)
+#[tauri::command]
+pub async fn request_assistance(
+    prompt: String,
+    orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
+) -> Result<String, String> {
+    orchestrator
+        .handle_assistance_request(prompt)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ============================================================================
 // Original IPC Commands
 // ============================================================================
@@ -712,9 +729,7 @@ pub fn trigger_browser_effect(
 
 /// Send a ping to the browser extension
 #[tauri::command]
-pub fn request_extension_ping(
-    effect_queue: State<'_, Arc<EffectQueue>>,
-) -> Result<(), String> {
+pub fn request_extension_ping(effect_queue: State<'_, Arc<EffectQueue>>) -> Result<(), String> {
     let msg = EffectMessage {
         action: "ping".to_string(),
         effect: None,
@@ -1550,9 +1565,9 @@ pub async fn get_model_capabilities(
     let provider = ai_router.active_provider();
     let has_gemini = ai_router.has_gemini();
     let has_ollama = ai_router.has_ollama();
-    
+
     let mut warnings = Vec::new();
-    
+
     // Determine capabilities based on provider
     let (has_vision, has_tool_calling, context_window) = match provider {
         crate::ai::ai_provider::ProviderType::Gemini => {
@@ -1563,16 +1578,21 @@ pub async fn get_model_capabilities(
             // Ollama capabilities depend on model - check vision model availability
             let vision_available = ai_router.has_ollama(); // Simplified check
             if !vision_available {
-                warnings.push("Ollama vision model not detected. Run: ollama pull llama3.2-vision".to_string());
+                warnings.push(
+                    "Ollama vision model not detected. Run: ollama pull llama3.2-vision"
+                        .to_string(),
+                );
             }
             (vision_available, false, 8192) // Most Ollama models have smaller context
         }
         crate::ai::ai_provider::ProviderType::None => {
-            warnings.push("No AI provider available. Configure Gemini API key or start Ollama.".to_string());
+            warnings.push(
+                "No AI provider available. Configure Gemini API key or start Ollama.".to_string(),
+            );
             (false, false, 0)
         }
     };
-    
+
     // Add warnings for degraded functionality
     if !has_gemini && has_ollama {
         warnings.push("Using local Ollama only. Some features may be limited.".to_string());
@@ -1581,9 +1601,12 @@ pub async fn get_model_capabilities(
         warnings.push("Tool calling not available with current provider.".to_string());
     }
     if context_window < 32000 {
-        warnings.push(format!("Context window is {}k tokens. Complex puzzles may be affected.", context_window / 1000));
+        warnings.push(format!(
+            "Context window is {}k tokens. Complex puzzles may be affected.",
+            context_window / 1000
+        ));
     }
-    
+
     Ok(ModelCapabilities {
         provider: provider.to_string(),
         has_vision,
@@ -1610,19 +1633,17 @@ pub struct TokenUsage {
 
 /// Get token usage for cost visibility (P2)
 #[tauri::command]
-pub fn get_token_usage(
-    ai_router: State<'_, Arc<SmartAiRouter>>,
-) -> TokenUsage {
+pub fn get_token_usage(ai_router: State<'_, Arc<SmartAiRouter>>) -> TokenUsage {
     let (gemini_calls, ollama_calls) = ai_router.get_call_counts();
-    
+
     // Rough estimate: average 500 tokens per call (250 input + 250 output)
     let estimated_gemini_tokens = gemini_calls * 500;
-    
+
     // Gemini 2.0 Flash pricing (as of 2024):
     // Input: $0.075 per 1M tokens, Output: $0.30 per 1M tokens
     // Blended average: ~$0.19 per 1M tokens
     let estimated_cost_usd = (estimated_gemini_tokens as f64 / 1_000_000.0) * 0.19;
-    
+
     TokenUsage {
         gemini_calls,
         ollama_calls,
@@ -1633,9 +1654,7 @@ pub fn get_token_usage(
 
 /// Reset token usage counters (start of new session)
 #[tauri::command]
-pub fn reset_token_usage(
-    ai_router: State<'_, Arc<SmartAiRouter>>,
-) {
+pub fn reset_token_usage(ai_router: State<'_, Arc<SmartAiRouter>>) {
     ai_router.reset_call_counts();
 }
 
@@ -1663,17 +1682,14 @@ pub struct AgentPollStatus {
 /// Unified polling endpoint for agent status
 /// Frontend should call this once every ~1.5s instead of multiple intervals
 #[tauri::command]
-pub fn poll_agent_status(
-    ai_router: State<'_, Arc<SmartAiRouter>>,
-) -> AgentPollStatus {
+pub fn poll_agent_status(ai_router: State<'_, Arc<SmartAiRouter>>) -> AgentPollStatus {
     // Get pending actions
     crate::actions::ACTION_QUEUE.cleanup_expired();
     let pending_actions = crate::actions::ACTION_QUEUE.get_pending();
-    
+
     // Get action preview
-    let action_preview = action_preview::get_preview_manager()
-        .and_then(|m| m.get_active_preview());
-    
+    let action_preview = action_preview::get_preview_manager().and_then(|m| m.get_active_preview());
+
     // Get rollback status
     let rollback_status = crate::actions::rollback::get_rollback_manager()
         .map(|m| m.get_status())
@@ -1685,7 +1701,7 @@ pub fn poll_agent_status(
             stack_size: 0,
             recent_actions: vec![],
         });
-    
+
     // Get token usage
     let (gemini_calls, ollama_calls) = ai_router.get_call_counts();
     let estimated_gemini_tokens = gemini_calls * 500;
@@ -1696,13 +1712,13 @@ pub fn poll_agent_status(
         estimated_gemini_tokens,
         estimated_cost_usd,
     };
-    
+
     // Get timestamp
     let timestamp_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    
+
     AgentPollStatus {
         pending_actions,
         action_preview,
@@ -1716,8 +1732,11 @@ pub fn poll_agent_status(
 // Workflow Recording & Replay Commands (Phase 3)
 // ============================================================================
 
-use crate::workflow::{WorkflowRecorder, WorkflowStore, WorkflowReplayer, RecordedWorkflow, ReplayResult, RecordingProgress};
 use crate::config::privacy::AutonomyLevel;
+use crate::workflow::{
+    RecordedWorkflow, RecordingProgress, ReplayResult, WorkflowRecorder, WorkflowReplayer,
+    WorkflowStore,
+};
 use std::sync::Mutex;
 
 /// Global workflow store (lazy initialization)
@@ -1735,9 +1754,9 @@ pub fn start_workflow_recording(
     start_url: String,
 ) -> Result<String, String> {
     let recorder = WorkflowRecorder::new(std::sync::Arc::new(
-        crate::capture::vision::VisionCapture::new(None)
+        crate::capture::vision::VisionCapture::new(None),
     ));
-    
+
     recorder.start_recording(name, description, start_url)
 }
 
@@ -1745,15 +1764,15 @@ pub fn start_workflow_recording(
 #[tauri::command]
 pub fn stop_workflow_recording() -> Result<RecordedWorkflow, String> {
     let recorder = WorkflowRecorder::new(std::sync::Arc::new(
-        crate::capture::vision::VisionCapture::new(None)
+        crate::capture::vision::VisionCapture::new(None),
     ));
-    
+
     let workflow = recorder.stop_recording()?;
-    
+
     // Save to store
     let store = get_workflow_store();
     store.save(workflow.clone());
-    
+
     Ok(workflow)
 }
 
@@ -1761,9 +1780,9 @@ pub fn stop_workflow_recording() -> Result<RecordedWorkflow, String> {
 #[tauri::command]
 pub fn cancel_workflow_recording() {
     let recorder = WorkflowRecorder::new(std::sync::Arc::new(
-        crate::capture::vision::VisionCapture::new(None)
+        crate::capture::vision::VisionCapture::new(None),
     ));
-    
+
     recorder.cancel_recording();
 }
 
@@ -1771,9 +1790,9 @@ pub fn cancel_workflow_recording() {
 #[tauri::command]
 pub fn get_recording_progress() -> Option<RecordingProgress> {
     let recorder = WorkflowRecorder::new(std::sync::Arc::new(
-        crate::capture::vision::VisionCapture::new(None)
+        crate::capture::vision::VisionCapture::new(None),
     ));
-    
+
     recorder.get_progress()
 }
 
@@ -1784,22 +1803,19 @@ pub fn record_workflow_click(
     coordinates: Option<(f32, f32)>,
 ) -> Result<(), String> {
     let recorder = WorkflowRecorder::new(std::sync::Arc::new(
-        crate::capture::vision::VisionCapture::new(None)
+        crate::capture::vision::VisionCapture::new(None),
     ));
-    
+
     recorder.record_click(element_description, coordinates)
 }
 
 /// Record a fill action
 #[tauri::command]
-pub fn record_workflow_fill(
-    field_description: String,
-    value: String,
-) -> Result<(), String> {
+pub fn record_workflow_fill(field_description: String, value: String) -> Result<(), String> {
     let recorder = WorkflowRecorder::new(std::sync::Arc::new(
-        crate::capture::vision::VisionCapture::new(None)
+        crate::capture::vision::VisionCapture::new(None),
     ));
-    
+
     recorder.record_fill(field_description, value)
 }
 
@@ -1807,9 +1823,9 @@ pub fn record_workflow_fill(
 #[tauri::command]
 pub fn record_workflow_navigation(url: String) -> Result<(), String> {
     let recorder = WorkflowRecorder::new(std::sync::Arc::new(
-        crate::capture::vision::VisionCapture::new(None)
+        crate::capture::vision::VisionCapture::new(None),
     ));
-    
+
     recorder.record_navigation(url)
 }
 
@@ -1841,10 +1857,11 @@ pub async fn execute_workflow(
     autonomy_level: String,
 ) -> Result<ReplayResult, String> {
     let store = get_workflow_store();
-    
-    let workflow = store.get(&workflow_id)
+
+    let workflow = store
+        .get(&workflow_id)
         .ok_or_else(|| "Workflow not found".to_string())?;
-    
+
     let autonomy = match autonomy_level.as_str() {
         "observer" => AutonomyLevel::Observer,
         "suggester" => AutonomyLevel::Suggester,
@@ -1852,23 +1869,21 @@ pub async fn execute_workflow(
         "autonomous" => AutonomyLevel::Autonomous,
         _ => AutonomyLevel::Supervised,
     };
-    
+
     let mut replayer = WorkflowReplayer::new(
         crate::config::privacy::PrivacySettings::load(),
         autonomy,
         None,
     );
-    
-    let result = replayer.replay(&workflow).await
+
+    let result = replayer
+        .replay(&workflow)
+        .await
         .map_err(|e| format!("Replay failed: {}", e))?;
-    
+
     // Update stats
-    store.record_execution(
-        &workflow_id,
-        result.success,
-        result.duration_secs,
-    );
-    
+    store.record_execution(&workflow_id, result.success, result.duration_secs);
+
     Ok(result)
 }
 
