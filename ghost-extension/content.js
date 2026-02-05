@@ -583,6 +583,267 @@ function extractContentWhenIdle(callback) {
 	}, { timeout: 2000 }); // Max 2s wait
 }
 
+// ============================================================================
+// Visual Automation Helpers (Phase 1-3)
+// ============================================================================
+
+/** Highlight element at coordinates with ghostly glow effect */
+function highlightElementAt(x, y, description) {
+	const element = document.elementFromPoint(x, y);
+	if (element) {
+		highlightElement(element, description);
+	}
+}
+
+/** Highlight element with visual feedback */
+function highlightElement(element, description) {
+	// Store original styles
+	const originalOutline = element.style.outline;
+	const originalBoxShadow = element.style.boxShadow;
+	const originalTransition = element.style.transition;
+	
+	// Apply ghostly highlight
+	element.style.transition = "all 0.3s ease";
+	element.style.outline = "3px solid #4ade80";
+	element.style.boxShadow = "0 0 20px rgba(74, 222, 128, 0.6), 0 0 40px rgba(74, 222, 128, 0.3)";
+	element.style.position = "relative";
+	element.style.zIndex = "999999";
+	
+	// Add label
+	const label = document.createElement("div");
+	label.textContent = description;
+	label.style.cssText = `
+		position: absolute;
+		top: -30px;
+		left: 0;
+		background: rgba(0, 0, 0, 0.8);
+		color: #4ade80;
+		padding: 4px 8px;
+		border-radius: 4px;
+		font-size: 12px;
+		font-family: monospace;
+		z-index: 1000000;
+		pointer-events: none;
+		white-space: nowrap;
+	`;
+	label.className = "os-ghost-highlight-label";
+	element.appendChild(label);
+	
+	// Store reference for cleanup
+	element.dataset.ghostHighlighted = "true";
+	
+	// Auto-remove after 5 seconds
+	setTimeout(() => {
+		clearElementHighlight(element);
+	}, 5000);
+}
+
+/** Clear highlight from element */
+function clearElementHighlight(element) {
+	if (element.dataset.ghostHighlighted) {
+		element.style.outline = "";
+		element.style.boxShadow = "";
+		element.style.transition = "";
+		element.style.zIndex = "";
+		delete element.dataset.ghostHighlighted;
+		
+		// Remove label
+		const label = element.querySelector(".os-ghost-highlight-label");
+		if (label) {
+			label.remove();
+		}
+	}
+}
+
+/** Clear all element highlights */
+function clearElementHighlights() {
+	document.querySelectorAll("[data-ghost-highlighted='true']").forEach(clearElementHighlight);
+}
+
+// ============================================================================
+// Workflow Recording (Phase 3)
+// ============================================================================
+
+let recordingMode = false;
+let recordedActions = [];
+
+/** Start recording user actions */
+function startRecording() {
+	recordingMode = true;
+	recordedActions = [];
+	
+	// Attach recording listeners
+	document.addEventListener('click', recordClick, true);
+	document.addEventListener('input', recordInput, true);
+	document.addEventListener('keydown', recordKeyDown, true);
+	document.addEventListener('submit', recordSubmit, true);
+	
+	// Visual indicator
+	showRecordingIndicator();
+	
+	log("Started recording workflow");
+}
+
+/** Stop recording user actions */
+function stopRecording() {
+	recordingMode = false;
+	
+	// Remove listeners
+	document.removeEventListener('click', recordClick, true);
+	document.removeEventListener('input', recordInput, true);
+	document.removeEventListener('keydown', recordKeyDown, true);
+	document.removeEventListener('submit', recordSubmit, true);
+	
+	// Remove indicator
+	hideRecordingIndicator();
+	
+	log("Stopped recording workflow, captured", recordedActions.length, "actions");
+	
+	return recordedActions;
+}
+
+/** Record click action */
+function recordClick(e) {
+	if (!recordingMode) return;
+	
+	const rect = e.target.getBoundingClientRect();
+	const centerX = rect.left + rect.width / 2;
+	const centerY = rect.top + rect.height / 2;
+	
+	// Normalize coordinates (0.0-1.0)
+	const normalizedX = centerX / window.innerWidth;
+	const normalizedY = centerY / window.innerHeight;
+	
+	recordedActions.push({
+		type: 'click',
+		timestamp: Date.now(),
+		coordinates: { x: normalizedX, y: normalizedY },
+		element: {
+			tagName: e.target.tagName,
+			id: e.target.id,
+			className: e.target.className,
+			text: e.target.textContent?.substring(0, 50)
+		}
+	});
+	
+	log("Recorded click at", normalizedX.toFixed(3), normalizedY.toFixed(3));
+}
+
+/** Record input action */
+function recordInput(e) {
+	if (!recordingMode) return;
+	
+	// Don't record password fields
+	if (e.target.type === 'password') {
+		recordedActions.push({
+			type: 'fill',
+			timestamp: Date.now(),
+			field: e.target.name || e.target.id || e.target.placeholder?.substring(0, 20),
+			value: '[PASSWORD]', // Never record actual passwords
+			element: {
+				tagName: e.target.tagName,
+				type: e.target.type
+			}
+		});
+	} else {
+		// Mask other values for privacy
+		const value = e.target.value;
+		const maskedValue = value ? value.substring(0, 3) + '***' : '';
+		
+		recordedActions.push({
+			type: 'fill',
+			timestamp: Date.now(),
+			field: e.target.name || e.target.id || e.target.placeholder?.substring(0, 20),
+			value: maskedValue,
+			element: {
+				tagName: e.target.tagName,
+				type: e.target.type
+			}
+		});
+	}
+}
+
+/** Record keyboard action */
+function recordKeyDown(e) {
+	if (!recordingMode) return;
+	
+	// Only record special keys (Enter, Tab, Escape)
+	if (['Enter', 'Tab', 'Escape'].includes(e.key)) {
+		recordedActions.push({
+			type: 'keypress',
+			timestamp: Date.now(),
+			key: e.key,
+			modifiers: []
+		});
+	}
+}
+
+/** Record form submission */
+function recordSubmit(e) {
+	if (!recordingMode) return;
+	
+	recordedActions.push({
+		type: 'submit',
+		timestamp: Date.now(),
+		formId: e.target.id,
+		formAction: e.target.action
+	});
+}
+
+/** Show recording indicator */
+function showRecordingIndicator() {
+	const indicator = document.createElement("div");
+	indicator.id = "os-ghost-recording-indicator";
+	indicator.style.cssText = `
+		position: fixed;
+		top: 10px;
+		right: 10px;
+		background: rgba(239, 68, 68, 0.9);
+		color: white;
+		padding: 8px 16px;
+		border-radius: 4px;
+		font-family: monospace;
+		font-size: 14px;
+		z-index: 2147483647;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+	`;
+	
+	// Blinking dot
+	const dot = document.createElement("span");
+	dot.style.cssText = `
+		width: 10px;
+		height: 10px;
+		background: white;
+		border-radius: 50%;
+		animation: pulse 1s infinite;
+	`;
+	
+	// Add pulse animation
+	const style = document.createElement("style");
+	style.textContent = `
+		@keyframes pulse {
+			0%, 100% { opacity: 1; }
+			50% { opacity: 0.3; }
+		}
+	`;
+	document.head.appendChild(style);
+	
+	indicator.appendChild(dot);
+	indicator.appendChild(document.createTextNode("● Recording Workflow"));
+	document.body.appendChild(indicator);
+}
+
+/** Hide recording indicator */
+function hideRecordingIndicator() {
+	const indicator = document.getElementById("os-ghost-recording-indicator");
+	if (indicator) {
+		indicator.remove();
+	}
+}
+
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	switch (message.type) {
@@ -618,6 +879,161 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			sendResponse(content);
 			break;
 
+		// ============================================================================
+		// Visual Automation (Phase 1-3)
+		// ============================================================================
+
+		case "visual_click":
+			// Click at specific coordinates (normalized 0.0-1.0 or pixel)
+			const clickX = message.coordinates ? 
+				(message.coordinates.x <= 1.0 ? message.coordinates.x * window.innerWidth : message.coordinates.x) :
+				window.innerWidth / 2;
+			const clickY = message.coordinates ?
+				(message.coordinates.y <= 1.0 ? message.coordinates.y * window.innerHeight : message.coordinates.y) :
+				window.innerHeight / 2;
+			
+			const clickElement = document.elementFromPoint(clickX, clickY);
+			if (clickElement) {
+				clickElement.click();
+				clickElement.focus();
+				sendResponse({ success: true, element: clickElement.tagName });
+			} else {
+				sendResponse({ success: false, error: "No element at coordinates" });
+			}
+			break;
+
+		case "visual_fill":
+			// Fill form field at coordinates or by selector
+			let fillElement;
+			if (message.selector) {
+				fillElement = document.querySelector(message.selector);
+			} else if (message.coordinates) {
+				const fillX = message.coordinates.x <= 1.0 ? 
+					message.coordinates.x * window.innerWidth : message.coordinates.x;
+				const fillY = message.coordinates.y <= 1.0 ?
+					message.coordinates.y * window.innerHeight : message.coordinates.y;
+				fillElement = document.elementFromPoint(fillX, fillY);
+			}
+			
+			if (fillElement && (fillElement.tagName === 'INPUT' || fillElement.tagName === 'TEXTAREA' || fillElement.isContentEditable)) {
+				// Mask value in logs for privacy
+				const maskedValue = message.value ? message.value.substring(0, 2) + '***' : '';
+				log("Filling field with:", maskedValue);
+				
+				fillElement.value = message.value;
+				fillElement.dispatchEvent(new Event('input', { bubbles: true }));
+				fillElement.dispatchEvent(new Event('change', { bubbles: true }));
+				sendResponse({ success: true, element: fillElement.tagName });
+			} else {
+				sendResponse({ success: false, error: "No input element found" });
+			}
+			break;
+
+		case "visual_scroll":
+			// Scroll page
+			const scrollAmount = message.amount || 500;
+			switch (message.direction) {
+				case "up":
+					window.scrollBy(0, -scrollAmount);
+					break;
+				case "down":
+					window.scrollBy(0, scrollAmount);
+					break;
+				case "left":
+					window.scrollBy(-scrollAmount, 0);
+					break;
+				case "right":
+					window.scrollBy(scrollAmount, 0);
+					break;
+			}
+			sendResponse({ success: true });
+			break;
+
+		case "highlight_element":
+			// Highlight element at coordinates for visual preview
+			if (message.coordinates) {
+				const highlightX = message.coordinates.x <= 1.0 ?
+					message.coordinates.x * window.innerWidth : message.coordinates.x;
+				const highlightY = message.coordinates.y <= 1.0 ?
+					message.coordinates.y * window.innerHeight : message.coordinates.y;
+				
+				highlightElementAt(highlightX, highlightY, message.description || "Element");
+				sendResponse({ success: true });
+			} else if (message.selector) {
+				const el = document.querySelector(message.selector);
+				if (el) {
+					highlightElement(el, message.description || "Element");
+					sendResponse({ success: true });
+				} else {
+					sendResponse({ success: false, error: "Element not found" });
+				}
+			}
+			break;
+
+		case "get_element_info":
+			// Get element information at coordinates
+			if (message.coordinates) {
+				const infoX = message.coordinates.x <= 1.0 ?
+					message.coordinates.x * window.innerWidth : message.coordinates.x;
+				const infoY = message.coordinates.y <= 1.0 ?
+					message.coordinates.y * window.innerHeight : message.coordinates.y;
+				
+				const el = document.elementFromPoint(infoX, infoY);
+				if (el) {
+					const rect = el.getBoundingClientRect();
+					sendResponse({
+						success: true,
+						element: {
+							tagName: el.tagName,
+							id: el.id,
+							className: el.className,
+							text: el.textContent?.substring(0, 100),
+							placeholder: el.placeholder,
+							bounds: {
+								x: rect.left,
+								y: rect.top,
+								width: rect.width,
+								height: rect.height
+							}
+						}
+					});
+				} else {
+					sendResponse({ success: false, error: "No element at coordinates" });
+				}
+			}
+			break;
+
+		case "clear_highlight":
+			// Remove element highlights
+			clearElementHighlights();
+			sendResponse({ success: true });
+			break;
+
+		// ============================================================================
+		// Workflow Recording Commands (Phase 3)
+		// ============================================================================
+
+		case "start_recording":
+			startRecording();
+			sendResponse({ success: true, recording: true });
+			break;
+
+		case "stop_recording":
+			const actions = stopRecording();
+			sendResponse({ 
+				success: true, 
+				recording: false, 
+				actions: actions,
+				actionCount: actions.length
+			});
+			break;
+
+		case "get_recording_status":
+			sendResponse({ 
+				recording: recordingMode, 
+				actionCount: recordedActions.length 
+			});
+			break;
 
 		default:
 			sendResponse({ error: "Unknown message type" });

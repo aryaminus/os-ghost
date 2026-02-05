@@ -448,6 +448,250 @@ function handleNativeMessage(message) {
 			}
 			break;
 
+		// ============================================================================
+		// Visual Automation (Phase 1-3)
+		// ============================================================================
+
+		case "visual_click":
+			// Click at coordinates on active tab
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{
+							type: "visual_click",
+							coordinates: message.coordinates,
+							element_description: message.element_description,
+						},
+						(response) => {
+							const lastError = chrome.runtime.lastError;
+							if (lastError) {
+								warn("visual_click error:", lastError.message);
+							}
+							if (port && response) {
+								port.postMessage({
+									type: "visual_click_result",
+									success: response.success,
+									element: response.element,
+									error: response.error,
+								});
+							}
+						}
+					);
+				}
+			});
+			break;
+
+		case "visual_fill":
+			// Fill form field on active tab
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{
+							type: "visual_fill",
+							selector: message.selector,
+							coordinates: message.coordinates,
+							value: message.value,
+							field_description: message.field_description,
+						},
+						(response) => {
+							const lastError = chrome.runtime.lastError;
+							if (lastError) {
+								warn("visual_fill error:", lastError.message);
+							}
+							if (port && response) {
+								port.postMessage({
+									type: "visual_fill_result",
+									success: response.success,
+									element: response.element,
+									error: response.error,
+								});
+							}
+						}
+					);
+				}
+			});
+			break;
+
+		case "visual_scroll":
+			// Scroll page on active tab
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{
+							type: "visual_scroll",
+							direction: message.direction,
+							amount: message.amount,
+						},
+						(response) => {
+							if (port && response) {
+								port.postMessage({
+									type: "visual_scroll_result",
+									success: response?.success,
+								});
+							}
+						}
+					);
+				}
+			});
+			break;
+
+		case "highlight_element":
+			// Highlight element for preview
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{
+							type: "highlight_element",
+							coordinates: message.coordinates,
+							selector: message.selector,
+							description: message.description,
+						},
+						(response) => {
+							if (port && response) {
+								port.postMessage({
+									type: "highlight_element_result",
+									success: response?.success,
+								});
+							}
+						}
+					);
+				}
+			});
+			break;
+
+		case "get_element_info":
+			// Get element info at coordinates for verification
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{
+							type: "get_element_info",
+							coordinates: message.coordinates,
+						},
+						(response) => {
+							const lastError = chrome.runtime.lastError;
+							if (lastError) {
+								warn("get_element_info error:", lastError.message);
+							}
+							if (port && response) {
+								port.postMessage({
+									type: "element_info_result",
+									success: response.success,
+									element: response.element,
+									error: response.error,
+								});
+							}
+						}
+					);
+				}
+			});
+			break;
+
+		case "clear_highlight":
+			// Remove all element highlights
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{ type: "clear_highlight" },
+						(response) => {
+							if (port) {
+								port.postMessage({
+									type: "clear_highlight_result",
+									success: response?.success,
+								});
+							}
+						}
+					);
+				}
+			});
+			break;
+
+		// ============================================================================
+		// Workflow Recording (Phase 3)
+		// ============================================================================
+
+		case "start_workflow_recording":
+			// Start recording user actions on active tab
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id && tabs[0]?.url?.startsWith("http")) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{ 
+							type: "start_recording",
+							workflowId: message.workflow_id,
+							workflowName: message.workflow_name,
+						},
+						(response) => {
+							if (port && response) {
+								port.postMessage({
+									type: "recording_started",
+									success: response?.success,
+									recording: response?.recording,
+								});
+							}
+						}
+					);
+					
+					// Update badge to show recording
+					chrome.action.setBadgeText({ text: "REC" });
+					chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
+				}
+			});
+			break;
+
+		case "stop_workflow_recording":
+			// Stop recording and return captured actions
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{ type: "stop_recording" },
+						(response) => {
+							// Clear recording badge
+							chrome.action.setBadgeText({ text: "" });
+							
+							if (port && response) {
+								port.postMessage({
+									type: "recording_stopped",
+									success: response?.success,
+									recording: response?.recording,
+									actions: response?.actions,
+									actionCount: response?.actionCount,
+								});
+							}
+						}
+					);
+				}
+			});
+			break;
+
+		case "get_recording_status":
+			// Check if currently recording and how many actions captured
+			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+				if (tabs[0]?.id) {
+					chrome.tabs.sendMessage(
+						tabs[0].id,
+						{ type: "get_recording_status" },
+						(response) => {
+							if (port && response) {
+								port.postMessage({
+									type: "recording_status",
+									recording: response?.recording,
+									actionCount: response?.actionCount,
+								});
+							}
+						}
+					);
+				}
+			});
+			break;
+
 		case "acknowledged":
 			// Native app acknowledged our message
 			log("Message acknowledged");
