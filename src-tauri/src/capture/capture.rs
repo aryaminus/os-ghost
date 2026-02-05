@@ -95,6 +95,29 @@ pub fn capture_primary_monitor_raw() -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
+/// Capture the primary monitor's screen and return as base64-encoded image, resized to max dimensions
+pub fn capture_primary_monitor_resized(max_width: u32, max_height: u32) -> Result<String> {
+    let primary = get_primary_screen()?;
+    let image = primary.capture()?; // Returns screenshots::Image aka ImageBuffer
+
+    // Convert directly to DynamicImage
+    // Note: screenshots returns an ImageBuffer<Rgba<u8>, Vec<u8>> which is compatible
+    let dynamic_image = screenshots::image::DynamicImage::ImageRgba8(image);
+
+    // Resize using simple filter (Triangle for balance)
+    let resized = dynamic_image.resize(
+        max_width,
+        max_height,
+        screenshots::image::imageops::FilterType::Triangle,
+    );
+
+    // Write to JPEG
+    let mut buffer = Vec::new();
+    resized.write_to(&mut Cursor::new(&mut buffer), resolve_image_format())?;
+
+    Ok(general_purpose::STANDARD.encode(&buffer))
+}
+
 /// Capture a specific region of the screen
 pub fn capture_region(x: i32, y: i32, width: u32, height: u32) -> Result<String> {
     let primary = get_primary_screen()?;

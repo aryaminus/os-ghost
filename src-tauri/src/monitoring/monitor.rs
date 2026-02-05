@@ -10,9 +10,9 @@
 
 use crate::ai::ai_provider::SmartAiRouter;
 use crate::capture::capture;
+use crate::core::utils::{clean_json_response, current_timestamp};
 use crate::data::events_bus::{record_event, EventKind, EventPriority};
 use crate::memory::{ActivityEntry, LongTermMemory, SessionMemory};
-use crate::core::utils::{clean_json_response, current_timestamp};
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -84,6 +84,8 @@ struct MonitorState {
     cached_context: Option<ContextCache>,
     /// When the cache was last updated
     cache_timestamp: u64,
+    /// Adaptive backoff duration in seconds (for handling AI timeouts)
+    backoff_secs: u64,
 }
 
 /// Cached context to avoid rebuilding strings every iteration
@@ -101,6 +103,7 @@ impl MonitorState {
             consecutive_idle_count: 0,
             cached_context: None,
             cache_timestamp: 0,
+            backoff_secs: 0,
         }
     }
 
@@ -111,10 +114,25 @@ impl MonitorState {
             now.saturating_sub(self.cache_timestamp) < 30
         }
     }
+
+    /// Reset backoff on success
+    fn reset_backoff(&mut self) {
+        self.backoff_secs = 0;
+    }
+
+    /// Increase backoff on failure (exponential, max 120s)
+    fn increase_backoff(&mut self) {
+        if self.backoff_secs == 0 {
+            self.backoff_secs = 10;
+        } else {
+            self.backoff_secs = (self.backoff_secs * 2).min(120);
+        }
+    }
 }
 
 /// Simple hash function for screenshot bytes (fast, non-cryptographic)
 fn hash_bytes(data: &[u8]) -> u64 {
+    // ... existing hash_bytes ...
     // Using a simple FNV-like hash for speed
     let mut hash: u64 = 0xcbf29ce484222325;
     for byte in data.iter().step_by(4) {
@@ -139,10 +157,22 @@ pub async fn start_monitor_loop(
     loop {
         let settings = crate::config::system_settings::SystemSettings::load();
 
+        // Calculate sleep duration (base + backoff)
+        let sleep_duration = if state.backoff_secs > 0 {
+            tracing::warn!(
+                "Monitor: Backing off for {}s due to previous errors/timeouts",
+                state.backoff_secs
+            );
+            settings.monitor_interval_secs + state.backoff_secs
+        } else {
+            settings.monitor_interval_secs
+        };
+
         // Wait for next tick
-        tokio::time::sleep(Duration::from_secs(settings.monitor_interval_secs)).await;
+        tokio::time::sleep(Duration::from_secs(sleep_duration)).await;
 
         if !settings.monitor_enabled {
+            // ... existing checks ...
             tracing::debug!("Monitor: disabled in settings; skipping");
             continue;
         }
@@ -183,9 +213,7 @@ pub async fn start_monitor_loop(
             }
         };
 
-        if settings.monitor_only_companion
-            && mode != Some(crate::memory::AppMode::Companion)
-        {
+        if settings.monitor_only_companion && mode != Some(crate::memory::AppMode::Companion) {
             tracing::debug!("Monitor: not in companion mode; skipping");
             continue;
         }
@@ -213,19 +241,29 @@ pub async fn start_monitor_loop(
         // Check analysis cooldown using try_lock
         let last_analysis_at = {
             match session.try_lock() {
-                Ok(sess_guard) => sess_guard.load().ok().map(|s| s.last_analysis_at).unwrap_or(0),
+                Ok(sess_guard) => sess_guard
+                    .load()
+                    .ok()
+                    .map(|s| s.last_analysis_at)
+                    .unwrap_or(0),
                 Err(_) => 0, // Continue without cooldown check if lock contested
             }
         };
 
-        let analysis_cooldown = settings.analysis_cooldown_secs.max(settings.monitor_interval_secs);
+        let analysis_cooldown = settings
+            .analysis_cooldown_secs
+            .max(settings.monitor_interval_secs);
         if last_analysis_at > 0 && now.saturating_sub(last_analysis_at) < analysis_cooldown {
             tracing::debug!("Monitor: analysis cooldown active; skipping");
             continue;
         }
 
-        // 1. Capture Screen with deduplication
-        let screenshot_result = tokio::task::spawn_blocking(capture::capture_primary_monitor).await;
+        // 1. Capture Screen with deduplication (Resize to max 512px for faster local AI performance)
+        let screenshot_result = tokio::task::spawn_blocking(|| {
+            // Resize to 512x512 max - optimal for Ollama vision performance vs context
+            capture::capture_primary_monitor_resized(512, 512)
+        })
+        .await;
 
         let (base64_image, screenshot_hash) = match screenshot_result {
             Ok(Ok(img)) => {
@@ -273,7 +311,11 @@ pub async fn start_monitor_loop(
                     .iter()
                     .take(20) // Limit to 20 facts to reduce prompt size
                     .map(|(k, v)| {
-                        format!("{}: {}", k, crate::config::privacy::maybe_redact_pii(v, privacy.redact_pii))
+                        format!(
+                            "{}: {}",
+                            k,
+                            crate::config::privacy::maybe_redact_pii(v, privacy.redact_pii)
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join(", "),
@@ -290,11 +332,19 @@ pub async fn start_monitor_loop(
                         .get_recent_activity(settings.monitor_recent_activity_count.min(10)) // Cap at 10
                         .unwrap_or_default()
                         .iter()
-                        .map(|a| crate::config::privacy::maybe_redact_pii(&a.description, privacy.redact_pii))
+                        .map(|a| {
+                            crate::config::privacy::maybe_redact_pii(
+                                &a.description,
+                                privacy.redact_pii,
+                            )
+                        })
                         .collect::<Vec<_>>()
                         .join("; ");
                     (
-                        crate::config::privacy::maybe_redact_pii(&state.current_url, privacy.redact_pii),
+                        crate::config::privacy::maybe_redact_pii(
+                            &state.current_url,
+                            privacy.redact_pii,
+                        ),
                         recent,
                     )
                 }
@@ -326,16 +376,29 @@ pub async fn start_monitor_loop(
         let prompt = format!(
             r#"Analyze the screenshot. Context: Facts=[{}], URL=[{}], Recent=[{}]
 Respond in JSON: {{"activity":"brief description","is_idle":bool,"new_fact":string|null,"app_name":string|null,"app_category":"browser|coding|creative|communication|entertainment|productivity|gaming|system|unknown","content_context":string|null,"puzzle_theme":string|null}}"#,
-            if user_facts.is_empty() { "none" } else { &user_facts },
-            if current_url.is_empty() { "none" } else { &current_url },
-            if recent_activities.is_empty() { "none" } else { &recent_activities }
+            if user_facts.is_empty() {
+                "none"
+            } else {
+                &user_facts
+            },
+            if current_url.is_empty() {
+                "none"
+            } else {
+                &current_url
+            },
+            if recent_activities.is_empty() {
+                "none"
+            } else {
+                &recent_activities
+            }
         );
 
-        // AI analysis with timeout to prevent hanging
+        // AI analysis with timeout to prevent hanging (increased to 30s for slower local models)
         let analysis_result = tokio::time::timeout(
-            Duration::from_secs(15),
-            ai_router.analyze_image(&base64_image, &prompt)
-        ).await;
+            Duration::from_secs(30),
+            ai_router.analyze_image(&base64_image, &prompt),
+        )
+        .await;
 
         match analysis_result {
             Ok(Ok(json_str)) => {
@@ -343,6 +406,9 @@ Respond in JSON: {{"activity":"brief description","is_idle":bool,"new_fact":stri
 
                 match serde_json::from_str::<ObservationResult>(clean_json) {
                     Ok(observation) => {
+                        // Success! Reset backoff
+                        state.reset_backoff();
+
                         tracing::debug!("Monitor observed: {:?}", observation);
 
                         let now = current_timestamp();
@@ -355,7 +421,9 @@ Respond in JSON: {{"activity":"brief description","is_idle":bool,"new_fact":stri
                         }
 
                         // Track category patterns (using VecDeque for efficiency)
-                        state.recent_categories.push_back(observation.app_category.clone());
+                        state
+                            .recent_categories
+                            .push_back(observation.app_category.clone());
                         if state.recent_categories.len() > settings.monitor_category_window {
                             state.recent_categories.pop_front();
                         }
@@ -363,7 +431,8 @@ Respond in JSON: {{"activity":"brief description","is_idle":bool,"new_fact":stri
                         // Store facts using try_lock (best effort)
                         if let Some(ref fact) = observation.new_fact {
                             if let Ok(ltm_guard) = long_term.try_lock() {
-                                let _ = ltm_guard.record_fact("last_activity", &observation.activity);
+                                let _ =
+                                    ltm_guard.record_fact("last_activity", &observation.activity);
                                 let _ = ltm_guard.record_fact("last_new_fact", fact);
                                 if let Some(ref app) = observation.app_name {
                                     let _ = ltm_guard.record_fact("last_app", app);
@@ -415,8 +484,17 @@ Respond in JSON: {{"activity":"brief description","is_idle":bool,"new_fact":stri
                             let _ = app.emit("companion_behavior", &b);
 
                             let mut metadata = serde_json::Map::new();
-                            metadata.insert("behavior_type".to_string(), serde_json::Value::String(b.behavior_type.clone()));
-                            metadata.insert("urgency".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(b.urgency as f64).unwrap_or_else(|| serde_json::Number::from(0))));
+                            metadata.insert(
+                                "behavior_type".to_string(),
+                                serde_json::Value::String(b.behavior_type.clone()),
+                            );
+                            metadata.insert(
+                                "urgency".to_string(),
+                                serde_json::Value::Number(
+                                    serde_json::Number::from_f64(b.urgency as f64)
+                                        .unwrap_or_else(|| serde_json::Number::from(0)),
+                                ),
+                            );
                             record_event(
                                 EventKind::Suggestion,
                                 b.suggestion.clone(),
@@ -431,15 +509,28 @@ Respond in JSON: {{"activity":"brief description","is_idle":bool,"new_fact":stri
 
                         // Record observation event
                         let mut metadata = serde_json::Map::new();
-                        metadata.insert("app_category".to_string(), serde_json::to_value(&observation.app_category).unwrap_or_default());
-                        metadata.insert("app_name".to_string(), serde_json::to_value(&observation.app_name).unwrap_or_default());
-                        metadata.insert("content_context".to_string(), serde_json::to_value(&observation.content_context).unwrap_or_default());
+                        metadata.insert(
+                            "app_category".to_string(),
+                            serde_json::to_value(&observation.app_category).unwrap_or_default(),
+                        );
+                        metadata.insert(
+                            "app_name".to_string(),
+                            serde_json::to_value(&observation.app_name).unwrap_or_default(),
+                        );
+                        metadata.insert(
+                            "content_context".to_string(),
+                            serde_json::to_value(&observation.content_context).unwrap_or_default(),
+                        );
                         record_event(
                             EventKind::Observation,
                             observation.activity.clone(),
                             observation.new_fact.clone(),
                             metadata.into_iter().collect(),
-                            if observation.is_idle { EventPriority::Low } else { EventPriority::Normal },
+                            if observation.is_idle {
+                                EventPriority::Low
+                            } else {
+                                EventPriority::Normal
+                            },
                             Some("observation".to_string()),
                             Some(120),
                             Some("monitor".to_string()),
@@ -452,11 +543,18 @@ Respond in JSON: {{"activity":"brief description","is_idle":bool,"new_fact":stri
                             e,
                             snippet
                         );
+                        state.increase_backoff();
                     }
                 }
             }
-            Ok(Err(e)) => tracing::warn!("Monitor analysis failed: {}", e),
-            Err(_) => tracing::warn!("Monitor analysis timed out after 15s"),
+            Ok(Err(e)) => {
+                tracing::warn!("Monitor analysis failed: {}", e);
+                state.increase_backoff();
+            }
+            Err(_) => {
+                tracing::warn!("Monitor analysis timed out after 30s");
+                state.increase_backoff();
+            }
         }
     }
 }

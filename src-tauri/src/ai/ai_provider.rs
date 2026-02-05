@@ -44,7 +44,6 @@ impl std::fmt::Display for ProviderType {
     }
 }
 
-
 /// Circuit breaker recovery time (30 seconds)
 const CIRCUIT_BREAKER_RECOVERY_SECS: u64 = 30;
 
@@ -137,7 +136,6 @@ impl SmartAiRouter {
         }
     }
 
-
     /// Get the current LLM call counts for telemetry
     /// Returns (gemini_calls, ollama_calls)
     pub fn get_call_counts(&self) -> (u64, u64) {
@@ -190,7 +188,8 @@ impl SmartAiRouter {
         // Check Ollama availability
         let ollama_ok = self.ollama.is_available().await;
         self.ollama_available.store(ollama_ok, Ordering::SeqCst);
-        self.ollama_last_check.store(Self::now_secs(), Ordering::SeqCst);
+        self.ollama_last_check
+            .store(Self::now_secs(), Ordering::SeqCst);
 
         if ollama_ok {
             tracing::info!("Ollama server detected and available");
@@ -247,7 +246,8 @@ impl SmartAiRouter {
     pub async fn refresh_ollama_status(&self) {
         let available = self.ollama.is_available().await;
         self.ollama_available.store(available, Ordering::SeqCst);
-        self.ollama_last_check.store(Self::now_secs(), Ordering::SeqCst);
+        self.ollama_last_check
+            .store(Self::now_secs(), Ordering::SeqCst);
     }
 
     /// Check if Gemini circuit breaker is open (should skip Gemini)
@@ -278,7 +278,8 @@ impl SmartAiRouter {
     /// Mark Gemini as failing (after error)
     fn mark_gemini_failing(&self) {
         self.gemini_failing.store(true, Ordering::SeqCst);
-        self.gemini_fail_time.store(Self::now_secs(), Ordering::SeqCst);
+        self.gemini_fail_time
+            .store(Self::now_secs(), Ordering::SeqCst);
     }
 
     /// Choose provider for "light" tasks where cost matters.
@@ -330,7 +331,16 @@ impl SmartAiRouter {
             self.count_ollama_call();
             match self.ollama.analyze_image(base64_image, prompt).await {
                 Ok(res) => return Ok(res),
-                Err(e) => return Err(e),
+                Err(e) => {
+                    // unexpected error (likely connection refused or timeout)
+                    // mark unavailable so we don't spam it, checking periodically
+                    tracing::warn!(
+                        "Ollama analyze_image failed: {}. Marking unavailable for cooldown.",
+                        e
+                    );
+                    self.ollama_available.store(false, Ordering::SeqCst);
+                    return Err(e);
+                }
             }
         }
 
@@ -339,11 +349,18 @@ impl SmartAiRouter {
             self.count_gemini_call();
             match gemini.analyze_image(base64_image, prompt).await {
                 Ok(res) => return Ok(res),
-                Err(e) => return Err(anyhow::anyhow!(AgentError::CircuitOpen(format!("All providers failed. Gemini error: {}", e)))),
+                Err(e) => {
+                    return Err(anyhow::anyhow!(AgentError::CircuitOpen(format!(
+                        "All providers failed. Gemini error: {}",
+                        e
+                    ))))
+                }
             }
         }
 
-        Err(anyhow::anyhow!(AgentError::CircuitOpen("No AI provider available".to_string())))
+        Err(anyhow::anyhow!(AgentError::CircuitOpen(
+            "No AI provider available".to_string()
+        )))
     }
 
     /// Generate text from a prompt (prefers Gemini for quality)
@@ -375,7 +392,11 @@ impl SmartAiRouter {
             self.count_ollama_call();
             match self.ollama.generate_text(prompt).await {
                 Ok(res) => return Ok(res),
-                Err(e) => return Err(e),
+                Err(e) => {
+                    tracing::warn!("Ollama generate_text failed: {}. Marking unavailable.", e);
+                    self.ollama_available.store(false, Ordering::SeqCst);
+                    return Err(e);
+                }
             }
         }
 
@@ -384,11 +405,18 @@ impl SmartAiRouter {
             self.count_gemini_call();
             match gemini.generate_text(prompt).await {
                 Ok(res) => return Ok(res),
-                Err(e) => return Err(anyhow::anyhow!(AgentError::CircuitOpen(format!("All providers failed. Gemini error: {}", e)))),
+                Err(e) => {
+                    return Err(anyhow::anyhow!(AgentError::CircuitOpen(format!(
+                        "All providers failed. Gemini error: {}",
+                        e
+                    ))))
+                }
             }
         }
 
-        Err(anyhow::anyhow!(AgentError::CircuitOpen("No AI provider available".to_string())))
+        Err(anyhow::anyhow!(AgentError::CircuitOpen(
+            "No AI provider available".to_string()
+        )))
     }
 
     /// Generate text from a prompt (prefers Ollama for cost optimization)
@@ -411,7 +439,14 @@ impl SmartAiRouter {
                     Err(e) if has_fallback => {
                         tracing::warn!("Ollama generate_text_light failed, trying Gemini: {}", e);
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        tracing::warn!(
+                            "Ollama generate_text_light failed: {}. Marking unavailable.",
+                            e
+                        );
+                        self.ollama_available.store(false, Ordering::SeqCst);
+                        return Err(e);
+                    }
                 }
 
                 // Fallback to Gemini
@@ -429,7 +464,10 @@ impl SmartAiRouter {
                             return Ok(result);
                         }
                         Err(e) if has_fallback => {
-                            tracing::warn!("Gemini generate_text_light failed, trying Ollama: {}", e);
+                            tracing::warn!(
+                                "Gemini generate_text_light failed, trying Ollama: {}",
+                                e
+                            );
                             self.mark_gemini_failing();
                         }
                         Err(e) => {
@@ -470,7 +508,11 @@ impl SmartAiRouter {
                     Err(e) if has_fallback => {
                         tracing::warn!("Ollama similarity failed, trying Gemini: {}", e);
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        tracing::warn!("Ollama similarity failed: {}. Marking unavailable.", e);
+                        self.ollama_available.store(false, Ordering::SeqCst);
+                        return Err(e);
+                    }
                 }
 
                 // Fallback to Gemini
@@ -529,7 +571,11 @@ impl SmartAiRouter {
                     Err(e) if has_fallback => {
                         tracing::warn!("Ollama dialogue failed, trying Gemini: {}", e);
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        tracing::warn!("Ollama dialogue failed: {}. Marking unavailable.", e);
+                        self.ollama_available.store(false, Ordering::SeqCst);
+                        return Err(e);
+                    }
                 }
 
                 // Fallback to Gemini
@@ -805,13 +851,14 @@ impl SmartAiRouter {
 
     /// Analyze a screenshot and detect visual elements
     /// Returns None if no vision provider available
-    pub async fn analyze_screenshot(&self, image_bytes: &[u8]) -> Result<crate::ai::VisionAnalysis> {
+    pub async fn analyze_screenshot(
+        &self,
+        image_bytes: &[u8],
+    ) -> Result<crate::ai::VisionAnalysis> {
         self.check_rate_limit()?;
-        
+
         match self.get_vision_analyzer() {
-            Some(analyzer) => {
-                analyzer.analyze_screenshot(image_bytes).await
-            }
+            Some(analyzer) => analyzer.analyze_screenshot(image_bytes).await,
             None => Err(anyhow::anyhow!("No vision provider available")),
         }
     }
@@ -824,9 +871,7 @@ impl SmartAiRouter {
         description: &str,
     ) -> Option<crate::ai::VisualElement> {
         match self.get_vision_analyzer() {
-            Some(analyzer) => {
-                analyzer.find_element(image_bytes, description).await
-            }
+            Some(analyzer) => analyzer.find_element(image_bytes, description).await,
             None => {
                 tracing::warn!("Cannot find element: no vision provider available");
                 None

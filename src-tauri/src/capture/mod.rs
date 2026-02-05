@@ -7,7 +7,8 @@ pub mod vision;
 
 // Re-export commonly used types
 pub use capture::{
-    capture_primary_monitor, capture_primary_monitor_raw, capture_screen, CaptureSettings,
+    capture_primary_monitor, capture_primary_monitor_raw, capture_primary_monitor_resized,
+    capture_screen, CaptureSettings,
 };
 pub use change_detection::{ChangeDetectionConfig, ChangeDetector, ChangeResult};
 pub use vision::{AnalyzedScreenshot, ElementMatch, VisionCapture};
