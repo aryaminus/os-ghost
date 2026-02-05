@@ -108,11 +108,13 @@ pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory
     let chrome_path = find_chrome_path();
     let chrome_installed = chrome_path.is_some();
     let runtime = crate::core::utils::runtime_config();
-    let api_key_configured = runtime.has_api_key();
+    let api_key_configured = runtime.has_api_key() || !runtime.get_ollama_url().is_empty();
     let api_key_source = if runtime.is_using_user_key() {
         "user".to_string()
     } else if std::env::var("GEMINI_API_KEY").is_ok() {
         "env".to_string()
+    } else if !runtime.get_ollama_url().is_empty() {
+        "ollama".to_string()
     } else {
         "none".to_string()
     };
@@ -844,10 +846,12 @@ pub async fn verify_screenshot_proof(
         .map_err(|e| format!("Verification failed: {}", e))
 }
 
-/// Check if API key is configured
+/// Check if API key is configured or Ollama is enabled
 #[tauri::command]
 pub fn check_api_key() -> Result<bool, String> {
-    Ok(crate::core::utils::runtime_config().has_api_key())
+    let config = crate::core::utils::runtime_config();
+    // Valid if Gemini key exists OR Ollama is configured
+    Ok(config.has_api_key() || !config.get_ollama_url().is_empty())
 }
 
 /// Get the config file path for storing API key
@@ -1562,6 +1566,9 @@ pub struct ModelCapabilities {
 pub async fn get_model_capabilities(
     ai_router: State<'_, Arc<SmartAiRouter>>,
 ) -> Result<ModelCapabilities, String> {
+    // Refresh Ollama status to ensure we detect late startups
+    ai_router.refresh_ollama_status().await;
+
     let provider = ai_router.active_provider();
     let has_gemini = ai_router.has_gemini();
     let has_ollama = ai_router.has_ollama();
@@ -1595,7 +1602,8 @@ pub async fn get_model_capabilities(
 
     // Add warnings for degraded functionality
     if !has_gemini && has_ollama {
-        warnings.push("Using local Ollama only. Some features may be limited.".to_string());
+        // More positive message for local-only users
+        warnings.push("Local AI Mode (Ollama). Cloud features disabled.".to_string());
     }
     if !has_tool_calling {
         warnings.push("Tool calling not available with current provider.".to_string());
