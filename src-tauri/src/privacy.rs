@@ -4,8 +4,12 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 const PRIVACY_FILE: &str = "privacy_settings.json";
+
+/// Cached privacy settings to avoid repeated file I/O
+static SETTINGS_CACHE: RwLock<Option<Arc<PrivacySettings>>> = RwLock::new(None);
 
 /// Autonomy levels for companion actions
 /// Controls how much the companion can do without user confirmation
@@ -118,27 +122,53 @@ impl Default for PrivacySettings {
 }
 
 impl PrivacySettings {
-    /// Load settings from disk
+    /// Load settings from cache or disk
     pub fn load() -> Self {
-        let path = Self::settings_path();
-        if path.exists() {
-            if let Ok(contents) = fs::read_to_string(&path) {
-                if let Ok(settings) = serde_json::from_str(&contents) {
-                    return settings;
-                }
+        // Try to read from cache first
+        if let Ok(cache) = SETTINGS_CACHE.read() {
+            if let Some(settings) = cache.as_ref() {
+                return (**settings).clone();
             }
         }
-        Self::default()
+
+        // Load from disk
+        let path = Self::settings_path();
+        let settings = if path.exists() {
+            if let Ok(contents) = fs::read_to_string(&path) {
+                if let Ok(settings) = serde_json::from_str(&contents) {
+                    settings
+                } else {
+                    Self::default()
+                }
+            } else {
+                Self::default()
+            }
+        } else {
+            Self::default()
+        };
+
+        // Update cache
+        if let Ok(mut cache) = SETTINGS_CACHE.write() {
+            *cache = Some(Arc::new(settings.clone()));
+        }
+
+        settings
     }
 
-    /// Save settings to disk
+    /// Save settings to disk and update cache
     pub fn save(&self) -> anyhow::Result<()> {
         let path = Self::settings_path();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         let contents = serde_json::to_string_pretty(self)?;
-        fs::write(&path, contents)?;
+        fs::write(&path, &contents)?;
+
+        // Update cache after successful save
+        if let Ok(mut cache) = SETTINGS_CACHE.write() {
+            *cache = Some(Arc::new(self.clone()));
+        }
+
         Ok(())
     }
 

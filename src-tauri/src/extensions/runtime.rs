@@ -9,7 +9,8 @@ use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 
 const EXTENSIONS_DIR: &str = "extensions";
-static mut WATCH_STARTED: bool = false;
+use std::sync::atomic::{AtomicBool, Ordering};
+static WATCH_STARTED: AtomicBool = AtomicBool::new(false);
 static EXTENSION_CACHE: RwLock<Vec<ExtensionStatus>> = RwLock::new(Vec::new());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,8 +169,16 @@ pub async fn execute_extension_tool_internal(
         .find(|t| t.name == tool_name)
         .ok_or_else(|| "Tool not found".to_string())?;
 
-    let mut command = Command::new("sh");
-    command.arg("-c").arg(&tool.command);
+    // Cross-platform shell execution
+    let mut command = if cfg!(target_os = "windows") {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C").arg(&tool.command);
+        cmd
+    } else {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(&tool.command);
+        cmd
+    };
     if let Some(extra) = args {
         command.args(extra);
     }
@@ -330,6 +339,9 @@ pub async fn execute_extension(id: String, args: Option<Vec<String>>) -> Result<
     let entry_str = entry_path.to_string_lossy().to_string();
 
     let mut command = if entry_str.ends_with(".sh") {
+        if cfg!(target_os = "windows") {
+            return Err("Shell scripts are not supported on Windows. Use .bat, .cmd, or .ps1 files instead.".to_string());
+        }
         let mut cmd = Command::new("sh");
         cmd.arg(entry_str);
         cmd
@@ -370,12 +382,10 @@ pub async fn execute_extension(id: String, args: Option<Vec<String>>) -> Result<
 }
 
 fn ensure_watcher() {
-    unsafe {
-        if WATCH_STARTED {
-            return;
-        }
-        WATCH_STARTED = true;
+    if WATCH_STARTED.load(Ordering::SeqCst) {
+        return;
     }
+    WATCH_STARTED.store(true, Ordering::SeqCst);
 
     let root = extensions_root();
     let _ = fs::create_dir_all(&root);

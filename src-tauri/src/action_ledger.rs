@@ -126,33 +126,34 @@ impl ActionLedger {
         let mut guard = entries.lock().await;
         guard.extend(batch.drain(..));
 
-        // Trim to MAX_ENTRIES (keep most recent)
+        // Trim to MAX_ENTRIES (keep most recent) using efficient rotation
         if guard.len() > MAX_ENTRIES {
-            let start = guard.len() - MAX_ENTRIES;
-            *guard = guard.split_off(start);
+            let excess = guard.len() - MAX_ENTRIES;
+            guard.drain(0..excess);
         }
 
-        // Clone for async write
-        let entries_to_save = guard.clone();
-        drop(guard);
-
-        // Async write with compact JSON (not pretty-printed for efficiency)
+        // Serialize directly from guard without cloning - more memory efficient
         let path = ledger_path();
-        let _ = tokio::task::spawn_blocking(move || {
-            if let Some(parent) = path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            // Use compact JSON for storage efficiency (~30% smaller)
-            match serde_json::to_string(&entries_to_save) {
-                Ok(json) => {
+        match serde_json::to_string(&*guard) {
+            Ok(json) => {
+                drop(guard); // Release lock before I/O
+                
+                // Async write with compact JSON (not pretty-printed for efficiency)
+                let _ = tokio::task::spawn_blocking(move || {
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
                     if let Err(e) = std::fs::write(&path, json) {
                         tracing::warn!("Failed to write action ledger: {}", e);
                     }
-                }
-                Err(e) => tracing::warn!("Failed to serialize action ledger: {}", e),
+                })
+                .await;
             }
-        })
-        .await;
+            Err(e) => {
+                drop(guard);
+                tracing::warn!("Failed to serialize action ledger: {}", e);
+            }
+        }
     }
 
     /// Record a new action (non-blocking, sends to channel)
