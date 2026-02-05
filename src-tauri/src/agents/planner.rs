@@ -11,7 +11,7 @@ use super::traits::{
     Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction, PlanningContext,
     SearchStrategy, SubGoal,
 };
-use crate::ai_provider::SmartAiRouter;
+use crate::ai::ai_provider::SmartAiRouter;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -59,7 +59,7 @@ For "difficulty", use 0.0-1.0 where 0.0 is trivial and 1.0 is very hard.
 Generate 2-5 sub_goals depending on complexity."#,
             context.puzzle_clue,
             context.target_pattern,
-            crate::privacy::redact_with_settings(&context.current_url),
+            crate::config::privacy::redact_with_settings(&context.current_url),
             context.proximity * 100.0
         );
 

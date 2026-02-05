@@ -16,11 +16,11 @@
 
 use super::traits::*;
 use super::types::*;
-use crate::action_preview::{VisualPreview, VisualPreviewType};
-use crate::actions::{ActionRiskLevel, PendingAction, ACTION_QUEUE};
-use crate::action_ledger::record_action_created;
-use crate::permissions::{evaluate_action, PermissionDecision};
-use crate::privacy::PrivacySettings;
+use crate::actions::action_preview::{VisualPreview, VisualPreviewType};
+use crate::actions::actions::{ActionRiskLevel, PendingAction, ACTION_QUEUE};
+use crate::actions::action_ledger::record_action_created;
+use crate::config::permissions::{evaluate_action, PermissionDecision};
+use crate::config::privacy::PrivacySettings;
 use async_trait::async_trait;
 use serde_json::json;
 use std::collections::HashMap;
@@ -82,7 +82,7 @@ impl BrowserState {
             page.timestamp = timestamp;
         }
 
-        if let Some(rollback) = crate::rollback::get_rollback_manager() {
+        if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
             let title_opt = if title.is_empty() { None } else { Some(title.as_str()) };
             rollback.update_page_state(&url, title_opt);
         }
@@ -724,15 +724,15 @@ impl McpServer for BrowserMcpServer {
                     // Preview policy control
                     let preview_policy = privacy.preview_policy;
                     let should_preview = match preview_policy {
-                        crate::privacy::PreviewPolicy::Always => true,
-                        crate::privacy::PreviewPolicy::HighRisk => risk_level.is_high_risk(),
-                        crate::privacy::PreviewPolicy::Off => false,
+                        crate::config::privacy::PreviewPolicy::Always => true,
+                        crate::config::privacy::PreviewPolicy::HighRisk => risk_level.is_high_risk(),
+                        crate::config::privacy::PreviewPolicy::Off => false,
                     };
 
                     // Check if confirmation is required
                     let decision = evaluate_action(privacy.autonomy_level, risk_level.is_high_risk());
                     if matches!(decision, PermissionDecision::RequireConfirmation)
-                        || matches!(preview_policy, crate::privacy::PreviewPolicy::Always)
+                        || matches!(preview_policy, crate::config::privacy::PreviewPolicy::Always)
                     {
                         // Get target description for the action
                         let target = match descriptor.name.as_str() {
@@ -775,7 +775,7 @@ impl McpServer for BrowserMcpServer {
 
                         // Create an action preview for richer UX (if manager available)
                         let preview_id = if should_preview {
-                            if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+                            if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
                                 let preview = manager.start_preview(&pending);
 
                             match descriptor.name.as_str() {
@@ -859,7 +859,7 @@ impl McpServer for BrowserMcpServer {
                 match tool.execute(arguments.clone()).await {
                     Ok(data) => {
                         if descriptor.is_side_effect {
-                            if let Some(rollback) = crate::rollback::get_rollback_manager() {
+                            if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
                                 match descriptor.name.as_str() {
                                     "browser.navigate" => {
                                         if let Some(url) = arguments.get("url").and_then(|v| v.as_str()) {

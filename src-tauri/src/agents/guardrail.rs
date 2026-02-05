@@ -8,12 +8,12 @@
 //! - Semantic PII Detection: LLM-based PII detection beyond regex
 
 use super::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
-use crate::ai_provider::SmartAiRouter;
+use crate::ai::ai_provider::SmartAiRouter;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use crate::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
+use crate::data::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 
 /// Blocked patterns that should never appear in outputs (JAILBREAKS / HARMFUL)
 const BLOCKED_PATTERNS: &[&str] = &[
@@ -635,7 +635,7 @@ mod tests {
     fn create_test_guardrail() -> GuardrailAgent {
         GuardrailAgent::new(Arc::new(SmartAiRouter::new(
             None,
-            Arc::new(crate::ollama_client::OllamaClient::new()),
+            Arc::new(crate::ai::ollama_client::OllamaClient::new()),
         )))
     }
 

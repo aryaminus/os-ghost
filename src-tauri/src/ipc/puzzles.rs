@@ -1,5 +1,5 @@
-use crate::ai_provider::SmartAiRouter;
-use crate::utils::current_timestamp_millis;
+use crate::ai::ai_provider::SmartAiRouter;
+use crate::core::utils::current_timestamp_millis;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -115,7 +115,7 @@ async fn register_puzzle(
     }
 
     // Start timer for the new puzzle
-    let mut state = crate::game_state::GameState::load().await;
+    let mut state = crate::core::game_state::GameState::load().await;
     state.start_puzzle_timer().await;
 
     Ok(())
@@ -124,7 +124,7 @@ async fn register_puzzle(
 /// Helper: Common logic to register a dynamic puzzle
 async fn register_dynamic_puzzle(
     puzzles: &std::sync::RwLock<Vec<Puzzle>>,
-    dynamic: crate::gemini_client::DynamicPuzzle,
+    dynamic: crate::ai::gemini_client::DynamicPuzzle,
     id_prefix: &str,
 ) -> Result<GeneratedPuzzle, String> {
     let id = generate_puzzle_id(id_prefix);
@@ -187,26 +187,26 @@ pub async fn start_investigation(
         // Update session
         if let Ok(mut s) = session.load() {
             s.puzzle_id = puzzle.id.clone();
-            s.puzzle_started_at = crate::utils::current_timestamp();
+            s.puzzle_started_at = crate::core::utils::current_timestamp();
             let _ = session.save(&s);
         }
 
         return Ok(generated);
     }
 
-    let redacted_url = crate::privacy::redact_with_settings(&url);
-    let redacted_title = crate::privacy::redact_with_settings(&title);
-    let redacted_content = crate::privacy::redact_with_settings(&content);
+    let redacted_url = crate::config::privacy::redact_with_settings(&url);
+    let redacted_title = crate::config::privacy::redact_with_settings(&title);
+    let redacted_content = crate::config::privacy::redact_with_settings(&content);
 
     // Fetch recent history for context
-    let history_context = match crate::history::get_recent_history(10).await {
+    let history_context = match crate::data::history::get_recent_history(10).await {
         Ok(history) => history
             .into_iter()
             .map(|h| {
                 format!(
                     "- {} ({})",
-                    crate::privacy::redact_with_settings(&h.title),
-                    crate::privacy::redact_with_settings(&h.url)
+                    crate::config::privacy::redact_with_settings(&h.title),
+                    crate::config::privacy::redact_with_settings(&h.url)
                 )
             })
             .collect::<Vec<String>>()
@@ -233,7 +233,7 @@ pub async fn start_investigation(
     // Update session
     if let Ok(mut s) = session.load() {
         s.puzzle_id = generated.id.clone();
-        s.puzzle_started_at = crate::utils::current_timestamp();
+        s.puzzle_started_at = crate::core::utils::current_timestamp();
         let _ = session.save(&s);
     }
 
@@ -250,8 +250,8 @@ pub async fn generate_puzzle_from_history(
     ai_router: State<'_, Arc<SmartAiRouter>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<GeneratedPuzzle, String> {
-    let redacted_url = crate::privacy::redact_with_settings(&seed_url);
-    let redacted_title = crate::privacy::redact_with_settings(&seed_title);
+    let redacted_url = crate::config::privacy::redact_with_settings(&seed_url);
+    let redacted_title = crate::config::privacy::redact_with_settings(&seed_title);
 
     // Build history context from recent history
     let history_context = recent_history
@@ -260,8 +260,8 @@ pub async fn generate_puzzle_from_history(
         .map(|h| {
             format!(
                 "- {} ({})",
-                crate::privacy::redact_with_settings(&h.title),
-                crate::privacy::redact_with_settings(&h.url)
+                crate::config::privacy::redact_with_settings(&h.title),
+                crate::config::privacy::redact_with_settings(&h.url)
             )
         })
         .collect::<Vec<_>>()
@@ -273,8 +273,8 @@ pub async fn generate_puzzle_from_history(
         .map(|s| {
             format!(
                 "- {} ({})",
-                crate::privacy::redact_with_settings(&s.title),
-                crate::privacy::redact_with_settings(&s.url)
+                crate::config::privacy::redact_with_settings(&s.title),
+                crate::config::privacy::redact_with_settings(&s.url)
             )
         })
         .collect::<Vec<_>>()

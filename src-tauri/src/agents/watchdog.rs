@@ -7,7 +7,7 @@
 //!
 //! The Watchdog runs in parallel, analyzing content for security threats.
 
-use crate::ai_provider::SmartAiRouter;
+use crate::ai::ai_provider::SmartAiRouter;
 use crate::agents::traits::{Agent, AgentContext, AgentOutput, AgentResult, NextAction};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

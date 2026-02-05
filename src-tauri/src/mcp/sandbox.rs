@@ -14,11 +14,11 @@
 //! - Anthropic: "Sandbox side-effects, log all actions for auditability"
 //! - CUA.ai: "Progressive trust earned through proven safety"
 
-use crate::action_ledger::record_action_created;
-use crate::action_preview::{VisualPreview, VisualPreviewType};
-use crate::actions::{ActionRiskLevel, PendingAction, ACTION_QUEUE};
-use crate::permissions::{evaluate_action, PermissionDecision};
-use crate::privacy::PrivacySettings;
+use crate::actions::action_ledger::record_action_created;
+use crate::actions::action_preview::{VisualPreview, VisualPreviewType};
+use crate::actions::actions::{ActionRiskLevel, PendingAction, ACTION_QUEUE};
+use crate::config::permissions::{evaluate_action, PermissionDecision};
+use crate::config::privacy::PrivacySettings;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -634,7 +634,7 @@ pub fn sandbox_read_file_internal(path: String, allow_confirm: bool) -> FileOpRe
                 Some(serde_json::json!({ "path": path })),
             );
 
-            let preview_id = if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+            let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
                 let preview = manager.start_preview(&pending);
                 manager.set_visual_preview(
                     &preview.id,
@@ -735,7 +735,7 @@ pub fn sandbox_write_file_internal(
                 Some(serde_json::json!({ "path": path, "content": content, "create_dirs": create_dirs })),
             );
 
-            let preview_id = if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+            let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
                 let preview = manager.start_preview(&pending);
                 manager.set_visual_preview(
                     &preview.id,
@@ -800,10 +800,10 @@ pub fn sandbox_write_file_internal(
     match std::fs::write(&path_buf, &content) {
         Ok(_) => {
             update_sandbox_config(|c| c.record_safe_operation());
-            if let Some(rollback) = crate::rollback::get_rollback_manager() {
+            if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
                 let rollback_id = action_id
                     .map(|id| id.to_string())
-                    .unwrap_or_else(|| format!("sandbox.write_file:{}", crate::utils::current_timestamp()));
+                    .unwrap_or_else(|| format!("sandbox.write_file:{}", crate::core::utils::current_timestamp()));
                 rollback.record_file_write(
                     &rollback_id,
                     &path,
@@ -854,7 +854,7 @@ pub fn sandbox_list_dir_internal(path: String, include_hidden: Option<bool>, all
                 Some(serde_json::json!({ "path": path, "include_hidden": include_hidden })),
             );
 
-            let preview_id = if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+            let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
                 let preview = manager.start_preview(&pending);
                 manager.set_visual_preview(
                     &preview.id,
@@ -964,7 +964,7 @@ pub async fn sandbox_execute_shell_internal(command: String, working_dir: Option
                 Some(serde_json::json!({ "command": command, "category": format!("{:?}", category), "working_dir": working_dir })),
             );
 
-            let preview_id = if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+            let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
                 let preview = manager.start_preview(&pending);
                 manager.set_visual_preview(
                     &preview.id,

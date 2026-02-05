@@ -156,7 +156,7 @@ pub async fn execute_extension_tool_internal(
     tool_name: String,
     args: Option<Vec<String>>,
 ) -> Result<ExtensionToolRunResult, String> {
-    let privacy = crate::privacy::PrivacySettings::load();
+    let privacy = crate::config::privacy::PrivacySettings::load();
     if privacy.read_only_mode || privacy.trust_profile != "open" {
         return Err("Extension tool execution blocked by trust profile".to_string());
     }
@@ -194,12 +194,12 @@ pub async fn execute_extension_tool_internal(
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
     };
 
-    crate::events_bus::record_event(
-        crate::events_bus::EventKind::Action,
+    crate::data::events_bus::record_event(
+        crate::data::events_bus::EventKind::Action,
         format!("Extension tool executed: {}", tool.name),
         None,
         std::collections::HashMap::new(),
-        crate::events_bus::EventPriority::Normal,
+        crate::data::events_bus::EventPriority::Normal,
         Some(format!("extension_tool:{}", tool.name)),
         Some(600),
         Some("extensions".to_string()),
@@ -283,12 +283,12 @@ pub fn request_extension_tool_action(
         })),
     );
 
-    let preview_id = if let Some(manager) = crate::action_preview::get_preview_manager_mut() {
+    let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
         let preview = manager.start_preview(&pending);
         manager.set_visual_preview(
             &preview.id,
-            crate::action_preview::VisualPreview {
-                preview_type: crate::action_preview::VisualPreviewType::TextSelection,
+            crate::actions::action_preview::VisualPreview {
+                preview_type: crate::actions::action_preview::VisualPreviewType::TextSelection,
                 content: pending.target.clone(),
                 width: None,
                 height: None,
@@ -302,7 +302,7 @@ pub fn request_extension_tool_action(
     };
 
     let action_id = crate::actions::ACTION_QUEUE.add(pending.clone());
-    crate::action_ledger::record_action_created(
+    crate::actions::action_ledger::record_action_created(
         action_id,
         pending.action_type,
         pending.description,
@@ -323,7 +323,7 @@ pub fn request_extension_tool_action(
 
 #[tauri::command]
 pub async fn execute_extension(id: String, args: Option<Vec<String>>) -> Result<ExtensionRunResult, String> {
-    let privacy = crate::privacy::PrivacySettings::load();
+    let privacy = crate::config::privacy::PrivacySettings::load();
     if privacy.read_only_mode || privacy.trust_profile != "open" {
         return Err("Extension execution blocked by trust profile".to_string());
     }
@@ -367,12 +367,12 @@ pub async fn execute_extension(id: String, args: Option<Vec<String>>) -> Result<
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
     };
 
-    crate::events_bus::record_event(
-        crate::events_bus::EventKind::Action,
+    crate::data::events_bus::record_event(
+        crate::data::events_bus::EventKind::Action,
         format!("Extension executed: {}", manifest.name),
         None,
         std::collections::HashMap::new(),
-        crate::events_bus::EventPriority::Normal,
+        crate::data::events_bus::EventPriority::Normal,
         Some(format!("extension_run:{}", manifest.id)),
         Some(600),
         Some("extensions".to_string()),
@@ -420,12 +420,12 @@ fn load_extensions() -> Vec<ExtensionStatus> {
                 let entry_path = dir.join(&manifest.entry);
                 if !entry_path.exists() {
                     let error = format!("Entry not found: {}", manifest.entry);
-                    crate::events_bus::record_event(
-                        crate::events_bus::EventKind::Guardrail,
+                    crate::data::events_bus::record_event(
+                        crate::data::events_bus::EventKind::Guardrail,
                         format!("Extension load failed: {}", manifest.name),
                         Some(error.clone()),
                         std::collections::HashMap::new(),
-                        crate::events_bus::EventPriority::Normal,
+                        crate::data::events_bus::EventPriority::Normal,
                         Some(format!("extension_error:{}", manifest.id)),
                         Some(600),
                         Some("extensions".to_string()),
@@ -448,12 +448,12 @@ fn load_extensions() -> Vec<ExtensionStatus> {
                 });
             }
             Err(err) => {
-                crate::events_bus::record_event(
-                    crate::events_bus::EventKind::Guardrail,
+                crate::data::events_bus::record_event(
+                    crate::data::events_bus::EventKind::Guardrail,
                     "Extension manifest invalid",
                     Some(err.clone()),
                     std::collections::HashMap::new(),
-                    crate::events_bus::EventPriority::Normal,
+                    crate::data::events_bus::EventPriority::Normal,
                     Some(format!(
                         "extension_error:{}",
                         dir.file_name().unwrap_or_default().to_string_lossy()

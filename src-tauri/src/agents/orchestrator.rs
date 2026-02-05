@@ -29,7 +29,7 @@ use super::traits::{
 };
 use super::verifier::VerifierAgent;
 use super::watchdog::WatchdogAgent;
-use crate::ai_provider::SmartAiRouter;
+use crate::ai::ai_provider::SmartAiRouter;
 use crate::mcp::{McpServer, ResourceDescriptor, ToolDescriptor};
 use crate::memory::{LongTermMemory, SessionMemory};
 use crate::monitoring::{InvocationMetrics, MetricsCollector};
@@ -919,7 +919,7 @@ impl AgentOrchestrator {
         tool_name: &str,
         arguments: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        crate::bridge::invoke_mcp_tool(mcp_server, tool_name, arguments).await
+        crate::integrations::bridge::invoke_mcp_tool(mcp_server, tool_name, arguments).await
     }
 
     /// Read current page content through MCP resource
@@ -928,7 +928,7 @@ impl AgentOrchestrator {
         &self,
         mcp_server: &crate::mcp::BrowserMcpServer,
     ) -> Option<serde_json::Value> {
-        crate::bridge::read_current_page(mcp_server).await
+        crate::integrations::bridge::read_current_page(mcp_server).await
     }
 
     /// Read browsing history through MCP resource
@@ -938,7 +938,7 @@ impl AgentOrchestrator {
         mcp_server: &crate::mcp::BrowserMcpServer,
         limit: Option<usize>,
     ) -> Option<serde_json::Value> {
-        crate::bridge::read_browsing_history(mcp_server, limit).await
+        crate::integrations::bridge::read_browsing_history(mcp_server, limit).await
     }
 
     /// Generate LLM-friendly tool description for prompting

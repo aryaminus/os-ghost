@@ -1,10 +1,10 @@
 //! IPC commands for Tauri frontend-backend communication
 //! Exposes Rust functionality to JavaScript via Tauri commands
 
-use crate::ai_provider::SmartAiRouter;
-use crate::capture;
-use crate::game_state::{EffectMessage, EffectQueue};
-use crate::utils::current_timestamp_millis;
+use crate::ai::ai_provider::SmartAiRouter;
+use crate::capture::capture;
+use crate::core::game_state::{EffectMessage, EffectQueue};
+use crate::core::utils::current_timestamp_millis;
 use anyhow::Result;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -70,29 +70,29 @@ pub struct SystemStatus {
 /// Aggregated settings payload for Settings window
 #[derive(Debug, Serialize, Clone)]
 pub struct SettingsState {
-    pub privacy: crate::privacy::PrivacySettings,
+    pub privacy: crate::config::privacy::PrivacySettings,
     pub privacy_notice: String,
     pub system_status: SystemStatus,
     pub autonomy_settings: AutonomySettings,
     pub intelligent_mode: IntelligentModeStatus,
     pub sandbox_settings: crate::mcp::sandbox::SandboxConfig,
-    pub system_settings: crate::system_settings::SystemSettings,
-    pub capture_settings: crate::capture::CaptureSettings,
-    pub scheduler_settings: crate::scheduler::SchedulerSettings,
-    pub pairing_status: crate::pairing::PairingState,
-    pub permission_diagnostics: crate::permissions::PermissionDiagnostics,
-    pub recent_timeline: Vec<crate::timeline::TimelineEntry>,
-    pub calendar_settings: crate::integrations::CalendarSettings,
-    pub notes: Vec<crate::integrations::Note>,
-    pub files_settings: crate::integrations::FilesSettings,
-    pub email_settings: crate::integrations::EmailSettings,
+    pub system_settings: crate::config::system_settings::SystemSettings,
+    pub capture_settings: crate::capture::capture::CaptureSettings,
+    pub scheduler_settings: crate::config::scheduler::SchedulerSettings,
+    pub pairing_status: crate::data::pairing::PairingState,
+    pub permission_diagnostics: crate::config::permissions::PermissionDiagnostics,
+    pub recent_timeline: Vec<crate::data::timeline::TimelineEntry>,
+    pub calendar_settings: crate::integrations::integrations::CalendarSettings,
+    pub notes: Vec<crate::integrations::integrations::Note>,
+    pub files_settings: crate::integrations::integrations::FilesSettings,
+    pub email_settings: crate::integrations::integrations::EmailSettings,
 }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct HealthReport {
     pub timestamp: u64,
     pub system_status: SystemStatus,
-    pub permissions: crate::permissions::PermissionDiagnostics,
+    pub permissions: crate::config::permissions::PermissionDiagnostics,
 }
 
 fn mode_to_string(mode: crate::memory::AppMode) -> String {
@@ -103,10 +103,10 @@ fn mode_to_string(mode: crate::memory::AppMode) -> String {
 }
 
 pub(crate) fn detect_system_status(session: Option<&crate::memory::SessionMemory>) -> SystemStatus {
-    let status_snapshot = crate::system_status::get_status_snapshot();
+    let status_snapshot = crate::config::system_status::get_status_snapshot();
     let chrome_path = find_chrome_path();
     let chrome_installed = chrome_path.is_some();
-    let runtime = crate::utils::runtime_config();
+    let runtime = crate::core::utils::runtime_config();
     let api_key_configured = runtime.has_api_key();
     let api_key_source = if runtime.is_using_user_key() {
         "user".to_string()
@@ -193,9 +193,9 @@ pub async fn health_check(
     session: State<'_, Arc<crate::memory::SessionMemory>>,
 ) -> Result<HealthReport, String> {
     let system_status = detect_system_status(Some(session.as_ref()));
-    let permissions = crate::permissions::get_permission_diagnostics().await;
+    let permissions = crate::config::permissions::get_permission_diagnostics().await;
     Ok(HealthReport {
-        timestamp: crate::utils::current_timestamp(),
+        timestamp: crate::core::utils::current_timestamp(),
         system_status,
         permissions,
     })
@@ -246,10 +246,10 @@ pub fn open_settings(section: Option<String>, app: tauri::AppHandle) -> Result<(
 pub async fn get_settings_state(
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
     session: State<'_, Arc<crate::memory::SessionMemory>>,
-    notes_store: State<'_, Arc<crate::integrations::NotesStore>>,
+    notes_store: State<'_, Arc<crate::integrations::integrations::NotesStore>>,
 ) -> Result<SettingsState, String> {
-    let privacy = crate::privacy::PrivacySettings::load();
-    let privacy_notice = crate::privacy::PRIVACY_NOTICE.to_string();
+    let privacy = crate::config::privacy::PrivacySettings::load();
+    let privacy_notice = crate::config::privacy::PRIVACY_NOTICE.to_string();
     let system_status = detect_system_status(Some(session.as_ref()));
     let autonomy_settings = AutonomySettings {
         auto_puzzle_from_companion: session
@@ -263,16 +263,16 @@ pub async fn get_settings_state(
         guardrails: orchestrator.use_guardrails(),
     };
     let sandbox_settings = crate::mcp::sandbox::get_sandbox_settings();
-    let system_settings = crate::system_settings::SystemSettings::load();
-    let capture_settings = crate::capture::CaptureSettings::load();
-    let scheduler_settings = crate::scheduler::SchedulerSettings::load();
-    let pairing_status = crate::pairing::get_pairing_status();
-    let permission_diagnostics = crate::permissions::get_permission_diagnostics().await;
-    let recent_timeline = crate::timeline::get_recent_timeline(5);
-    let calendar_settings = crate::integrations::CalendarSettings::load();
+    let system_settings = crate::config::system_settings::SystemSettings::load();
+    let capture_settings = crate::capture::capture::CaptureSettings::load();
+    let scheduler_settings = crate::config::scheduler::SchedulerSettings::load();
+    let pairing_status = crate::data::pairing::get_pairing_status();
+    let permission_diagnostics = crate::config::permissions::get_permission_diagnostics().await;
+    let recent_timeline = crate::data::timeline::get_recent_timeline(5);
+    let calendar_settings = crate::integrations::integrations::CalendarSettings::load();
     let notes = notes_store.list_notes().unwrap_or_default();
-    let files_settings = crate::integrations::FilesSettings::load();
-    let email_settings = crate::integrations::EmailSettings::load();
+    let files_settings = crate::integrations::integrations::FilesSettings::load();
+    let email_settings = crate::integrations::integrations::EmailSettings::load();
 
     Ok(SettingsState {
         privacy,
@@ -516,9 +516,9 @@ pub async fn launch_chrome(url: Option<String>) -> Result<(), String> {
 /// Helper function to convert ActivityEntry to ActivityContext
 fn activity_to_context(
     entry: &crate::memory::ActivityEntry,
-) -> Option<crate::gemini_client::ActivityContext> {
+) -> Option<crate::ai::gemini_client::ActivityContext> {
     let metadata = entry.metadata.as_ref()?;
-    Some(crate::gemini_client::ActivityContext {
+    Some(crate::ai::gemini_client::ActivityContext {
         app_name: metadata
             .get("app_name")
             .and_then(|v| v.as_str())
@@ -554,7 +554,7 @@ pub async fn generate_adaptive_puzzle(
         .map_err(|e| e.to_string())?;
 
     // Convert to ActivityContext format using helper
-    let activity_contexts: Vec<crate::gemini_client::ActivityContext> =
+    let activity_contexts: Vec<crate::ai::gemini_client::ActivityContext> =
         activities.iter().filter_map(activity_to_context).collect();
 
     if activity_contexts.is_empty() {
@@ -603,7 +603,7 @@ pub async fn generate_adaptive_puzzle(
     }
 
     // Start timer for the new puzzle
-    let mut state = crate::game_state::GameState::load().await;
+    let mut state = crate::core::game_state::GameState::load().await;
     state.start_puzzle_timer().await;
 
     // Update session
@@ -638,7 +638,7 @@ pub async fn generate_contextual_dialogue(
         .map_err(|e| e.to_string())?;
 
     // Convert to ActivityContext using helper
-    let activity_contexts: Vec<crate::gemini_client::ActivityContext> =
+    let activity_contexts: Vec<crate::ai::gemini_client::ActivityContext> =
         activities.iter().filter_map(activity_to_context).collect();
 
     ai_router
@@ -663,8 +663,8 @@ pub async fn quick_ask(
     let include_context = include_context.unwrap_or(true);
     let full_prompt = if include_context {
         let state = session.load().unwrap_or_default();
-        let redacted_url = crate::privacy::redact_with_settings(&state.current_url);
-        let redacted_title = crate::privacy::redact_with_settings(&state.current_title);
+        let redacted_url = crate::config::privacy::redact_with_settings(&state.current_url);
+        let redacted_title = crate::config::privacy::redact_with_settings(&state.current_title);
         format!(
             "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\nUser question: {}\n\nContext (if relevant):\n- Current URL: {}\n- Page title: {}",
             trimmed, redacted_url, redacted_title
@@ -749,7 +749,7 @@ pub async fn capture_and_analyze(
     ai_router: State<'_, Arc<SmartAiRouter>>,
 ) -> Result<String, String> {
     // Enforce explicit user consent
-    let privacy = crate::privacy::PrivacySettings::load();
+    let privacy = crate::config::privacy::PrivacySettings::load();
     if privacy.read_only_mode {
         return Err("Read-only mode enabled".to_string());
     }
@@ -790,9 +790,9 @@ pub async fn verify_screenshot_proof(
     puzzle_id: String,
     ai_router: State<'_, Arc<SmartAiRouter>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
-) -> Result<crate::gemini_client::VerificationResult, String> {
+) -> Result<crate::ai::gemini_client::VerificationResult, String> {
     // Enforce explicit user consent
-    let privacy = crate::privacy::PrivacySettings::load();
+    let privacy = crate::config::privacy::PrivacySettings::load();
     if privacy.read_only_mode {
         return Err("Read-only mode enabled".to_string());
     }
@@ -831,7 +831,7 @@ pub async fn verify_screenshot_proof(
 /// Check if API key is configured
 #[tauri::command]
 pub fn check_api_key() -> Result<bool, String> {
-    Ok(crate::utils::runtime_config().has_api_key())
+    Ok(crate::core::utils::runtime_config().has_api_key())
 }
 
 /// Get the config file path for storing API key
@@ -902,7 +902,7 @@ pub async fn set_api_key(api_key: String) -> Result<(), String> {
     }
 
     // Set in thread-safe runtime config (instead of env::set_var which is not thread-safe)
-    crate::utils::runtime_config().set_api_key(trimmed_key.to_string());
+    crate::core::utils::runtime_config().set_api_key(trimmed_key.to_string());
 
     // Persist to config file
     let mut config = load_config();
@@ -916,7 +916,7 @@ pub async fn set_api_key(api_key: String) -> Result<(), String> {
 /// Clear runtime API key (reverting to env if present)
 #[tauri::command]
 pub fn clear_api_key() -> Result<(), String> {
-    crate::utils::runtime_config().clear_api_key();
+    crate::core::utils::runtime_config().clear_api_key();
 
     // Also clear from persisted config
     let mut config = load_config();
@@ -941,7 +941,7 @@ pub async fn validate_api_key(api_key: String) -> Result<bool, String> {
     }
 
     // Create a temporary client with the provided key
-    let test_client = crate::gemini_client::GeminiClient::new(trimmed_key.to_string());
+    let test_client = crate::ai::gemini_client::GeminiClient::new(trimmed_key.to_string());
 
     // Try to make a simple API call to validate the key
     match test_client
@@ -1005,14 +1005,14 @@ pub struct OllamaConfig {
 /// Get current Ollama configuration
 #[tauri::command]
 pub fn get_ollama_config() -> OllamaConfig {
-    let config = crate::utils::runtime_config();
+    let config = crate::core::utils::runtime_config();
     OllamaConfig {
         url: config.get_ollama_url(),
         vision_model: config.get_ollama_vision_model(),
         text_model: config.get_ollama_text_model(),
-        default_url: crate::utils::DEFAULT_OLLAMA_URL.to_string(),
-        default_vision_model: crate::utils::DEFAULT_OLLAMA_VISION_MODEL.to_string(),
-        default_text_model: crate::utils::DEFAULT_OLLAMA_TEXT_MODEL.to_string(),
+        default_url: crate::core::utils::DEFAULT_OLLAMA_URL.to_string(),
+        default_vision_model: crate::core::utils::DEFAULT_OLLAMA_VISION_MODEL.to_string(),
+        default_text_model: crate::core::utils::DEFAULT_OLLAMA_TEXT_MODEL.to_string(),
     }
 }
 
@@ -1023,7 +1023,7 @@ pub fn set_ollama_config(
     vision_model: String,
     text_model: String,
 ) -> Result<(), String> {
-    let config = crate::utils::runtime_config();
+    let config = crate::core::utils::runtime_config();
 
     // Validate URL format
     let url = url.trim();
@@ -1061,7 +1061,7 @@ pub fn set_ollama_config(
 /// Reset Ollama configuration to defaults
 #[tauri::command]
 pub fn reset_ollama_config() -> Result<OllamaConfig, String> {
-    let config = crate::utils::runtime_config();
+    let config = crate::core::utils::runtime_config();
     config.reset_ollama_to_defaults();
 
     // Clear from saved config
@@ -1209,7 +1209,7 @@ pub async fn start_background_checks(
     orchestrator: State<'_, Arc<crate::agents::AgentOrchestrator>>,
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
 ) -> Result<String, String> {
-    let privacy = crate::privacy::PrivacySettings::load();
+    let privacy = crate::config::privacy::PrivacySettings::load();
     if privacy.read_only_mode {
         return Err("Read-only mode enabled".to_string());
     }
@@ -1294,7 +1294,7 @@ pub async fn submit_feedback(
         comment,
         puzzle_id,
         url: None,
-        timestamp: crate::utils::current_timestamp(),
+        timestamp: crate::core::utils::current_timestamp(),
     };
 
     ltm.record_feedback(feedback)
@@ -1426,7 +1426,7 @@ pub async fn enable_autonomous_mode(
     puzzles: State<'_, std::sync::RwLock<Vec<Puzzle>>>,
     autonomous_task: State<'_, AutonomousTask>,
 ) -> Result<String, String> {
-    let privacy = crate::privacy::PrivacySettings::load();
+    let privacy = crate::config::privacy::PrivacySettings::load();
     if privacy.read_only_mode {
         return Err("Read-only mode enabled".to_string());
     }
@@ -1554,11 +1554,11 @@ pub async fn get_model_capabilities(
     
     // Determine capabilities based on provider
     let (has_vision, has_tool_calling, context_window) = match provider {
-        crate::ai_provider::ProviderType::Gemini => {
+        crate::ai::ai_provider::ProviderType::Gemini => {
             // Gemini 2.0 Flash capabilities
             (true, true, 1_000_000)
         }
-        crate::ai_provider::ProviderType::Ollama => {
+        crate::ai::ai_provider::ProviderType::Ollama => {
             // Ollama capabilities depend on model - check vision model availability
             let vision_available = ai_router.has_ollama(); // Simplified check
             if !vision_available {
@@ -1566,7 +1566,7 @@ pub async fn get_model_capabilities(
             }
             (vision_available, false, 8192) // Most Ollama models have smaller context
         }
-        crate::ai_provider::ProviderType::None => {
+        crate::ai::ai_provider::ProviderType::None => {
             warnings.push("No AI provider available. Configure Gemini API key or start Ollama.".to_string());
             (false, false, 0)
         }
@@ -1652,7 +1652,7 @@ pub struct AgentPollStatus {
     /// Active action preview (if any)
     pub action_preview: Option<crate::action_preview::ActionPreview>,
     /// Rollback/undo status
-    pub rollback_status: crate::rollback::RollbackStatus,
+    pub rollback_status: crate::actions::rollback::RollbackStatus,
     /// Token usage stats
     pub token_usage: TokenUsage,
     /// Timestamp of poll (for staleness detection)
@@ -1674,9 +1674,9 @@ pub fn poll_agent_status(
         .and_then(|m| m.get_active_preview());
     
     // Get rollback status
-    let rollback_status = crate::rollback::get_rollback_manager()
+    let rollback_status = crate::actions::rollback::get_rollback_manager()
         .map(|m| m.get_status())
-        .unwrap_or_else(|| crate::rollback::RollbackStatus {
+        .unwrap_or_else(|| crate::actions::rollback::RollbackStatus {
             can_undo: false,
             can_redo: false,
             undo_description: None,

@@ -3,7 +3,7 @@
 
 use super::scoped_state::ScopedState;
 use super::store::MemoryStore;
-use crate::utils::current_timestamp;
+use crate::core::utils::current_timestamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;

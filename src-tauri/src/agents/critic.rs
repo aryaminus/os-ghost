@@ -10,7 +10,7 @@
 use super::traits::{
     Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction, ReflectionFeedback,
 };
-use crate::ai_provider::SmartAiRouter;
+use crate::ai::ai_provider::SmartAiRouter;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;

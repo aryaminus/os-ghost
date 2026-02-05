@@ -7,7 +7,7 @@
 //! - Learning from corrections to improve future responses
 
 use super::store::MemoryStore;
-use crate::utils::current_timestamp;
+use crate::core::utils::current_timestamp;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -118,7 +118,7 @@ impl LongTermMemory {
         self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
             let mut stats = old.unwrap_or_else(|| {
                 // Initialize if missing
-                let now = crate::utils::current_timestamp();
+                let now = crate::core::utils::current_timestamp();
                 PlayerStats {
                     first_played: now,
                     last_played: now,
@@ -194,7 +194,7 @@ impl LongTermMemory {
         let is_positive = feedback.is_positive;
         self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
             let mut stats = old.unwrap_or_else(|| {
-                let now = crate::utils::current_timestamp();
+                let now = crate::core::utils::current_timestamp();
                 PlayerStats {
                     first_played: now,
                     last_played: now,
@@ -263,7 +263,7 @@ impl LongTermMemory {
         // Update stats atomically
         self.store.update(STATS_TREE, "player", |old: Option<PlayerStats>| {
             let mut stats = old.unwrap_or_else(|| {
-                let now = crate::utils::current_timestamp();
+                let now = crate::core::utils::current_timestamp();
                 PlayerStats {
                     first_played: now,
                     last_played: now,

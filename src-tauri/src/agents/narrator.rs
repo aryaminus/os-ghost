@@ -2,7 +2,7 @@
 //! Generates Ghost dialogue and manages personality/mood
 
 use super::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
-use crate::ai_provider::SmartAiRouter;
+use crate::ai::ai_provider::SmartAiRouter;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -56,7 +56,7 @@ impl NarratorAgent {
         let mood = GhostMood::from_proximity(context.proximity);
 
         // Redact PII from title before sending to API
-        let redacted_title = crate::privacy::redact_with_settings(&context.current_title);
+        let redacted_title = crate::config::privacy::redact_with_settings(&context.current_title);
 
         // Chain-of-Thought prompt structure:
         // 1. Analyze the situation

@@ -2,7 +2,7 @@
 //! Analyzes what the user is viewing and extracts semantic meaning
 
 use super::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
-use crate::ai_provider::SmartAiRouter;
+use crate::ai::ai_provider::SmartAiRouter;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ impl ObserverAgent {
     /// Analyze page content for relevance to puzzle
     async fn analyze_content(&self, context: &AgentContext) -> AgentResult<f32> {
         // Redact URL for privacy
-        let redacted_url = crate::privacy::redact_with_settings(&context.current_url);
+        let redacted_url = crate::config::privacy::redact_with_settings(&context.current_url);
 
         // Use AI router to calculate semantic similarity
         let similarity = self
@@ -34,7 +34,7 @@ impl ObserverAgent {
 
     /// Extract key topics from page using Chain-of-Thought reasoning
     async fn extract_topics(&self, context: &AgentContext) -> AgentResult<Vec<String>> {
-        let redacted_content = crate::privacy::redact_with_settings(&context.page_content);
+        let redacted_content = crate::config::privacy::redact_with_settings(&context.page_content);
         
         // CoT prompt for topic extraction
         let cot_prompt = format!(

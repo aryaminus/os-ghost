@@ -1,42 +1,39 @@
 //! The OS Ghost - Tauri Application Library
 //! A screen-aware meta-game where an AI entity lives in your desktop
 
-// Core modules
-pub mod action_preview;
-pub mod action_ledger;
+// AI Providers
+pub mod ai {
+    pub mod ai_provider;
+    pub mod gemini_client;
+    pub mod ollama_client;
+}
+
+// Action System
 pub mod actions;
-pub mod ai_provider;
-pub mod bridge;
+
+// Screen Capture
 pub mod capture;
-pub mod change_detection;
-pub mod email;
-pub mod game_state;
-pub mod gemini_client;
-pub mod history;
+
+// Configuration & Settings
+pub mod config {
+    pub mod permissions;
+    pub mod privacy;
+    pub mod scheduler;
+    pub mod system_settings;
+    pub mod system_status;
+}
+
+// Core Utilities
+pub mod core;
+
+// Data Management
+pub mod data;
+
+// External Integrations
 pub mod integrations;
-pub mod ipc;
-pub mod monitor;
-pub mod monitoring;
-pub mod events_bus;
-pub mod permissions;
+
+// Intent System
 pub mod intent;
-pub mod intent_autorun;
-pub mod skills;
-pub mod workflows;
-pub mod extensions;
-pub mod persona;
-pub mod perf;
-pub mod notifications;
-pub mod ollama_client;
-pub mod pairing;
-pub mod privacy;
-pub mod system_status;
-pub mod system_settings;
-pub mod scheduler;
-pub mod timeline;
-pub mod rollback;
-pub mod utils;
-pub mod window;
 
 // Multi-agent system
 pub mod agents;
@@ -46,20 +43,60 @@ pub mod workflow;
 // MCP-compatible abstractions (Chapter 10: Model Context Protocol)
 pub mod mcp;
 
-use ai_provider::SmartAiRouter;
-use game_state::{EffectMessage, EffectQueue};
-use gemini_client::GeminiClient;
+// Extensions
+pub mod extensions;
+
+// IPC
+pub mod ipc;
+
+// Monitoring & Activity
+pub mod monitoring;
+
+use ai::ai_provider::SmartAiRouter;
+use core::game_state::{EffectMessage, EffectQueue};
+use ai::gemini_client::GeminiClient;
 use ipc::Puzzle;
 use memory::LongTermMemory;
-use ollama_client::OllamaClient;
+use ai::ollama_client::OllamaClient;
 use std::sync::{Arc, Mutex};
 use std::sync::RwLock;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
 use std::str::FromStr;
-use window::GhostWindow;
+use core::window::GhostWindow;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_updater::UpdaterExt;
+
+// Backwards-compatible re-exports for gradual migration
+pub use actions as action_confirmation;
+pub use actions::action_ledger;
+pub use actions::action_preview;
+pub use actions::rollback;
+pub use actions::workflows;
+pub use ai as ai_providers;
+pub use capture as screen_capture;
+pub use config as settings;
+pub use core::game_state;
+pub use core::notifications;
+pub use core::utils as core_utils;
+pub use data::events_bus;
+pub use data::history;
+pub use data::skills;
+pub use data::timeline;
+pub use data::persona;
+pub use data::pairing as pairing_code;
+pub use intent as intent_engine;
+pub use integrations as external_integrations;
+pub use monitoring::monitor as system_monitor;
+pub use monitoring::perf as performance;
+pub use config::privacy;
+pub use config::system_settings;
+pub use config::permissions;
+pub use config::system_status;
+pub use config::scheduler;
+pub use data::pairing;
+pub use monitoring::perf;
+pub use core::window;
 
 /// Default puzzles for the game
 fn default_puzzles() -> Vec<Puzzle> {
@@ -121,7 +158,7 @@ pub fn run() {
             match std::fs::read_to_string(&config_path) {
                 Ok(contents) => match serde_json::from_str::<serde_json::Value>(&contents) {
                     Ok(config) => {
-                        let runtime = utils::runtime_config();
+                        let runtime = crate::core::utils::runtime_config();
 
                         // Load Gemini API key if not in environment
                         if std::env::var("GEMINI_API_KEY").is_err() {
@@ -182,8 +219,8 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            crate::rollback::init_rollback_manager();
-            crate::rollback::set_undo_executor(crate::rollback::default_undo_executor());
+            crate::actions::rollback::init_rollback_manager();
+            crate::actions::rollback::set_undo_executor(crate::actions::rollback::default_undo_executor());
             // App menu + accessibility-friendly standard items
             let app_settings_item = MenuItem::with_id(
                 app,
@@ -547,7 +584,7 @@ pub fn run() {
                     }
                     "ghost_reset" => {
                         tauri::async_runtime::spawn(async move {
-                            let _ = crate::game_state::reset_game().await;
+                            let _ = crate::core::game_state::reset_game().await;
                         });
                     }
                     "ghost_ping_extension" => {
@@ -561,7 +598,7 @@ pub fn run() {
                         });
                     }
                     "ghost_toggle_monitoring" => {
-                        let mut settings = system_settings::SystemSettings::load();
+                        let mut settings = crate::config::system_settings::SystemSettings::load();
                         settings.monitor_enabled = !settings.monitor_enabled;
                         let _ = settings.save();
                         emit_settings_update(app);
@@ -589,8 +626,8 @@ pub fn run() {
                         }
                     }
                     "privacy_toggle" => {
-                        let settings = crate::privacy::PrivacySettings::load();
-                        let _ = crate::privacy::update_privacy_settings(
+                        let settings = crate::config::privacy::PrivacySettings::load();
+                        let _ = crate::config::privacy::update_privacy_settings(
                             settings.capture_consent,
                             settings.ai_analysis_consent,
                             settings.privacy_notice_acknowledged,
@@ -626,7 +663,7 @@ pub fn run() {
 
             // Register global shortcut for quick toggle (if enabled)
             let app_handle = app.handle().clone();
-            let settings = system_settings::SystemSettings::load();
+            let settings = crate::config::system_settings::SystemSettings::load();
             if settings.global_shortcut_enabled {
                 // Normalize shortcut string (handle various formats)
                 let shortcut_str = settings.global_shortcut.trim();
@@ -730,7 +767,7 @@ pub fn run() {
 
             // Initialize AI Providers (Gemini + Ollama with smart routing)
             // Get API key from thread-safe runtime config or environment
-            let api_key = utils::runtime_config().get_api_key();
+            let api_key = crate::core::utils::runtime_config().get_api_key();
 
             // Create Gemini client only if API key exists
             let gemini_client = if let Some(ref key) = api_key {
@@ -778,7 +815,7 @@ pub fn run() {
 
             let shared_ltm = Arc::new(Mutex::new(LongTermMemory::new(store.clone())));
             let shared_session = Arc::new(Mutex::new(memory::SessionMemory::new(store.clone())));
-            let notes_store = Arc::new(integrations::NotesStore::new(store.clone()));
+            let notes_store = Arc::new(integrations::integrations::NotesStore::new(store.clone()));
 
             // Register session memory as managed state for IPC commands
             // Create a separate Arc for SessionMemory to be used directly by bridge
@@ -836,7 +873,7 @@ pub fn run() {
             let monitor_session = shared_session.clone();
 
             tauri::async_runtime::spawn(async move {
-                monitor::start_monitor_loop(
+                crate::monitoring::monitor::start_monitor_loop(
                     monitor_handle,
                     monitor_router,
                     monitor_ltm,
@@ -853,7 +890,7 @@ pub fn run() {
 
                 loop {
                     interval.tick().await;
-                    let state = game_state::GameState::load().await;
+                    let state = core::game_state::GameState::load().await;
                     let available = state.should_reveal_hint();
 
                     // Only emit if state changed to true, or periodically to ensure UI is in sync
@@ -879,7 +916,7 @@ pub fn run() {
 
                 // Initial check immediate
                 let session = status_handle.state::<Arc<memory::SessionMemory>>();
-                if let Some(store) = crate::system_status::get_system_status_store() {
+                if let Some(store) = crate::config::system_status::get_system_status_store() {
                     if let Ok(mut guard) = store.write() {
                         guard.active_provider = Some(status_router.active_provider().to_string());
                     }
@@ -889,11 +926,11 @@ pub fn run() {
 
                 loop {
                     interval.tick().await;
-                    let now = crate::utils::current_timestamp();
-                    if let Some(store) = crate::system_status::get_system_status_store() {
+                    let now = crate::core::utils::current_timestamp();
+                    if let Some(store) = crate::config::system_status::get_system_status_store() {
                         if let Ok(mut guard) = store.write() {
                             if let Some(last) = guard.last_extension_heartbeat {
-                                let timeout = crate::system_status::HEARTBEAT_TIMEOUT_SECS;
+                                let timeout = crate::config::system_status::HEARTBEAT_TIMEOUT_SECS;
                                 guard.extension_operational = now.saturating_sub(last) <= timeout;
                             }
                             guard.active_provider = Some(status_router.active_provider().to_string());
@@ -913,7 +950,7 @@ pub fn run() {
 
             // Start Native Messaging bridge for Chrome extension
             let app_handle = app.handle().clone();
-            bridge::start_native_messaging_server(app_handle.clone());
+            crate::integrations::bridge::start_native_messaging_server(app_handle.clone());
 
             // Auto-register Native Messaging Host if needed (for distributed builds)
             tauri::async_runtime::spawn(async move {
@@ -952,36 +989,36 @@ pub fn run() {
             ipc::health_check,
             reset_bridge_registration,
             rebuild_native_bridge,
-            system_settings::get_system_settings,
-            system_settings::update_system_settings,
-            system_settings::set_monitor_enabled,
-            system_settings::set_global_shortcut_enabled,
-            system_settings::set_global_shortcut,
-            system_settings::get_change_detection_settings,
-            system_settings::set_change_detection_settings,
+            crate::config::system_settings::get_system_settings,
+            crate::config::system_settings::update_system_settings,
+            crate::config::system_settings::set_monitor_enabled,
+            crate::config::system_settings::set_global_shortcut_enabled,
+            crate::config::system_settings::set_global_shortcut,
+            crate::config::system_settings::get_change_detection_settings,
+            crate::config::system_settings::set_change_detection_settings,
             // Adaptive behavior commands
             ipc::generate_adaptive_puzzle,
             ipc::generate_contextual_dialogue,
             ipc::quick_ask,
             // Integrations: calendar + notes + email
-            integrations::get_calendar_settings,
-            integrations::update_calendar_settings,
-            integrations::get_upcoming_events,
-            integrations::list_notes,
-            integrations::get_files_settings,
-            integrations::update_files_settings,
-            integrations::list_recent_files,
-            integrations::get_email_settings,
-            integrations::update_email_settings,
-            integrations::email_oauth_status,
-            integrations::email_begin_oauth,
-            integrations::email_disconnect,
-            integrations::list_email_inbox,
-            integrations::triage_email_inbox,
-            integrations::apply_email_triage,
-            integrations::add_note,
-            integrations::update_note,
-            integrations::delete_note,
+            integrations::integrations::get_calendar_settings,
+            integrations::integrations::update_calendar_settings,
+            integrations::integrations::get_upcoming_events,
+            integrations::integrations::list_notes,
+            integrations::integrations::get_files_settings,
+            integrations::integrations::update_files_settings,
+            integrations::integrations::list_recent_files,
+            integrations::integrations::get_email_settings,
+            integrations::integrations::update_email_settings,
+            integrations::integrations::email_oauth_status,
+            integrations::integrations::email_begin_oauth,
+            integrations::integrations::email_disconnect,
+            integrations::integrations::list_email_inbox,
+            integrations::integrations::triage_email_inbox,
+            integrations::integrations::apply_email_triage,
+            integrations::integrations::add_note,
+            integrations::integrations::update_note,
+            integrations::integrations::delete_note,
             // Scheduler commands
             scheduler::get_scheduler_settings,
             scheduler::update_scheduler_settings,
@@ -992,7 +1029,7 @@ pub fn run() {
             pairing::clear_pairing_code,
             pairing::reject_pairing,
             // Permission diagnostics
-            permissions::get_permission_diagnostics_command,
+            crate::config::permissions::get_permission_diagnostics_command,
             // Timeline commands
             timeline::get_timeline,
             timeline::clear_timeline,
@@ -1000,11 +1037,11 @@ pub fn run() {
             events_bus::get_event_bus_config,
             events_bus::set_event_bus_config,
             events_bus::clear_events,
-            intent::get_intents,
-            intent::dismiss_intent,
-            intent::create_intent_action,
-            intent::get_intent_actions,
-            intent::auto_create_top_intent,
+            intent::intent::get_intents,
+            intent::intent::dismiss_intent,
+            intent::intent::create_intent_action,
+            intent::intent::get_intent_actions,
+            intent::intent::auto_create_top_intent,
             skills::list_skills,
             skills::create_skill,
             skills::increment_skill_usage,
@@ -1044,27 +1081,27 @@ pub fn run() {
             privacy::can_capture_screen,
             privacy::can_analyze_with_ai,
             privacy::get_privacy_notice,
-            capture::get_capture_settings,
-            capture::set_capture_settings,
+            capture::capture::get_capture_settings,
+            capture::capture::set_capture_settings,
             // Action confirmation commands
-            actions::get_pending_actions,
-            actions::approve_action,
-            actions::deny_action,
-            actions::get_action_history,
-            actions::clear_pending_actions,
-            actions::clear_action_history,
-            actions::execute_approved_action,
-            action_ledger::get_action_ledger,
-            action_ledger::export_action_ledger,
+            actions::actions::get_pending_actions,
+            actions::actions::approve_action,
+            actions::actions::deny_action,
+            actions::actions::get_action_history,
+            actions::actions::clear_pending_actions,
+            actions::actions::clear_action_history,
+            actions::actions::execute_approved_action,
+            actions::action_ledger::get_action_ledger,
+            actions::action_ledger::export_action_ledger,
             // Action preview commands
-            actions::get_active_preview,
-            actions::approve_preview,
-            actions::deny_preview,
-            actions::update_preview_param,
+            actions::actions::get_active_preview,
+            actions::actions::approve_preview,
+            actions::actions::deny_preview,
+            actions::actions::update_preview_param,
             // Undo/Rollback commands
-            actions::get_rollback_status,
-            actions::undo_action,
-            actions::redo_action,
+            actions::actions::get_rollback_status,
+            actions::actions::undo_action,
+            actions::actions::redo_action,
             // Sandbox commands (file system & shell access)
             mcp::sandbox::get_sandbox_settings,
             mcp::sandbox::set_sandbox_trust_level,
@@ -1093,10 +1130,10 @@ pub fn run() {
             ipc::set_reflection_mode,
             ipc::set_guardrails_mode,
             // Game state commands
-            game_state::get_game_state,
-            game_state::reset_game,
-            game_state::check_hint_available,
-            game_state::get_next_hint,
+            core::game_state::get_game_state,
+            core::game_state::reset_game,
+            core::game_state::check_hint_available,
+            core::game_state::get_next_hint,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
