@@ -114,8 +114,28 @@ pub struct PrivacySettings {
     /// Trust profile preset
     #[serde(default)]
     pub trust_profile: String,
+    /// Allow app context detection (which app is active)
+    #[serde(default)]
+    pub app_context_consent: bool,
+    /// Allow idle detection
+    #[serde(default)]
+    pub idle_detection_consent: bool,
+    /// Allow smart suggestions
+    #[serde(default)]
+    pub smart_suggestions_consent: bool,
+    /// Suggestion cooldown (minutes between suggestions)
+    #[serde(default = "default_suggestion_cooldown")]
+    pub suggestion_cooldown_minutes: u32,
+    /// Do not disturb hours (e.g., "22:00-08:00")
+    #[serde(default)]
+    pub quiet_hours: Option<String>,
     /// Timestamp of consent
     pub consent_timestamp: Option<u64>,
+}
+
+/// Default suggestion cooldown (5 minutes)
+fn default_suggestion_cooldown() -> u32 {
+    5
 }
 
 /// Default max visual actions per minute
@@ -141,6 +161,11 @@ impl Default for PrivacySettings {
             confirm_new_sites: true,
             preview_policy: PreviewPolicy::Always,
             trust_profile: "balanced".to_string(),
+            app_context_consent: false,
+            idle_detection_consent: false,
+            smart_suggestions_consent: false,
+            suggestion_cooldown_minutes: default_suggestion_cooldown(),
+            quiet_hours: Some("22:00-08:00".to_string()),
             consent_timestamp: None,
         }
     }
