@@ -405,10 +405,13 @@ Respond in JSON: {{"activity":"brief description","is_idle":bool,"new_fact":stri
         );
 
         // AI analysis with timeout to prevent hanging (increased to 30s for slower local models)
-        let analysis_result = tokio::time::timeout(
-            Duration::from_secs(30),
-            ai_router.analyze_image(&base64_image, &prompt),
-        )
+        let analysis_result = tokio::time::timeout(Duration::from_secs(30), async {
+            tracing::debug!(
+                "Calling AI analysis from Monitor Loop (Thread: {:?})",
+                std::thread::current().id()
+            );
+            ai_router.analyze_image(&base64_image, &prompt).await
+        })
         .await;
 
         match analysis_result {
