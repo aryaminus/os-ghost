@@ -44,7 +44,7 @@ pub mod macos {
 pub mod windows {
     use super::*;
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
+        SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_LEFTDOWN,
         MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
         MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
         MOUSEEVENTF_WHEEL, MOUSE_EVENT_FLAGS, MOUSEINPUT,
@@ -52,22 +52,27 @@ pub mod windows {
     use ::windows::Win32::Foundation::POINT;
     use ::windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
     
-    pub fn move_mouse(x: i32, y: i32) -> Result<(), InputError> {
-        unsafe {
-            let input = INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: std::mem::transmute(MOUSEINPUT {
-                    dx: x,
-                    dy: y,
-                    mouseData: 0,
-                    dwFlags: MOUSEEVENTF_MOVE,
+    /// Helper to create a mouse INPUT struct
+    fn make_mouse_input(dx: i32, dy: i32, mouse_data: u32, flags: MOUSE_EVENT_FLAGS) -> INPUT {
+        INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx,
+                    dy,
+                    mouseData: mouse_data,
+                    dwFlags: flags,
                     time: 0,
                     dwExtraInfo: 0,
-                }),
-            };
-            
+                },
+            },
+        }
+    }
+    
+    pub fn move_mouse(x: i32, y: i32) -> Result<(), InputError> {
+        unsafe {
+            let input = make_mouse_input(x, y, 0, MOUSEEVENTF_MOVE);
             SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-            
             Ok(())
         }
     }
@@ -81,36 +86,14 @@ pub mod windows {
             };
             
             // Mouse down
-            let down_input = INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: std::mem::transmute(MOUSEINPUT {
-                    dx: 0,
-                    dy: 0,
-                    mouseData: 0,
-                    dwFlags: down_flag,
-                    time: 0,
-                    dwExtraInfo: 0,
-                }),
-            };
-            
+            let down_input = make_mouse_input(0, 0, 0, down_flag);
             SendInput(&[down_input], std::mem::size_of::<INPUT>() as i32);
             
             // Small delay
             std::thread::sleep(std::time::Duration::from_millis(50));
             
             // Mouse up
-            let up_input = INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: std::mem::transmute(MOUSEINPUT {
-                    dx: 0,
-                    dy: 0,
-                    mouseData: 0,
-                    dwFlags: up_flag,
-                    time: 0,
-                    dwExtraInfo: 0,
-                }),
-            };
-            
+            let up_input = make_mouse_input(0, 0, 0, up_flag);
             SendInput(&[up_input], std::mem::size_of::<INPUT>() as i32);
             
             Ok(())
@@ -133,18 +116,7 @@ pub mod windows {
                 MOUSE_EVENT_FLAGS(0) // Horizontal scroll not implemented yet
             };
             
-            let input = INPUT {
-                r#type: INPUT_MOUSE,
-                Anonymous: std::mem::transmute(MOUSEINPUT {
-                    dx: 0,
-                    dy: 0,
-                    mouseData: wheel_delta,
-                    dwFlags: flags,
-                    time: 0,
-                    dwExtraInfo: 0,
-                }),
-            };
-            
+            let input = make_mouse_input(0, 0, wheel_delta, flags);
             SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
             
             Ok(())
