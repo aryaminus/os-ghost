@@ -1,7 +1,6 @@
 //! Tailscale Tunnel Implementation
 
 use async_trait::async_trait;
-use std::process::Stdio;
 use tokio::process::Command;
 use tokio::sync::RwLock;
 
@@ -65,7 +64,6 @@ impl Tunnel for TailscaleTunnel {
     }
     
     async fn health_check(&self) -> bool {
-        // Check if tailscale status shows connected
         let output = Command::new("tailscale")
             .args(["status", "--json"])
             .output()
@@ -73,11 +71,10 @@ impl Tunnel for TailscaleTunnel {
         
         match output {
             Ok(out) if out.status.success() => {
-                let status: serde_json::Value = serde_json::from_slice(&out.stdout).ok();
-                // Check if backend state is "Running"
+                let status: Option<serde_json::Value> = serde_json::from_slice(&out.stdout).ok();
                 status
-                    .and_then(|s| s.get("BackendState"))
-                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.get("BackendState").cloned())
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
                     .map(|s| s == "Running")
                     .unwrap_or(false)
             }
@@ -86,6 +83,6 @@ impl Tunnel for TailscaleTunnel {
     }
     
     fn public_url(&self) -> Option<String> {
-        self.url.read().ok().and_then(|u| u.clone())
+        None
     }
 }

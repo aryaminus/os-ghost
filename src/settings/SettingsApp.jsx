@@ -13,6 +13,8 @@ import DeveloperSection from "./sections/DeveloperSection";
 import IntegrationsSection from "./sections/IntegrationsSection";
 import VisualAutomationSection from "./sections/VisualAutomationSection";
 import WorkflowsSection from "./sections/WorkflowsSection";
+import ScheduledTasksSection from "./sections/ScheduledTasksSection";
+import WorkspaceSection from "./sections/WorkspaceSection";
 
 const DEFAULT_SETTINGS_STATE = {
   privacy: null,
@@ -43,6 +45,8 @@ const SECTIONS = Object.freeze([
   { id: "autonomy", label: "Autonomy" },
   { id: "sandbox", label: "Sandbox" },
   { id: "integrations", label: "Integrations" },
+  { id: "scheduled", label: "Scheduled Tasks" },
+  { id: "workspace", label: "Workspace" },
   { id: "developer", label: "Developer" },
 ]);
 
@@ -259,6 +263,18 @@ const SettingsApp = () => {
               )}
               {activeSection === "integrations" && (
                 <IntegrationsSection
+                  settingsState={settingsState}
+                  onSettingsUpdated={handleSettingsUpdated}
+                />
+              )}
+              {activeSection === "scheduled" && (
+                <ScheduledTasksSection
+                  settingsState={settingsState}
+                  onSettingsUpdated={handleSettingsUpdated}
+                />
+              )}
+              {activeSection === "workspace" && (
+                <WorkspaceSection
                   settingsState={settingsState}
                   onSettingsUpdated={handleSettingsUpdated}
                 />

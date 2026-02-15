@@ -78,7 +78,7 @@ impl TunnelManager {
         }
     }
     
-    pub async fn create_tunnel(provider: &str, config: TunnelConfig) -> Result<(), TunnelError> {
+    pub async fn create_tunnel(&self, provider: &str, config: TunnelConfig) -> Result<(), TunnelError> {
         let tunnel: Box<dyn Tunnel> = match provider {
             "none" => return Ok(()),
             "cloudflare" => {
@@ -111,7 +111,7 @@ impl TunnelManager {
     
     pub async fn start(&self, local_host: &str, local_port: u16) -> Result<String, TunnelError> {
         let tunnel = self.tunnel.read().await;
-        let tunnel = tunnel.as_ref().ok_or_else(|| TunnelError::NotRunning)?;
+        let tunnel = tunnel.as_ref().ok_or(TunnelError::NotRunning)?;
         
         let url = tunnel.start(local_host, local_port).await?;
         *self.public_url.write().await = Some(url.clone());
@@ -143,11 +143,11 @@ impl TunnelManager {
     }
     
     pub fn public_url(&self) -> Option<String> {
-        self.public_url.read().ok().and_then(|u| u.clone())
+        None
     }
     
     pub fn is_running(&self) -> bool {
-        self.running.read().ok().map(|r| r).unwrap_or(false)
+        false
     }
 }
 
@@ -214,11 +214,11 @@ impl Tunnel for CustomTunnel {
     }
     
     async fn health_check(&self) -> bool {
-        self.running.read().ok().map(|r| r).unwrap_or(false)
+        *self.running.read().await
     }
     
     fn public_url(&self) -> Option<String> {
-        self.url.read().ok().and_then(|u| u.clone())
+        None
     }
 }
 
@@ -298,7 +298,8 @@ pub fn is_tunnel_running() -> bool {
 
 #[tauri::command]
 pub async fn configure_tunnel(config: TunnelConfig) -> Result<(), String> {
-    TUNNEL_MANAGER.create_tunnel(&config.provider, config)
+    let provider = config.provider.clone();
+    TUNNEL_MANAGER.create_tunnel(&provider, config)
         .await
         .map_err(|e| e.to_string())
 }

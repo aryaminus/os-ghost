@@ -13,23 +13,12 @@ lazy_static::lazy_static! {
     static ref HEARTBEAT_STATE: RwLock<HeartbeatState> = RwLock::new(HeartbeatState::default());
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HeartbeatState {
     pub running: bool,
     pub tasks_executed: u64,
     pub last_task_time: Option<u64>,
     pub errors: Vec<String>,
-}
-
-impl Default for HeartbeatState {
-    fn default() -> Self {
-        Self {
-            running: false,
-            tasks_executed: 0,
-            last_task_time: None,
-            errors: vec![],
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,7 +180,7 @@ pub struct DaemonManager {
     components: RwLock<Vec<DaemonComponent>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DaemonComponent {
     pub name: String,
     pub running: bool,

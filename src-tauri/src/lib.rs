@@ -48,11 +48,14 @@ pub mod resources;
 // Headless Server & CLI (Phase 4: Match UI-TARS capabilities)
 pub mod server;
 
-// Native OS Input Control (Phase 5: Native automation like UI-TARS)
-pub mod input;
+// Scheduler & Heartbeat
+pub mod scheduler;
 
 // Security (IronClaw-inspired)
 pub mod security;
+
+// Native OS Input Control (Phase 5: Native automation like UI-TARS)
+pub mod input;
 
 // Plugin system (Moltis-inspired hooks)
 pub mod plugins;
@@ -77,6 +80,8 @@ use tauri_plugin_updater::UpdaterExt;
 use config::privacy;
 use core::notifications;
 use data::events_bus;
+#[allow(unused_imports)]
+use data::identity;
 use data::pairing;
 use data::persona;
 use data::skills;
@@ -1062,6 +1067,10 @@ pub fn run() {
             // Scheduler commands
             config::scheduler::get_scheduler_settings,
             config::scheduler::update_scheduler_settings,
+            config::scheduler::get_scheduled_tasks,
+            config::scheduler::add_scheduled_task,
+            config::scheduler::remove_scheduled_task,
+            config::scheduler::toggle_scheduled_task,
             // Pairing commands
             pairing::get_pairing_status,
             pairing::create_pairing_code,
@@ -1200,6 +1209,36 @@ pub fn run() {
             data::workspace_context::get_boot_md_path,
             // TOML config validation (Moltis-inspired)
             config::toml_config::validate_toml_settings,
+            // Identity commands (Moltis-inspired)
+            data::identity::load_aieos_identity,
+            data::identity::get_current_aieos_identity,
+            data::identity::get_identity_display_name,
+            data::identity::get_identity_prompt,
+            // Tunnel commands
+            server::tunnel::start_tunnel,
+            server::tunnel::stop_tunnel,
+            server::tunnel::tunnel_health_check,
+            server::tunnel::get_tunnel_url,
+            server::tunnel::is_tunnel_running,
+            server::tunnel::configure_tunnel,
+            // Heartbeat/daemon commands
+            scheduler::heartbeat::get_heartbeat_state,
+            scheduler::heartbeat::get_daemon_status,
+            scheduler::heartbeat::is_daemon_healthy,
+            // Security commands (IronClaw-inspired)
+            security::leak_detector::detect_leaks,
+            security::leak_detector::sanitize_text,
+            security::http_allowlist::check_http_allowed,
+            security::http_allowlist::add_allowed_domain,
+            security::http_allowlist::add_blocked_domain,
+            security::http_allowlist::add_allowed_path,
+            security::http_allowlist::get_allowed_domains_list,
+            security::http_allowlist::set_allowlist_enabled,
+            security::http_allowlist::get_allowlist_status,
+            // Sanitization commands (Moltis-inspired)
+            mcp::sanitization::sanitize_output,
+            mcp::sanitization::sanitize_output_with_limit,
+            mcp::sanitization::get_sanitizer_max_size,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

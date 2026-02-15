@@ -32,6 +32,27 @@ const DeveloperSection = ({ settingsState }) => {
   const [eventBusConfig, setEventBusConfig] = useState({ max_events: 300, dedup_ttl_secs_default: 600 });
   const [eventBusSaving, setEventBusSaving] = useState(false);
 
+  // Hook system state (Moltis-inspired)
+  const [hooks, setHooks] = useState([]);
+  const [hooksLoading, setHooksLoading] = useState(false);
+  const [hookState, setHookState] = useState({});
+  const [hooksReloading, setHooksReloading] = useState(false);
+
+  // Config validation state (Moltis-inspired)
+  const [configValidation, setConfigValidation] = useState(null);
+  const [validatingConfig, setValidatingConfig] = useState(false);
+
+  // Sanitization state (Moltis-inspired)
+  const [sanitizerMaxSize, setSanitizerMaxSize] = useState(51200);
+  const [sanitizerLoading, setSanitizerLoading] = useState(false);
+
+  // Security state (IronClaw-inspired)
+  const [allowlistEnabled, setAllowlistEnabled] = useState(false);
+  const [allowedDomains, setAllowedDomains] = useState([]);
+  const [securityLoading, setSecurityLoading] = useState(false);
+  const [newDomain, setNewDomain] = useState("");
+  const [leakTestResult, setLeakTestResult] = useState(null);
+
   const handleClearPending = async () => {
     await invoke("clear_pending_actions");
   };
@@ -47,6 +68,151 @@ const DeveloperSection = ({ settingsState }) => {
   const handleClearTimeline = async () => {
     await invoke("clear_timeline");
   };
+
+  // Hook system handlers (Moltis-inspired)
+  const refreshHooks = useCallback(async () => {
+    setHooksLoading(true);
+    try {
+      const hookList = await invoke("get_hooks");
+      setHooks(Array.isArray(hookList) ? hookList : []);
+      const state = await invoke("get_hook_state");
+      setHookState(state || {});
+    } catch (err) {
+      console.error("Failed to load hooks", err);
+    } finally {
+      setHooksLoading(false);
+    }
+  }, []);
+
+  const reloadHooks = useCallback(async () => {
+    setHooksReloading(true);
+    try {
+      await invoke("reload_hooks_cmd");
+      await refreshHooks();
+    } catch (err) {
+      console.error("Failed to reload hooks", err);
+    } finally {
+      setHooksReloading(false);
+    }
+  }, [refreshHooks]);
+
+  const toggleHook = useCallback(async (hookName, enabled) => {
+    try {
+      if (enabled) {
+        await invoke("enable_hook_cmd", { name: hookName });
+      } else {
+        await invoke("disable_hook_cmd", { name: hookName });
+      }
+      await refreshHooks();
+    } catch (err) {
+      console.error("Failed to toggle hook", err);
+    }
+  }, [refreshHooks]);
+
+  // Config validation handler (Moltis-inspired)
+  const validateConfig = useCallback(async () => {
+    setValidatingConfig(true);
+    try {
+      const result = await invoke("validate_toml_settings");
+      setConfigValidation(result);
+    } catch (err) {
+      console.error("Failed to validate config", err);
+      setConfigValidation({ valid: false, errors: [err.toString()], warnings: [], suggestions: [] });
+    } finally {
+      setValidatingConfig(false);
+    }
+  }, []);
+
+  // Sanitization handlers (Moltis-inspired)
+  const refreshSanitizerSettings = useCallback(async () => {
+    setSanitizerLoading(true);
+    try {
+      const maxSize = await invoke("get_sanitizer_max_size");
+      setSanitizerMaxSize(maxSize || 51200);
+    } catch (err) {
+      console.error("Failed to load sanitizer settings", err);
+    } finally {
+      setSanitizerLoading(false);
+    }
+  }, []);
+
+  const saveSanitizerMaxSize = useCallback(async () => {
+    setSanitizerLoading(true);
+    try {
+      await invoke("sanitize_output_with_limit", { content: "", maxBytes: sanitizerMaxSize });
+    } catch (err) {
+      console.error("Failed to save sanitizer settings", err);
+    } finally {
+      setSanitizerLoading(false);
+    }
+  }, [sanitizerMaxSize]);
+
+  // Security handlers (IronClaw-inspired)
+  const refreshSecuritySettings = useCallback(async () => {
+    setSecurityLoading(true);
+    try {
+      const enabled = await invoke("get_allowlist_status");
+      setAllowlistEnabled(enabled);
+      const domains = await invoke("get_allowed_domains_list");
+      setAllowedDomains(Array.isArray(domains) ? domains : []);
+    } catch (err) {
+      console.error("Failed to load security settings", err);
+    } finally {
+      setSecurityLoading(false);
+    }
+  }, []);
+
+  const toggleAllowlist = useCallback(async (enabled) => {
+    setSecurityLoading(true);
+    try {
+      await invoke("set_allowlist_enabled", { enabled });
+      setAllowlistEnabled(enabled);
+    } catch (err) {
+      console.error("Failed to toggle allowlist", err);
+    } finally {
+      setSecurityLoading(false);
+    }
+  }, []);
+
+  const addAllowedDomain = useCallback(async () => {
+    if (!newDomain.trim()) return;
+    setSecurityLoading(true);
+    try {
+      await invoke("add_allowed_domain", { domain: newDomain.trim() });
+      setNewDomain("");
+      await refreshSecuritySettings();
+    } catch (err) {
+      console.error("Failed to add domain", err);
+    } finally {
+      setSecurityLoading(false);
+    }
+  }, [newDomain, refreshSecuritySettings]);
+
+  const blockDomain = useCallback(async (domain) => {
+    setSecurityLoading(true);
+    try {
+      await invoke("add_blocked_domain", { domain });
+      await refreshSecuritySettings();
+    } catch (err) {
+      console.error("Failed to block domain", err);
+    } finally {
+      setSecurityLoading(false);
+    }
+  }, [refreshSecuritySettings]);
+
+  const testLeakDetection = useCallback(async () => {
+    setSecurityLoading(true);
+    try {
+      const testContent = "API Key: sk-1234567890abcdefghijklmnopqrstuvwxyz";
+      const result = await invoke("detect_leaks", { content: testContent });
+      setLeakTestResult(result);
+    } catch (err) {
+      console.error("Failed to test leak detection", err);
+      setLeakTestResult({ blocked: false, matches: [], error: err.toString() });
+    } finally {
+      setSecurityLoading(false);
+    }
+  }, []);
 
   const refreshActionLedger = useCallback(async () => {
     setLedgerLoading(true);
@@ -124,7 +290,10 @@ const DeveloperSection = ({ settingsState }) => {
     refreshActionLedger();
     refreshRecentEvents();
     refreshEventBusConfig();
-  }, [refreshActionLedger, refreshRecentEvents, refreshEventBusConfig]);
+    refreshHooks();
+    refreshSanitizerSettings();
+    refreshSecuritySettings();
+  }, [refreshActionLedger, refreshRecentEvents, refreshEventBusConfig, refreshHooks, refreshSanitizerSettings, refreshSecuritySettings]);
 
   return (
     <section className="settings-section">
@@ -516,6 +685,235 @@ const DeveloperSection = ({ settingsState }) => {
           </div>
         </div>
       )}
+
+      {/* Hook System Section (Moltis-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Hooks</h3>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={reloadHooks}
+            disabled={hooksReloading}
+          >
+            {hooksReloading ? "Reloading…" : "Reload"}
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={refreshHooks}
+            disabled={hooksLoading}
+          >
+            {hooksLoading ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        <p className="card-note">
+          Lifecycle hooks for observing, modifying, or blocking agent behavior.
+        </p>
+        {hooks.length === 0 ? (
+          <p className="card-note">No hooks discovered. Create ~/.os-ghost/hooks/&lt;name&gt;/HOOK.md</p>
+        ) : (
+          <div className="list-grid">
+            {hooks.map((hook) => (
+              <div key={hook.name} className="list-item">
+                <div>
+                  <strong>{hook.name}</strong>
+                  <div className="card-note">
+                    Events: {hook.events?.join(", ") || "none"} | Timeout: {hook.timeout_secs}s
+                  </div>
+                  {hookState[hook.name] && (
+                    <span className="status-pill negative">Disabled (circuit breaker)</span>
+                  )}
+                </div>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={hook.enabled !== false}
+                    onChange={(e) => toggleHook(hook.name, e.target.checked)}
+                  />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Config Validation Section (Moltis-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Config Validation</h3>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={validateConfig}
+            disabled={validatingConfig}
+          >
+            {validatingConfig ? "Validating…" : "Validate"}
+          </button>
+        </div>
+        <p className="card-note">
+          Validate TOML configuration for errors, warnings, and suggestions.
+        </p>
+        {configValidation && (
+          <div className="preview-card">
+            {configValidation.errors?.length > 0 && (
+              <div>
+                <strong className="text-error">Errors:</strong>
+                <ul className="card-list">
+                  {configValidation.errors.map((err, i) => (
+                    <li key={i} className="text-error">{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {configValidation.warnings?.length > 0 && (
+              <div>
+                <strong className="text-warning">Warnings:</strong>
+                <ul className="card-list">
+                  {configValidation.warnings.map((warn, i) => (
+                    <li key={i} className="text-warning">{warn}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {configValidation.suggestions?.length > 0 && (
+              <div>
+                <strong>Suggestions:</strong>
+                <ul className="card-list">
+                  {configValidation.suggestions.map((sug, i) => (
+                    <li key={i}>{sug}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {configValidation.valid && !configValidation.errors?.length && (
+              <p className="card-note text-success">Configuration is valid!</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Sanitization Settings (Moltis-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Tool Output Sanitization</h3>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={saveSanitizerMaxSize}
+            disabled={sanitizerLoading}
+          >
+            {sanitizerLoading ? "Saving…" : "Save"}
+          </button>
+        </div>
+        <p className="card-note">
+          Sanitize tool output before feeding back to LLM. Strips secrets, base64, truncates large results.
+        </p>
+        <div className="settings-grid">
+          <div>
+            <label className="card-label" htmlFor="sanitizer-max">
+              Max output size (bytes)
+            </label>
+            <input
+              id="sanitizer-max"
+              className="text-input"
+              type="number"
+              min="1024"
+              max="1048576"
+              value={sanitizerMaxSize}
+              onChange={(event) => setSanitizerMaxSize(Number(event.target.value))}
+            />
+            <span className="card-note">Default: 51200 (50KB)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* HTTP Allowlist (IronClaw-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>HTTP Allowlist</h3>
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={allowlistEnabled}
+              onChange={(e) => toggleAllowlist(e.target.checked)}
+              disabled={securityLoading}
+            />
+            <span>{allowlistEnabled ? "Enabled" : "Disabled"}</span>
+          </label>
+        </div>
+        <p className="card-note">
+          Restrict HTTP requests to approved domains only. Prevents tool exfiltration of credentials.
+        </p>
+        <div className="settings-grid">
+          <div>
+            <label className="card-label" htmlFor="new-domain">Add domain</label>
+            <div className="input-group">
+              <input
+                id="new-domain"
+                className="text-input"
+                type="text"
+                placeholder="example.com"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addAllowedDomain()}
+              />
+              <button type="button" onClick={addAllowedDomain} disabled={securityLoading || !newDomain.trim()}>
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+        {allowedDomains.length > 0 && (
+          <div className="tag-list">
+            {allowedDomains.map((domain) => (
+              <span key={domain} className="tag">
+                {domain}
+                <button type="button" onClick={() => blockDomain(domain)} title="Block domain">
+                  &times;
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Leak Detection Test (IronClaw-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Leak Detection</h3>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={testLeakDetection}
+            disabled={securityLoading}
+          >
+            {securityLoading ? "Testing…" : "Test Detection"}
+          </button>
+        </div>
+        <p className="card-note">
+          Scans tool output for potential credential leaks (API keys, tokens, passwords).
+        </p>
+        {leakTestResult && (
+          <div className="result-box">
+            <p><strong>Blocked:</strong> {leakTestResult.blocked ? "Yes" : "No"}</p>
+            <p><strong>Matches found:</strong> {leakTestResult.matches?.length || 0}</p>
+            {leakTestResult.matches?.length > 0 && (
+              <ul>
+                {leakTestResult.matches.map((match, i) => (
+                  <li key={i} className="warning-text">
+                    {match.pattern_name} ({match.severity})
+                  </li>
+                ))}
+              </ul>
+            )}
+            {leakTestResult.error && (
+              <p className="error-text">{leakTestResult.error}</p>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 };

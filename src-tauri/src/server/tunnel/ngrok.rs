@@ -1,7 +1,6 @@
 //! ngrok Tunnel Implementation
 
 use async_trait::async_trait;
-use std::process::Stdio;
 use tokio::process::Command;
 use tokio::sync::RwLock;
 
@@ -97,7 +96,6 @@ impl Tunnel for NgrokTunnel {
     }
     
     async fn health_check(&self) -> bool {
-        // Check if ngrok API is responding
         let output = Command::new("curl")
             .args(["-s", "http://127.0.0.1:4040/api/tunnels"])
             .output()
@@ -105,10 +103,10 @@ impl Tunnel for NgrokTunnel {
         
         match output {
             Ok(out) if out.status.success() => {
-                let tunnels: serde_json::Value = serde_json::from_slice(&out.stdout).ok();
+                let tunnels: Option<serde_json::Value> = serde_json::from_slice(&out.stdout).ok();
                 tunnels
-                    .and_then(|t| t.get("tunnels"))
-                    .and_then(|arr| arr.as_array())
+                    .and_then(|t| t.get("tunnels").cloned())
+                    .and_then(|arr| arr.as_array().map(|a| a.to_vec()))
                     .map(|a| !a.is_empty())
                     .unwrap_or(false)
             }
@@ -117,6 +115,6 @@ impl Tunnel for NgrokTunnel {
     }
     
     fn public_url(&self) -> Option<String> {
-        self.url.read().ok().and_then(|u| u.clone())
+        None
     }
 }

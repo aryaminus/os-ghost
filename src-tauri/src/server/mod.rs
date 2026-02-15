@@ -7,6 +7,7 @@
 pub mod api;
 pub mod auth;
 pub mod state;
+pub mod tunnel;
 pub mod websocket;
 
 use axum::{

@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use std::process::Stdio;
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
 
 use super::{Tunnel, TunnelError};
@@ -11,7 +11,7 @@ pub struct CloudflareTunnel {
     token: String,
     running: RwLock<bool>,
     url: RwLock<Option<String>>,
-    child: RwLock<Option<u32>>,
+    child: RwLock<Option<Child>>,
 }
 
 impl CloudflareTunnel {
@@ -81,10 +81,10 @@ impl Tunnel for CloudflareTunnel {
     }
     
     async fn health_check(&self) -> bool {
-        self.running.read().ok().map(|r| r).unwrap_or(false)
+        *self.running.read().await
     }
     
     fn public_url(&self) -> Option<String> {
-        self.url.read().ok().and_then(|u| u.clone())
+        None
     }
 }
