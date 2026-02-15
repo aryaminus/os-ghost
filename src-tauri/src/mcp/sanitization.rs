@@ -69,12 +69,9 @@ impl ToolResultSanitizer {
     }
 
     fn strip_base64(&self, content: &str) -> String {
-        // Only strip standalone base64 strings (not part of other content)
         let mut result = content.to_string();
 
-        // Find base64-like strings and replace
         for mat in self.base64_pattern.find_iter(content) {
-            // Check if it's a standalone string (surrounded by whitespace or boundaries)
             let start = mat.start();
             let end = mat.end();
 
@@ -115,6 +112,12 @@ impl ToolResultSanitizer {
         } else {
             content.to_string()
         }
+    }
+}
+
+impl Default for ToolResultSanitizer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

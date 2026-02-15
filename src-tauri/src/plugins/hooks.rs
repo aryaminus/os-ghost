@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
@@ -431,7 +431,7 @@ pub fn discover_hooks() -> Vec<HookDefinition> {
     hooks
 }
 
-fn parse_hook_md(dir: &PathBuf) -> Result<HookDefinition, String> {
+fn parse_hook_md(dir: &Path) -> Result<HookDefinition, String> {
     let hook_md_path = dir.join("HOOK.md");
     let content = std::fs::read_to_string(&hook_md_path)
         .map_err(|e| format!("Failed to read HOOK.md: {}", e))?;
@@ -465,7 +465,7 @@ fn parse_hook_md(dir: &PathBuf) -> Result<HookDefinition, String> {
         .filter_map(|s| serde_json::from_str(&format!("\"{}\"", s)).ok())
         .collect();
 
-    let name = dir
+    let _name = dir
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unnamed")

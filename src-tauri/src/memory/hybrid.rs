@@ -9,6 +9,7 @@ use std::sync::Mutex;
 
 pub struct HybridMemory {
     conn: Connection,
+    #[allow(dead_code)]
     vector_dim: usize,
 }
 

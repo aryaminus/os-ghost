@@ -8,7 +8,7 @@
 //! These files allow users to customize agent behavior without code changes.
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
 lazy_static::lazy_static! {
@@ -27,7 +27,7 @@ pub struct WorkspaceContext {
 }
 
 impl WorkspaceContext {
-    pub fn load(data_dir: &PathBuf) -> Self {
+    pub fn load(data_dir: &Path) -> Self {
         let mut context = WorkspaceContext::default();
 
         // Load TOOLS.md
