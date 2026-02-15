@@ -35,7 +35,7 @@ impl ObserverAgent {
     /// Extract key topics from page using Chain-of-Thought reasoning
     async fn extract_topics(&self, context: &AgentContext) -> AgentResult<Vec<String>> {
         let redacted_content = crate::config::privacy::redact_with_settings(&context.page_content);
-        
+
         // CoT prompt for topic extraction
         let cot_prompt = format!(
             r#"Analyze this webpage content and extract key topics.

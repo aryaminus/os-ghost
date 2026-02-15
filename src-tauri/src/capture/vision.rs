@@ -126,13 +126,15 @@ impl VisionCapture {
         screenshot: &AnalyzedScreenshot,
         element: &VisualElement,
     ) -> (u32, u32) {
-        element.coordinates.to_screen(screenshot.width, screenshot.height)
+        element
+            .coordinates
+            .to_screen(screenshot.width, screenshot.height)
     }
 
     /// Helper: Calculate match score
     fn calculate_match_score(&self, element: &VisualElement, query: &str) -> f32 {
         let mut score = element.confidence;
-        
+
         // Boost score if text content matches exactly
         if let Some(text) = &element.text_content {
             if text.to_lowercase() == query {

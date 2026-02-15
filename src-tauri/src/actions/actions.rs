@@ -1,14 +1,14 @@
 //! Action confirmation system
 //! Manages pending actions that require user confirmation before execution
 
+use crate::actions::action_ledger::{update_action_status, ActionLedgerStatus};
+use crate::ai::ai_provider::SmartAiRouter;
+use crate::data::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
+use crate::mcp::browser::BrowserMcpServer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
-use crate::actions::action_ledger::{update_action_status, ActionLedgerStatus};
-use crate::ai::ai_provider::SmartAiRouter;
-use crate::mcp::browser::BrowserMcpServer;
-use crate::data::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 use tauri::State;
 
 // ============================================================================
@@ -33,7 +33,9 @@ pub struct HandlerContext {
 /// Type alias for async action handler functions
 type ActionHandlerFn = fn(
     HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>;
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>,
+>;
 
 /// Registry mapping action types to handler functions
 struct HandlerRegistry {
@@ -98,20 +100,22 @@ async fn execute_with_handler(ctx: HandlerContext) -> Result<serde_json::Value, 
 /// Handler for browser.navigate action
 fn handle_browser_navigate(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let url = ctx
             .args
             .get("url")
             .and_then(|v| v.as_str())
             .ok_or("Missing URL")?;
-        ctx.effect_queue.push(crate::core::game_state::EffectMessage {
-            action: "navigate".to_string(),
-            effect: None,
-            duration: None,
-            text: None,
-            url: Some(url.to_string()),
-        });
+        ctx.effect_queue
+            .push(crate::core::game_state::EffectMessage {
+                action: "navigate".to_string(),
+                effect: None,
+                duration: None,
+                text: None,
+                url: Some(url.to_string()),
+            });
         if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
             rollback.record_navigation(&ctx.action_id.to_string(), url, None);
         }
@@ -122,7 +126,8 @@ fn handle_browser_navigate(
 /// Handler for browser.inject_effect action
 fn handle_browser_inject_effect(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let effect = ctx
             .args
@@ -134,13 +139,14 @@ fn handle_browser_inject_effect(
             .get("duration")
             .and_then(|v| v.as_u64())
             .map(|d| d.clamp(100, 10_000));
-        ctx.effect_queue.push(crate::core::game_state::EffectMessage {
-            action: "inject_effect".to_string(),
-            effect: Some(effect.to_string()),
-            duration,
-            text: None,
-            url: None,
-        });
+        ctx.effect_queue
+            .push(crate::core::game_state::EffectMessage {
+                action: "inject_effect".to_string(),
+                effect: Some(effect.to_string()),
+                duration,
+                text: None,
+                url: None,
+            });
         if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
             rollback.record_effect(&ctx.action_id.to_string(), effect, duration.unwrap_or(1000));
         }
@@ -151,20 +157,22 @@ fn handle_browser_inject_effect(
 /// Handler for browser.highlight_text action
 fn handle_browser_highlight_text(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let text = ctx
             .args
             .get("text")
             .and_then(|v| v.as_str())
             .ok_or("Missing text")?;
-        ctx.effect_queue.push(crate::core::game_state::EffectMessage {
-            action: "highlight_text".to_string(),
-            effect: None,
-            duration: None,
-            text: Some(text.to_string()),
-            url: None,
-        });
+        ctx.effect_queue
+            .push(crate::core::game_state::EffectMessage {
+                action: "highlight_text".to_string(),
+                effect: None,
+                duration: None,
+                text: Some(text.to_string()),
+                url: None,
+            });
         if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
             rollback.record_highlight(&ctx.action_id.to_string(), text);
         }
@@ -175,7 +183,8 @@ fn handle_browser_highlight_text(
 /// Handler for sandbox.read_file action
 fn handle_sandbox_read_file(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let path = ctx
             .args
@@ -185,9 +194,12 @@ fn handle_sandbox_read_file(
             .to_string();
         let result = crate::mcp::sandbox::sandbox_read_file_internal(path, false);
         if result.success {
-            Ok(serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({"success": true})))
+            Ok(serde_json::to_value(result)
+                .unwrap_or_else(|_| serde_json::json!({"success": true})))
         } else {
-            Err(result.error.unwrap_or_else(|| "Sandbox read failed".to_string()))
+            Err(result
+                .error
+                .unwrap_or_else(|| "Sandbox read failed".to_string()))
         }
     })
 }
@@ -195,7 +207,8 @@ fn handle_sandbox_read_file(
 /// Handler for sandbox.write_file action
 fn handle_sandbox_write_file(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let action_id = ctx.action_id;
         let plan = crate::actions::workflows::plan_for_action("sandbox.write_file", &ctx.args);
@@ -203,7 +216,8 @@ fn handle_sandbox_write_file(
         if !sim.success {
             return Err(format!(
                 "guardrail: {}",
-                sim.error.unwrap_or_else(|| "Workflow simulation failed".to_string())
+                sim.error
+                    .unwrap_or_else(|| "Workflow simulation failed".to_string())
             ));
         }
 
@@ -241,7 +255,9 @@ fn handle_sandbox_write_file(
                                 rollback_action_type: Some("sandbox.write_file".to_string()),
                             })
                         } else {
-                            Err(result.error.unwrap_or_else(|| "Sandbox write failed".to_string()))
+                            Err(result
+                                .error
+                                .unwrap_or_else(|| "Sandbox write failed".to_string()))
                         }
                     }
                     _ => Ok(crate::actions::workflows::WorkflowStepResult {
@@ -263,14 +279,17 @@ fn handle_sandbox_write_file(
             return Err(err);
         }
 
-        Ok(step_result.output.unwrap_or_else(|| serde_json::json!({"success": true})))
+        Ok(step_result
+            .output
+            .unwrap_or_else(|| serde_json::json!({"success": true})))
     })
 }
 
 /// Handler for sandbox.list_dir action
 fn handle_sandbox_list_dir(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let action_id = ctx.action_id;
         let plan = crate::actions::workflows::plan_for_action("sandbox.list_dir", &ctx.args);
@@ -278,7 +297,8 @@ fn handle_sandbox_list_dir(
         if !sim.success {
             return Err(format!(
                 "guardrail: {}",
-                sim.error.unwrap_or_else(|| "Workflow simulation failed".to_string())
+                sim.error
+                    .unwrap_or_else(|| "Workflow simulation failed".to_string())
             ));
         }
 
@@ -309,7 +329,9 @@ fn handle_sandbox_list_dir(
                                 rollback_action_type: Some("sandbox.list_dir".to_string()),
                             })
                         } else {
-                            Err(result.error.unwrap_or_else(|| "Sandbox list failed".to_string()))
+                            Err(result
+                                .error
+                                .unwrap_or_else(|| "Sandbox list failed".to_string()))
                         }
                     }
                     _ => Ok(crate::actions::workflows::WorkflowStepResult {
@@ -331,14 +353,17 @@ fn handle_sandbox_list_dir(
             return Err(err);
         }
 
-        Ok(workflow_result.output.unwrap_or_else(|| serde_json::json!({"success": true})))
+        Ok(workflow_result
+            .output
+            .unwrap_or_else(|| serde_json::json!({"success": true})))
     })
 }
 
 /// Handler for sandbox.shell action
 fn handle_sandbox_shell(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let action_id = ctx.action_id;
         let plan = crate::actions::workflows::plan_for_action("sandbox.shell", &ctx.args);
@@ -346,7 +371,8 @@ fn handle_sandbox_shell(
         if !sim.success {
             return Err(format!(
                 "guardrail: {}",
-                sim.error.unwrap_or_else(|| "Workflow simulation failed".to_string())
+                sim.error
+                    .unwrap_or_else(|| "Workflow simulation failed".to_string())
             ));
         }
 
@@ -361,8 +387,10 @@ fn handle_sandbox_shell(
                             .and_then(|v| v.as_str())
                             .ok_or("Missing command")?
                             .to_string();
-                        let working_dir =
-                            args.get("working_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                        let working_dir = args
+                            .get("working_dir")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
                         let result = crate::mcp::sandbox::sandbox_execute_shell_internal(
                             command,
                             working_dir,
@@ -379,7 +407,9 @@ fn handle_sandbox_shell(
                                 rollback_action_type: Some("sandbox.shell".to_string()),
                             })
                         } else {
-                            Err(result.error.unwrap_or_else(|| "Sandbox shell failed".to_string()))
+                            Err(result
+                                .error
+                                .unwrap_or_else(|| "Sandbox shell failed".to_string()))
                         }
                     }
                     _ => Ok(crate::actions::workflows::WorkflowStepResult {
@@ -401,14 +431,17 @@ fn handle_sandbox_shell(
             return Err(err);
         }
 
-        Ok(workflow_result.output.unwrap_or_else(|| serde_json::json!({"success": true})))
+        Ok(workflow_result
+            .output
+            .unwrap_or_else(|| serde_json::json!({"success": true})))
     })
 }
 
 /// Handler for notes.add action
 fn handle_notes_add(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let title = ctx
             .args
@@ -422,7 +455,8 @@ fn handle_notes_add(
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let note = ctx.notes_store
+        let note = ctx
+            .notes_store
             .add_note(title, body)
             .map_err(|e| e.to_string())?;
         Ok(serde_json::to_value(note).unwrap_or_else(|_| serde_json::json!({"success": true})))
@@ -432,16 +466,14 @@ fn handle_notes_add(
 /// Handler for notes.update action
 fn handle_notes_update(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
-        let note = ctx
-            .args
-            .get("note")
-            .cloned()
-            .ok_or("Missing note")?;
+        let note = ctx.args.get("note").cloned().ok_or("Missing note")?;
         let parsed: crate::integrations::integrations::Note =
             serde_json::from_value(note).map_err(|e| e.to_string())?;
-        let updated = ctx.notes_store
+        let updated = ctx
+            .notes_store
             .update_note(parsed)
             .map_err(|e| e.to_string())?;
         Ok(serde_json::to_value(updated).unwrap_or_else(|_| serde_json::json!({"success": true})))
@@ -451,7 +483,8 @@ fn handle_notes_update(
 /// Handler for notes.delete action
 fn handle_notes_delete(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let id = ctx
             .args
@@ -469,7 +502,8 @@ fn handle_notes_delete(
 /// Handler for extension.tool action
 fn handle_extension_tool(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let extension_id = ctx
             .args
@@ -485,7 +519,9 @@ fn handle_extension_tool(
             .to_string();
 
         let mut args_list = if let Some(text) = ctx.args.get("args_text").and_then(|v| v.as_str()) {
-            text.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>()
+            text.split_whitespace()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
         } else if let Some(array) = ctx.args.get("args").and_then(|v| v.as_array()) {
             array
                 .iter()
@@ -528,7 +564,8 @@ fn handle_extension_tool(
 /// Handler for intent.quick_ask action
 fn handle_intent_quick_ask(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         ensure_ai_consent()?;
         validate_intent_context("intent.quick_ask", &ctx.session, &ctx.mcp_server).await?;
@@ -545,7 +582,8 @@ fn handle_intent_quick_ask(
             "You are a fast desktop assistant. Answer succinctly (1-4 sentences).\n\nUser question: {}\n\nContext (if relevant):\n- Current URL: {}\n- Page title: {}",
             prompt, redacted_url, redacted_title
         );
-        let response = ctx.ai_router
+        let response = ctx
+            .ai_router
             .generate_text(&full_prompt)
             .await
             .map_err(|e| e.to_string())?;
@@ -556,7 +594,8 @@ fn handle_intent_quick_ask(
 /// Handler for intent.summarize_page action
 fn handle_intent_summarize_page(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let action_id = ctx.action_id;
         ensure_ai_consent()?;
@@ -564,7 +603,11 @@ fn handle_intent_summarize_page(
         let plan = crate::actions::workflows::plan_for_intent("intent.summarize_page", &ctx.args);
         let sim = crate::actions::workflows::simulate_plan(&plan);
         if !sim.success {
-            return Err(format!("guardrail: {}", sim.error.unwrap_or_else(|| "Workflow simulation failed".to_string())));
+            return Err(format!(
+                "guardrail: {}",
+                sim.error
+                    .unwrap_or_else(|| "Workflow simulation failed".to_string())
+            ));
         }
         let tone = ctx
             .args
@@ -580,7 +623,8 @@ fn handle_intent_summarize_page(
             "Summarize this page content in a {} style. Keep it under 8 sentences.\n\nTitle: {}\n\nContent:\n{}",
             tone, title, redacted
         );
-        let response = ctx.ai_router
+        let response = ctx
+            .ai_router
             .generate_text(&summary_prompt)
             .await
             .map_err(|e| e.to_string())?;
@@ -607,14 +651,17 @@ fn handle_intent_summarize_page(
             return Err(err);
         }
 
-        Ok(workflow_result.output.unwrap_or_else(|| serde_json::json!({ "summary": response })))
+        Ok(workflow_result
+            .output
+            .unwrap_or_else(|| serde_json::json!({ "summary": response })))
     })
 }
 
 /// Handler for intent.create_tasks action
 fn handle_intent_create_tasks(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let action_id = ctx.action_id;
         ensure_ai_consent()?;
@@ -622,7 +669,11 @@ fn handle_intent_create_tasks(
         let plan = crate::actions::workflows::plan_for_intent("intent.create_tasks", &ctx.args);
         let sim = crate::actions::workflows::simulate_plan(&plan);
         if !sim.success {
-            return Err(format!("guardrail: {}", sim.error.unwrap_or_else(|| "Workflow simulation failed".to_string())));
+            return Err(format!(
+                "guardrail: {}",
+                sim.error
+                    .unwrap_or_else(|| "Workflow simulation failed".to_string())
+            ));
         }
         let format = ctx
             .args
@@ -637,7 +688,8 @@ fn handle_intent_create_tasks(
                 format, title, redacted
             )
         } else {
-            let recent = ctx.session
+            let recent = ctx
+                .session
                 .get_recent_activity(5)
                 .unwrap_or_default()
                 .iter()
@@ -649,7 +701,8 @@ fn handle_intent_create_tasks(
                 format, recent
             )
         };
-        let response = ctx.ai_router
+        let response = ctx
+            .ai_router
             .generate_text(&prompt)
             .await
             .map_err(|e| e.to_string())?;
@@ -676,14 +729,17 @@ fn handle_intent_create_tasks(
             return Err(err);
         }
 
-        Ok(workflow_result.output.unwrap_or_else(|| serde_json::json!({ "tasks": response })))
+        Ok(workflow_result
+            .output
+            .unwrap_or_else(|| serde_json::json!({ "tasks": response })))
     })
 }
 
 /// Handler for intent.draft_reply action
 fn handle_intent_draft_reply(
     ctx: HandlerContext,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<serde_json::Value, String>> + Send>>
+{
     Box::pin(async move {
         let action_id = ctx.action_id;
         ensure_ai_consent()?;
@@ -691,7 +747,11 @@ fn handle_intent_draft_reply(
         let plan = crate::actions::workflows::plan_for_intent("intent.draft_reply", &ctx.args);
         let sim = crate::actions::workflows::simulate_plan(&plan);
         if !sim.success {
-            return Err(format!("guardrail: {}", sim.error.unwrap_or_else(|| "Workflow simulation failed".to_string())));
+            return Err(format!(
+                "guardrail: {}",
+                sim.error
+                    .unwrap_or_else(|| "Workflow simulation failed".to_string())
+            ));
         }
         let style = ctx
             .args
@@ -707,7 +767,8 @@ fn handle_intent_draft_reply(
             "Draft a {} reply based on this context. Keep it short.\n\nTitle: {}\n\nContext:\n{}",
             style, title, redacted
         );
-        let response = ctx.ai_router
+        let response = ctx
+            .ai_router
             .generate_text(&prompt)
             .await
             .map_err(|e| e.to_string())?;
@@ -734,7 +795,9 @@ fn handle_intent_draft_reply(
             return Err(err);
         }
 
-        Ok(workflow_result.output.unwrap_or_else(|| serde_json::json!({ "draft": response })))
+        Ok(workflow_result
+            .output
+            .unwrap_or_else(|| serde_json::json!({ "draft": response })))
     })
 }
 
@@ -916,7 +979,11 @@ impl ActionQueue {
     }
 
     /// Update action arguments in queue
-    pub fn update_arguments(&self, id: u64, arguments: Option<serde_json::Value>) -> Option<PendingAction> {
+    pub fn update_arguments(
+        &self,
+        id: u64,
+        arguments: Option<serde_json::Value>,
+    ) -> Option<PendingAction> {
         let mut actions = self.actions.write().ok()?;
         let action = actions.get_mut(&id)?;
         action.arguments = arguments;
@@ -999,12 +1066,7 @@ pub fn approve_action(action_id: u64) -> Result<PendingAction, String> {
         .approve(action_id)
         .ok_or_else(|| format!("Action {} not found or already processed", action_id))?;
 
-    update_action_status(
-        action_id,
-        ActionLedgerStatus::Approved,
-        None,
-        None,
-    );
+    update_action_status(action_id, ActionLedgerStatus::Approved, None, None);
 
     record_timeline_event(
         &format!("Action approved: {}", action.action_type),
@@ -1023,12 +1085,7 @@ pub fn deny_action(action_id: u64) -> Result<PendingAction, String> {
         .deny(action_id)
         .ok_or_else(|| format!("Action {} not found or already processed", action_id))?;
 
-    update_action_status(
-        action_id,
-        ActionLedgerStatus::Denied,
-        None,
-        None,
-    );
+    update_action_status(action_id, ActionLedgerStatus::Denied, None, None);
 
     record_timeline_event(
         &format!("Action denied: {}", action.action_type),
@@ -1287,7 +1344,8 @@ async fn validate_intent_context(
     drop(page);
 
     let state = session.load().unwrap_or_default();
-    let content_empty = state.current_content.as_deref().unwrap_or("").is_empty() && page_body_empty;
+    let content_empty =
+        state.current_content.as_deref().unwrap_or("").is_empty() && page_body_empty;
 
     match intent_type {
         "intent.summarize_page" | "intent.draft_reply" => {
@@ -1364,7 +1422,10 @@ fn maybe_create_skill(action: &PendingAction) {
         .reason
         .clone()
         .unwrap_or_else(|| "Auto-created from repeated intent action".to_string());
-    let args = action.arguments.clone().unwrap_or_else(|| serde_json::json!({}));
+    let args = action
+        .arguments
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({}));
 
     let _ = crate::data::skills::create_skill_internal(
         title,
@@ -1382,8 +1443,7 @@ fn maybe_create_skill(action: &PendingAction) {
 /// Get the currently active action preview
 #[tauri::command]
 pub fn get_active_preview() -> Option<crate::actions::action_preview::ActionPreview> {
-    crate::actions::action_preview::get_preview_manager()
-        .and_then(|m| m.get_active_preview())
+    crate::actions::action_preview::get_preview_manager().and_then(|m| m.get_active_preview())
 }
 
 /// Approve a preview and execute it
@@ -1398,7 +1458,15 @@ pub async fn approve_preview(
 ) -> Result<(), String> {
     let action_id = approve_preview_internal(&preview_id)?;
 
-    execute_approved_action(action_id, effect_queue, session, ai_router, mcp_server, notes_store).await?;
+    execute_approved_action(
+        action_id,
+        effect_queue,
+        session,
+        ai_router,
+        mcp_server,
+        notes_store,
+    )
+    .await?;
     Ok(())
 }
 
@@ -1462,7 +1530,9 @@ pub fn update_preview_param(
     let manager = crate::actions::action_preview::get_preview_manager_mut()
         .ok_or("Preview manager not initialized")?;
     manager.update_param(&preview_id, &param_name, value)?;
-    manager.get_active_preview().ok_or("No active preview".to_string())
+    manager
+        .get_active_preview()
+        .ok_or("No active preview".to_string())
 }
 
 // ============================================================================

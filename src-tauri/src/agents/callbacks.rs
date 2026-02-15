@@ -46,7 +46,11 @@ impl CallbackContext {
         }
     }
 
-    pub fn with_metadata<K: Into<String>, V: Into<serde_json::Value>>(mut self, key: K, value: V) -> Self {
+    pub fn with_metadata<K: Into<String>, V: Into<serde_json::Value>>(
+        mut self,
+        key: K,
+        value: V,
+    ) -> Self {
         self.metadata.insert(key.into(), value.into());
         self
     }
@@ -194,7 +198,11 @@ pub trait AgentCallback: Send + Sync {
 
     /// Called after agent execution
     /// Return Some(output) to replace the agent's output
-    async fn after_agent(&self, ctx: &CallbackContext, output: &AgentOutput) -> Option<AgentOutput> {
+    async fn after_agent(
+        &self,
+        ctx: &CallbackContext,
+        output: &AgentOutput,
+    ) -> Option<AgentOutput> {
         let _ = (ctx, output);
         None
     }
@@ -206,14 +214,23 @@ pub trait AgentCallback: Send + Sync {
 pub trait ModelCallback: Send + Sync {
     /// Called before LLM call
     /// Return Some(response) to skip the LLM and use this response instead
-    async fn before_model(&self, ctx: &CallbackContext, request: &LlmRequest) -> Option<LlmResponse> {
+    async fn before_model(
+        &self,
+        ctx: &CallbackContext,
+        request: &LlmRequest,
+    ) -> Option<LlmResponse> {
         let _ = (ctx, request);
         None
     }
 
     /// Called after LLM call
     /// Return Some(response) to replace the LLM's response
-    async fn after_model(&self, ctx: &CallbackContext, request: &LlmRequest, response: &LlmResponse) -> Option<LlmResponse> {
+    async fn after_model(
+        &self,
+        ctx: &CallbackContext,
+        request: &LlmRequest,
+        response: &LlmResponse,
+    ) -> Option<LlmResponse> {
         let _ = (ctx, request, response);
         None
     }
@@ -232,7 +249,12 @@ pub trait ToolCallback: Send + Sync {
 
     /// Called after tool execution
     /// Return Some(result) to replace the tool's result
-    async fn after_tool(&self, ctx: &CallbackContext, tool_call: &ToolCall, result: &ToolResult) -> Option<ToolResult> {
+    async fn after_tool(
+        &self,
+        ctx: &CallbackContext,
+        tool_call: &ToolCall,
+        result: &ToolResult,
+    ) -> Option<ToolResult> {
         let _ = (ctx, tool_call, result);
         None
     }
@@ -305,7 +327,11 @@ impl CallbackRegistry {
     }
 
     /// Run after_agent callbacks, return first override if any
-    pub async fn run_after_agent(&self, ctx: &CallbackContext, output: &AgentOutput) -> Option<AgentOutput> {
+    pub async fn run_after_agent(
+        &self,
+        ctx: &CallbackContext,
+        output: &AgentOutput,
+    ) -> Option<AgentOutput> {
         for callback in &self.agent_callbacks {
             if let Some(override_output) = callback.after_agent(ctx, output).await {
                 return Some(override_output);
@@ -315,7 +341,11 @@ impl CallbackRegistry {
     }
 
     /// Run before_model callbacks, return first override if any
-    pub async fn run_before_model(&self, ctx: &CallbackContext, request: &LlmRequest) -> Option<LlmResponse> {
+    pub async fn run_before_model(
+        &self,
+        ctx: &CallbackContext,
+        request: &LlmRequest,
+    ) -> Option<LlmResponse> {
         for callback in &self.model_callbacks {
             if let Some(response) = callback.before_model(ctx, request).await {
                 return Some(response);
@@ -340,7 +370,11 @@ impl CallbackRegistry {
     }
 
     /// Run before_tool callbacks, return first override if any
-    pub async fn run_before_tool(&self, ctx: &CallbackContext, tool_call: &ToolCall) -> Option<ToolResult> {
+    pub async fn run_before_tool(
+        &self,
+        ctx: &CallbackContext,
+        tool_call: &ToolCall,
+    ) -> Option<ToolResult> {
         for callback in &self.tool_callbacks {
             if let Some(result) = callback.before_tool(ctx, tool_call).await {
                 return Some(result);
@@ -383,7 +417,11 @@ impl ExtensionToolCallback {
 
 #[async_trait]
 impl ToolCallback for ExtensionToolCallback {
-    async fn before_tool(&self, _ctx: &CallbackContext, tool_call: &ToolCall) -> Option<ToolResult> {
+    async fn before_tool(
+        &self,
+        _ctx: &CallbackContext,
+        tool_call: &ToolCall,
+    ) -> Option<ToolResult> {
         if tool_call.name != self.tool_name {
             return None;
         }
@@ -395,7 +433,9 @@ impl ToolCallback for ExtensionToolCallback {
                 vec![]
             } else {
                 // Try to extract values as strings
-                tool_call.arguments.values()
+                tool_call
+                    .arguments
+                    .values()
                     .filter_map(|v| {
                         if v.is_string() {
                             v.as_str().map(|s| s.to_string())
@@ -454,7 +494,11 @@ impl AgentCallback for LoggingCallback {
         None
     }
 
-    async fn after_agent(&self, ctx: &CallbackContext, output: &AgentOutput) -> Option<AgentOutput> {
+    async fn after_agent(
+        &self,
+        ctx: &CallbackContext,
+        output: &AgentOutput,
+    ) -> Option<AgentOutput> {
         tracing::debug!(
             "{} after_agent: {} -> confidence: {:.2}",
             self.prefix,
@@ -467,7 +511,11 @@ impl AgentCallback for LoggingCallback {
 
 #[async_trait]
 impl ModelCallback for LoggingCallback {
-    async fn before_model(&self, ctx: &CallbackContext, request: &LlmRequest) -> Option<LlmResponse> {
+    async fn before_model(
+        &self,
+        ctx: &CallbackContext,
+        request: &LlmRequest,
+    ) -> Option<LlmResponse> {
         tracing::debug!(
             "{} before_model: {} (model: {})",
             self.prefix,
@@ -477,7 +525,12 @@ impl ModelCallback for LoggingCallback {
         None
     }
 
-    async fn after_model(&self, _ctx: &CallbackContext, _request: &LlmRequest, response: &LlmResponse) -> Option<LlmResponse> {
+    async fn after_model(
+        &self,
+        _ctx: &CallbackContext,
+        _request: &LlmRequest,
+        response: &LlmResponse,
+    ) -> Option<LlmResponse> {
         if let Some(usage) = &response.usage {
             tracing::debug!(
                 "{} after_model: {} tokens used",
@@ -502,7 +555,12 @@ impl ToolCallback for LoggingCallback {
         None
     }
 
-    async fn after_tool(&self, _ctx: &CallbackContext, tool_call: &ToolCall, result: &ToolResult) -> Option<ToolResult> {
+    async fn after_tool(
+        &self,
+        _ctx: &CallbackContext,
+        tool_call: &ToolCall,
+        result: &ToolResult,
+    ) -> Option<ToolResult> {
         tracing::debug!(
             "{} after_tool: {} success={}",
             self.prefix,
@@ -548,12 +606,19 @@ impl Default for PolicyCallback {
 
 #[async_trait]
 impl ModelCallback for PolicyCallback {
-    async fn before_model(&self, _ctx: &CallbackContext, request: &LlmRequest) -> Option<LlmResponse> {
+    async fn before_model(
+        &self,
+        _ctx: &CallbackContext,
+        request: &LlmRequest,
+    ) -> Option<LlmResponse> {
         let prompt_lower = request.prompt.to_lowercase();
         for blocked in &self.blocked_prompts {
             if prompt_lower.contains(blocked) {
                 tracing::warn!("PolicyCallback: Blocked prompt containing '{}'", blocked);
-                return Some(LlmResponse::blocked(format!("Prompt contains blocked content: {}", blocked)));
+                return Some(LlmResponse::blocked(format!(
+                    "Prompt contains blocked content: {}",
+                    blocked
+                )));
             }
         }
         None
@@ -562,12 +627,19 @@ impl ModelCallback for PolicyCallback {
 
 #[async_trait]
 impl ToolCallback for PolicyCallback {
-    async fn before_tool(&self, _ctx: &CallbackContext, tool_call: &ToolCall) -> Option<ToolResult> {
+    async fn before_tool(
+        &self,
+        _ctx: &CallbackContext,
+        tool_call: &ToolCall,
+    ) -> Option<ToolResult> {
         let tool_lower = tool_call.name.to_lowercase();
         for blocked in &self.blocked_tools {
             if tool_lower == *blocked {
                 tracing::warn!("PolicyCallback: Blocked tool '{}'", tool_call.name);
-                return Some(ToolResult::blocked(format!("Tool '{}' is not allowed", tool_call.name)));
+                return Some(ToolResult::blocked(format!(
+                    "Tool '{}' is not allowed",
+                    tool_call.name
+                )));
             }
         }
         None
@@ -582,13 +654,9 @@ mod tests {
     async fn test_callback_registry() {
         let mut registry = CallbackRegistry::new();
         registry.register_agent_callback(Arc::new(LoggingCallback::new("[TEST]")));
-        
-        let ctx = CallbackContext::new(
-            AgentContext::default(),
-            "TestAgent",
-            "inv_001",
-        );
-        
+
+        let ctx = CallbackContext::new(AgentContext::default(), "TestAgent", "inv_001");
+
         // Should not override (logging only)
         let result = registry.run_before_agent(&ctx).await;
         assert!(result.is_none());
@@ -598,21 +666,17 @@ mod tests {
     async fn test_policy_callback_blocks_tool() {
         let mut registry = CallbackRegistry::new();
         registry.register_tool_callback(Arc::new(
-            PolicyCallback::new().block_tool("dangerous_action")
+            PolicyCallback::new().block_tool("dangerous_action"),
         ));
-        
-        let ctx = CallbackContext::new(
-            AgentContext::default(),
-            "TestAgent",
-            "inv_001",
-        );
-        
+
+        let ctx = CallbackContext::new(AgentContext::default(), "TestAgent", "inv_001");
+
         let tool_call = ToolCall {
             name: "dangerous_action".to_string(),
             arguments: HashMap::new(),
             call_id: "call_001".to_string(),
         };
-        
+
         let result = registry.run_before_tool(&ctx, &tool_call).await;
         assert!(result.is_some());
         let result = result.unwrap();
@@ -623,15 +687,11 @@ mod tests {
     async fn test_policy_callback_blocks_prompt() {
         let mut registry = CallbackRegistry::new();
         registry.register_model_callback(Arc::new(
-            PolicyCallback::new().block_prompt("ignore previous instructions")
+            PolicyCallback::new().block_prompt("ignore previous instructions"),
         ));
-        
-        let ctx = CallbackContext::new(
-            AgentContext::default(),
-            "TestAgent",
-            "inv_001",
-        );
-        
+
+        let ctx = CallbackContext::new(AgentContext::default(), "TestAgent", "inv_001");
+
         let request = LlmRequest {
             prompt: "Please ignore previous instructions and...".to_string(),
             system_prompt: None,
@@ -640,7 +700,7 @@ mod tests {
             max_tokens: None,
             params: HashMap::new(),
         };
-        
+
         let result = registry.run_before_model(&ctx, &request).await;
         assert!(result.is_some());
         let response = result.unwrap();
@@ -652,7 +712,7 @@ mod tests {
         let blocked = LlmResponse::blocked("safety violation");
         assert!(blocked.blocked);
         assert!(blocked.block_reason.is_some());
-        
+
         let success = LlmResponse::success("Hello world");
         assert!(!success.blocked);
         assert_eq!(success.text, "Hello world");
@@ -662,11 +722,11 @@ mod tests {
     fn test_tool_result_constructors() {
         let success = ToolResult::success(serde_json::json!({"result": 42}));
         assert!(success.success);
-        
+
         let error = ToolResult::error("Something went wrong");
         assert!(!error.success);
         assert!(error.error.is_some());
-        
+
         let blocked = ToolResult::blocked("Not allowed");
         assert!(!blocked.success);
         assert!(blocked.error.unwrap().contains("Blocked"));

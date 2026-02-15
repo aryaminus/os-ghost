@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-
 pub struct GeminiClient {
     client: Client,
     api_key: String,
@@ -102,7 +101,6 @@ impl GeminiClient {
             return Ok("AI Analysis unavailable (No API Key)".to_string());
         }
 
-
         let request = GeminiRequest {
             contents: vec![Content {
                 parts: vec![
@@ -155,7 +153,6 @@ impl GeminiClient {
             return Ok(String::new());
         }
 
-
         let request = GeminiRequest {
             contents: vec![Content {
                 parts: vec![Part::Text {
@@ -199,7 +196,6 @@ impl GeminiClient {
         if self.api_key.is_empty() {
             return Ok(0.0);
         }
-
 
         let prompt = format!(
             "Compare these two URLs semantically. Consider the topic, domain, and content they represent.
@@ -258,7 +254,6 @@ impl GeminiClient {
         if self.api_key.is_empty() {
             return Ok("...".to_string());
         }
-
 
         let prompt = format!(
             "You are a desktop companion. Your personality is: {}
@@ -321,7 +316,6 @@ impl GeminiClient {
             url,
             page_title
         );
-
 
         let prompt = format!(
             r#"Based on this webpage the user is viewing, generate a creative puzzle for a mystery game.
@@ -415,7 +409,6 @@ Make the puzzle interesting and educational. The target should be related but no
         if self.api_key.is_empty() {
             return Err(anyhow::anyhow!("No API Key configured"));
         }
-
 
         let prompt = format!(
             "Analyze this screenshot. Does it contain content matching this description: '{}'?
@@ -532,7 +525,6 @@ impl GeminiClient {
             return Err(anyhow::anyhow!("No API Key configured"));
         }
 
-
         // Build activity context string
         let activity_summary = activities
             .iter()
@@ -634,8 +626,6 @@ Respond with ONLY valid JSON (no markdown):
         if self.api_key.is_empty() {
             return Ok("...".to_string());
         }
-
-
 
         let activity_summary = recent_activities
             .iter()

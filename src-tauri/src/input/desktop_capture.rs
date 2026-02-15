@@ -5,7 +5,7 @@
 //! - Windows: GDI + PrintWindow
 //! - Linux: X11 GetImage
 
-use super::{WindowInfo, InputError};
+use super::{InputError, WindowInfo};
 
 /// Capture the entire desktop
 pub async fn capture_desktop() -> Result<Vec<u8>, InputError> {
@@ -19,7 +19,9 @@ pub async fn capture_desktop() -> Result<Vec<u8>, InputError> {
     return linux::capture_desktop().await;
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    return Err(InputError::PlatformError("Platform not supported".to_string()));
+    return Err(InputError::PlatformError(
+        "Platform not supported".to_string(),
+    ));
 }
 
 /// Capture a specific window
@@ -34,7 +36,9 @@ pub async fn capture_window(window_id: &str) -> Result<Vec<u8>, InputError> {
     return linux::capture_window(window_id).await;
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    return Err(InputError::PlatformError("Platform not supported".to_string()));
+    return Err(InputError::PlatformError(
+        "Platform not supported".to_string(),
+    ));
 }
 
 /// List all windows
@@ -49,7 +53,9 @@ pub async fn list_windows() -> Result<Vec<WindowInfo>, InputError> {
     return linux::list_windows().await;
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    return Err(InputError::PlatformError("Platform not supported".to_string()));
+    return Err(InputError::PlatformError(
+        "Platform not supported".to_string(),
+    ));
 }
 
 // ============================================================================
@@ -58,29 +64,31 @@ pub async fn list_windows() -> Result<Vec<WindowInfo>, InputError> {
 #[cfg(target_os = "macos")]
 pub mod macos {
     use super::*;
-    
+
     pub async fn capture_desktop() -> Result<Vec<u8>, InputError> {
         // TODO: Implement using CoreGraphics
         // Requires screen recording permissions
-        Err(InputError::PlatformError("macOS desktop capture requires screen recording permissions".to_string()))
+        Err(InputError::PlatformError(
+            "macOS desktop capture requires screen recording permissions".to_string(),
+        ))
     }
-    
+
     pub async fn capture_window(_window_id: &str) -> Result<Vec<u8>, InputError> {
         // TODO: Implement using CoreGraphics
-        Err(InputError::PlatformError("macOS window capture requires screen recording permissions".to_string()))
+        Err(InputError::PlatformError(
+            "macOS window capture requires screen recording permissions".to_string(),
+        ))
     }
-    
+
     pub async fn list_windows() -> Result<Vec<WindowInfo>, InputError> {
         // TODO: Implement using CoreGraphics window list
-        Ok(vec![
-            WindowInfo {
-                id: "0".to_string(),
-                title: "Desktop".to_string(),
-                app_name: "System".to_string(),
-                bounds: (0, 0, 1920, 1080),
-                is_active: true,
-            }
-        ])
+        Ok(vec![WindowInfo {
+            id: "0".to_string(),
+            title: "Desktop".to_string(),
+            app_name: "System".to_string(),
+            bounds: (0, 0, 1920, 1080),
+            is_active: true,
+        }])
     }
 }
 
@@ -90,61 +98,58 @@ pub mod macos {
 #[cfg(target_os = "windows")]
 pub mod windows {
     use super::*;
-    
+
     pub async fn capture_desktop() -> Result<Vec<u8>, InputError> {
         unsafe {
-            use ::windows::Win32::Graphics::Gdi::{
-                CreateCompatibleDC, CreateCompatibleBitmap, SelectObject,
-                BitBlt, SRCCOPY, GetDC, ReleaseDC, DeleteDC, DeleteObject,
-                GetDeviceCaps, HORZRES, VERTRES,
-            };
             use ::windows::Win32::Foundation::HWND;
-            
+            use ::windows::Win32::Graphics::Gdi::{
+                BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
+                GetDeviceCaps, ReleaseDC, SelectObject, HORZRES, SRCCOPY, VERTRES,
+            };
+
             // Get desktop DC
             let hwnd = HWND(std::ptr::null_mut()); // Desktop window (NULL = entire screen)
             let hdc = GetDC(hwnd);
-            
+
             // Get screen dimensions
             let width = GetDeviceCaps(hdc, HORZRES);
             let height = GetDeviceCaps(hdc, VERTRES);
-            
+
             // Create compatible DC and bitmap
             let mem_dc = CreateCompatibleDC(hdc);
             let bitmap = CreateCompatibleBitmap(hdc, width, height);
             SelectObject(mem_dc, bitmap);
-            
+
             // Copy screen to bitmap
             BitBlt(mem_dc, 0, 0, width, height, hdc, 0, 0, SRCCOPY);
-            
+
             // Convert to PNG (simplified - in production use proper image encoding)
             // For now, return placeholder
             let data = vec![0u8; 100];
-            
+
             // Cleanup
             DeleteObject(bitmap);
             DeleteDC(mem_dc);
             ReleaseDC(hwnd, hdc);
-            
+
             Ok(data)
         }
     }
-    
+
     pub async fn capture_window(_window_id: &str) -> Result<Vec<u8>, InputError> {
         // Window capture on Windows
         capture_desktop().await
     }
-    
+
     pub async fn list_windows() -> Result<Vec<WindowInfo>, InputError> {
         // On Windows, use EnumWindows
-        Ok(vec![
-            WindowInfo {
-                id: "0".to_string(),
-                title: "Desktop".to_string(),
-                app_name: "Windows".to_string(),
-                bounds: (0, 0, 1920, 1080),
-                is_active: true,
-            }
-        ])
+        Ok(vec![WindowInfo {
+            id: "0".to_string(),
+            title: "Desktop".to_string(),
+            app_name: "Windows".to_string(),
+            bounds: (0, 0, 1920, 1080),
+            is_active: true,
+        }])
     }
 }
 
@@ -154,49 +159,49 @@ pub mod windows {
 #[cfg(target_os = "linux")]
 pub mod linux {
     use super::*;
-    
+
     pub async fn capture_desktop() -> Result<Vec<u8>, InputError> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::{ConnectionExt as XprotoConnectionExt, ImageFormat};
-        
+
         let (conn, _) = x11rb::connect(None)?;
         let screen = &conn.setup().roots[0];
         let root = screen.root;
-        
+
         // Get screen dimensions
         let width = screen.width_in_pixels;
         let height = screen.height_in_pixels;
-        
+
         // Capture the screen - get_image returns a Cookie, need to call reply()
-        let image = conn.get_image(
-            ImageFormat::Z_PIXMAP,
-            root,
-            0,
-            0,
-            width,
-            height,
-            !0, // plane mask
-        )?.reply()?;
-        
+        let image = conn
+            .get_image(
+                ImageFormat::Z_PIXMAP,
+                root,
+                0,
+                0,
+                width,
+                height,
+                !0, // plane mask
+            )?
+            .reply()?;
+
         // The reply contains the image data directly
         let data = image.data.to_vec();
-        
+
         Ok(data)
     }
-    
+
     pub async fn capture_window(_window_id: &str) -> Result<Vec<u8>, InputError> {
         capture_desktop().await
     }
-    
+
     pub async fn list_windows() -> Result<Vec<WindowInfo>, InputError> {
-        Ok(vec![
-            WindowInfo {
-                id: "0".to_string(),
-                title: "Desktop".to_string(),
-                app_name: "X11".to_string(),
-                bounds: (0, 0, 1920, 1080),
-                is_active: true,
-            }
-        ])
+        Ok(vec![WindowInfo {
+            id: "0".to_string(),
+            title: "Desktop".to_string(),
+            app_name: "X11".to_string(),
+            bounds: (0, 0, 1920, 1080),
+            is_active: true,
+        }])
     }
 }

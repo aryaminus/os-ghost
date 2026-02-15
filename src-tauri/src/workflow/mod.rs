@@ -13,7 +13,7 @@
 //! ```ignore
 //! let token = CancellationToken::new();
 //! let cancel_handle = token.clone();
-//! 
+//!
 //! // Start workflow in a task
 //! let handle = tokio::spawn(async move {
 //!     workflow.execute_cancellable(&context, token).await
@@ -31,12 +31,15 @@ pub mod reflection;
 pub mod replay;
 pub mod sequential;
 
-pub use loop_agent::{LoopWorkflow, create_adaptive_loop};
+pub use loop_agent::{create_adaptive_loop, LoopWorkflow};
 pub use parallel::ParallelWorkflow;
-pub use planning::{PlanningWorkflow, create_intelligent_pipeline};
-pub use recording::{Workflow as RecordedWorkflow, WorkflowStep, WorkflowActionType, WorkflowRecorder, WorkflowStore, RecordingProgress};
-pub use reflection::{ReflectionWorkflow, ReflectionConfig, create_narrator_with_reflection};
-pub use replay::{WorkflowReplayer, ReplayResult, ReplayProgress, StepResult, VerificationResult};
+pub use planning::{create_intelligent_pipeline, PlanningWorkflow};
+pub use recording::{
+    RecordingProgress, Workflow as RecordedWorkflow, WorkflowActionType, WorkflowRecorder,
+    WorkflowStep, WorkflowStore,
+};
+pub use reflection::{create_narrator_with_reflection, ReflectionConfig, ReflectionWorkflow};
+pub use replay::{ReplayProgress, ReplayResult, StepResult, VerificationResult, WorkflowReplayer};
 pub use sequential::SequentialWorkflow;
 
 use crate::agents::traits::{AgentContext, AgentError, AgentOutput, AgentResult};

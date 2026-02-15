@@ -6,16 +6,13 @@
 //! - Workflow recording progress
 //! - System events and logs
 
-
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
 };
-use tokio::sync::broadcast;
 use serde::{Deserialize, Serialize};
-use tracing::{info, error, debug};
-
-
+use tokio::sync::broadcast;
+use tracing::{debug, error, info};
 
 /// WebSocket event types
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -123,9 +120,7 @@ impl Default for EventBroadcaster {
 }
 
 /// Handle WebSocket upgrade
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-) -> impl IntoResponse {
+pub async fn ws_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
     info!("WebSocket connection request received");
     ws.on_upgrade(handle_socket)
 }
@@ -133,7 +128,7 @@ pub async fn ws_handler(
 /// Handle WebSocket connection
 async fn handle_socket(mut socket: WebSocket) {
     info!("WebSocket connection established");
-    
+
     // Send initial greeting
     let greeting = WsEvent::StatusUpdate(StatusData {
         connected: true,
@@ -141,12 +136,12 @@ async fn handle_socket(mut socket: WebSocket) {
         pending_actions: 0,
         memory_entries: 0,
     });
-    
+
     if let Err(e) = send_event(&mut socket, greeting).await {
         error!("Failed to send greeting: {}", e);
         return;
     }
-    
+
     // Main WebSocket loop
     loop {
         match socket.recv().await {
@@ -154,19 +149,23 @@ async fn handle_socket(mut socket: WebSocket) {
                 match msg {
                     Message::Text(text) => {
                         debug!("Received WebSocket message: {}", text);
-                        
+
                         // Parse client message
                         match serde_json::from_str::<ClientMessage>(&text) {
                             Ok(client_msg) => {
                                 // Handle different message types
                                 match client_msg {
                                     ClientMessage::Ping => {
-                                        let _ = send_event(&mut socket, WsEvent::StatusUpdate(StatusData {
-                                            connected: true,
-                                            active_agents: 0,
-                                            pending_actions: 0,
-                                            memory_entries: 0,
-                                        })).await;
+                                        let _ = send_event(
+                                            &mut socket,
+                                            WsEvent::StatusUpdate(StatusData {
+                                                connected: true,
+                                                active_agents: 0,
+                                                pending_actions: 0,
+                                                memory_entries: 0,
+                                            }),
+                                        )
+                                        .await;
                                     }
                                     ClientMessage::Subscribe { channel } => {
                                         info!("Client subscribed to channel: {}", channel);
@@ -219,16 +218,15 @@ async fn handle_socket(mut socket: WebSocket) {
             }
         }
     }
-    
+
     info!("WebSocket handler ending");
 }
 
 /// Send an event to the WebSocket
 async fn send_event(socket: &mut WebSocket, event: WsEvent) -> Result<(), axum::Error> {
-    let json = serde_json::to_string(&event).map_err(|e| {
-        axum::Error::new(std::io::Error::other(e))
-    })?;
-    
+    let json =
+        serde_json::to_string(&event).map_err(|e| axum::Error::new(std::io::Error::other(e)))?;
+
     socket.send(Message::Text(json)).await
 }
 
@@ -251,17 +249,17 @@ mod tests {
     #[test]
     fn test_event_broadcast() {
         let broadcaster = EventBroadcaster::new();
-        
+
         // Subscribe first so broadcast has a receiver
         let _rx = broadcaster.subscribe();
-        
+
         let event = WsEvent::StatusUpdate(StatusData {
             connected: true,
             active_agents: 5,
             pending_actions: 2,
             memory_entries: 100,
         });
-        
+
         // Should succeed with a subscriber
         assert!(broadcaster.broadcast(event).is_ok());
     }
@@ -271,7 +269,7 @@ mod tests {
         let msg = ClientMessage::Execute {
             task: "Book a flight".to_string(),
         };
-        
+
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("execute"));
         assert!(json.contains("Book a flight"));

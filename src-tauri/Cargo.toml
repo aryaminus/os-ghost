@@ -66,6 +66,7 @@ oauth2 = "4"
 url = "2"
 tiny_http = "0.12"
 keyring = "2"
+toml = "0.8"
 
 # SQLite for Chrome history reading
 rusqlite = { version = "0.32", features = ["bundled"] }

@@ -28,7 +28,9 @@ impl McpTool for FindElementTool {
     fn descriptor(&self) -> ToolDescriptor {
         ToolDescriptor {
             name: "browser.find_element".to_string(),
-            description: "Find a UI element on the current page by description using computer vision".to_string(),
+            description:
+                "Find a UI element on the current page by description using computer vision"
+                    .to_string(),
             input_schema: JsonSchema {
                 schema_type: "object".to_string(),
                 properties: Some({
@@ -53,12 +55,17 @@ impl McpTool for FindElementTool {
     }
 
     async fn execute(&self, arguments: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let description = arguments.get("description")
+        let description = arguments
+            .get("description")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| McpError::InvalidArguments("Missing 'description' parameter".to_string()))?;
+            .ok_or_else(|| {
+                McpError::InvalidArguments("Missing 'description' parameter".to_string())
+            })?;
 
         if !self.vision_capture.is_available() {
-            return Err(McpError::ExecutionFailed("Vision analysis not available".to_string()));
+            return Err(McpError::ExecutionFailed(
+                "Vision analysis not available".to_string(),
+            ));
         }
 
         Ok(json!({
@@ -78,7 +85,10 @@ pub struct ClickElementTool {
 
 impl ClickElementTool {
     pub fn new(vision_capture: Arc<VisionCapture>, autonomy_level: AutonomyLevel) -> Self {
-        Self { vision_capture, autonomy_level }
+        Self {
+            vision_capture,
+            autonomy_level,
+        }
     }
 }
 
@@ -112,23 +122,22 @@ impl McpTool for ClickElementTool {
     }
 
     async fn execute(&self, arguments: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let description = arguments.get("description")
+        let description = arguments
+            .get("description")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| McpError::InvalidArguments("Missing 'description' parameter".to_string()))?;
+            .ok_or_else(|| {
+                McpError::InvalidArguments("Missing 'description' parameter".to_string())
+            })?;
 
         match self.autonomy_level {
-            AutonomyLevel::Observer => {
-                Err(McpError::ExecutionFailed(
-                    "Cannot click elements in Observer mode".to_string()
-                ))
-            }
-            _ => {
-                Ok(json!({
-                    "success": true,
-                    "message": format!("Click action queued for '{}' (requires approval)", description),
-                    "requires_approval": true,
-                }))
-            }
+            AutonomyLevel::Observer => Err(McpError::ExecutionFailed(
+                "Cannot click elements in Observer mode".to_string(),
+            )),
+            _ => Ok(json!({
+                "success": true,
+                "message": format!("Click action queued for '{}' (requires approval)", description),
+                "requires_approval": true,
+            })),
         }
     }
 }
@@ -143,7 +152,10 @@ pub struct FillFieldTool {
 
 impl FillFieldTool {
     pub fn new(vision_capture: Arc<VisionCapture>, autonomy_level: AutonomyLevel) -> Self {
-        Self { vision_capture, autonomy_level }
+        Self {
+            vision_capture,
+            autonomy_level,
+        }
     }
 }
 
@@ -186,18 +198,20 @@ impl McpTool for FillFieldTool {
     }
 
     async fn execute(&self, arguments: serde_json::Value) -> Result<serde_json::Value, McpError> {
-        let field = arguments.get("field")
+        let field = arguments
+            .get("field")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidArguments("Missing 'field' parameter".to_string()))?;
 
-        let _value = arguments.get("value")
+        let _value = arguments
+            .get("value")
             .and_then(|v| v.as_str())
             .ok_or_else(|| McpError::InvalidArguments("Missing 'value' parameter".to_string()))?;
 
         match self.autonomy_level {
-            AutonomyLevel::Observer => {
-                Err(McpError::ExecutionFailed("Cannot fill fields in Observer mode".to_string()))
-            }
+            AutonomyLevel::Observer => Err(McpError::ExecutionFailed(
+                "Cannot fill fields in Observer mode".to_string(),
+            )),
             _ => {
                 let masked_value = "****";
                 Ok(json!({
@@ -241,7 +255,9 @@ impl McpTool for GetPageElementsTool {
 
     async fn execute(&self, _arguments: serde_json::Value) -> Result<serde_json::Value, McpError> {
         if !self.vision_capture.is_available() {
-            return Err(McpError::ExecutionFailed("Vision analysis not available".to_string()));
+            return Err(McpError::ExecutionFailed(
+                "Vision analysis not available".to_string(),
+            ));
         }
 
         Ok(json!({
@@ -261,8 +277,14 @@ impl VisualToolRegistry {
     pub fn new(vision_capture: Arc<VisionCapture>, autonomy_level: AutonomyLevel) -> Self {
         let tools: Vec<Box<dyn McpTool>> = vec![
             Box::new(FindElementTool::new(Arc::clone(&vision_capture))),
-            Box::new(ClickElementTool::new(Arc::clone(&vision_capture), autonomy_level)),
-            Box::new(FillFieldTool::new(Arc::clone(&vision_capture), autonomy_level)),
+            Box::new(ClickElementTool::new(
+                Arc::clone(&vision_capture),
+                autonomy_level,
+            )),
+            Box::new(FillFieldTool::new(
+                Arc::clone(&vision_capture),
+                autonomy_level,
+            )),
             Box::new(GetPageElementsTool::new(vision_capture)),
         ];
 
@@ -286,7 +308,7 @@ mod tests {
     fn test_find_element_tool_descriptor() {
         let tool = FindElementTool::new(Arc::new(VisionCapture::new(None)));
         let desc = tool.descriptor();
-        
+
         assert_eq!(desc.name, "browser.find_element");
         assert!(!desc.is_side_effect);
     }

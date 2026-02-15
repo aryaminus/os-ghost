@@ -18,19 +18,19 @@ struct Cli {
     /// Server URL
     #[arg(short, long, default_value = DEFAULT_SERVER_URL)]
     server: String,
-    
+
     /// API key for authentication
     #[arg(short, long, env = "OSGHOST_API_KEY")]
     api_key: Option<String>,
-    
+
     /// Enable verbose output
     #[arg(short, long)]
     verbose: bool,
-    
+
     /// Output format
     #[arg(short, long, value_enum, default_value = "text")]
     format: OutputFormat,
-    
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -48,69 +48,69 @@ enum Commands {
     Execute {
         /// Task description
         task: String,
-        
+
         /// Autonomy level
         #[arg(short, long, value_enum, default_value = "supervised")]
         autonomy: AutonomyLevel,
-        
+
         /// Wait for completion
         #[arg(short, long)]
         wait: bool,
     },
-    
+
     /// Check server status
     Status,
-    
+
     /// List workflows
     Workflows,
-    
+
     /// Execute a workflow
     RunWorkflow {
         /// Workflow ID or name
         workflow: String,
     },
-    
+
     /// Start recording a workflow
     Record {
         /// Workflow name
         name: String,
-        
+
         /// Workflow description
         #[arg(short, long)]
         description: Option<String>,
-        
+
         /// Starting URL
         #[arg(short, long)]
         url: String,
     },
-    
+
     /// Stop recording
     StopRecord,
-    
+
     /// List active agents
     Agents,
-    
+
     /// Show pending actions
     Pending,
-    
+
     /// Approve a pending action
     Approve {
         /// Action ID
         id: String,
     },
-    
+
     /// Deny a pending action
     Deny {
         /// Action ID
         id: String,
     },
-    
+
     /// Show memory statistics
     Memory,
-    
+
     /// Interactive mode
     Interactive,
-    
+
     /// Watch events
     Watch,
 }
@@ -137,13 +137,13 @@ impl From<AutonomyLevel> for String {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    
+
     if cli.verbose {
         tracing_subscriber::fmt()
             .with_env_filter("os_ghost_cli=debug")
             .init();
     }
-    
+
     match run_command(cli).await {
         Ok(_) => process::exit(0),
         Err(e) => {
@@ -156,149 +156,163 @@ async fn main() {
 async fn run_command(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
     let base_url = cli.server.trim_end_matches('/');
-    
+
     match cli.command {
         Commands::Status => {
             let resp = client
                 .get(format!("{}/api/v1/status", base_url))
                 .send()
                 .await?;
-            
+
             let status: serde_json::Value = resp.json().await?;
             print_status(&status, cli.format)?;
         }
-        
-        Commands::Execute { task, autonomy, wait } => {
+
+        Commands::Execute {
+            task,
+            autonomy,
+            wait,
+        } => {
             let req = serde_json::json!({
                 "task": task,
                 "autonomy_level": String::from(autonomy),
                 "wait": wait,
             });
-            
+
             let resp = client
                 .post(format!("{}/api/v1/execute", base_url))
                 .json(&req)
                 .send()
                 .await?;
-            
+
             let result: serde_json::Value = resp.json().await?;
             print_result(&result, cli.format)?;
-            
+
             if wait {
                 println!("Task queued. Use 'os-ghost-cli watch' to monitor progress.");
             }
         }
-        
+
         Commands::Workflows => {
             let resp = client
                 .get(format!("{}/api/v1/workflows", base_url))
                 .send()
                 .await?;
-            
+
             let workflows: serde_json::Value = resp.json().await?;
             print_workflows(&workflows, cli.format)?;
         }
-        
+
         Commands::RunWorkflow { workflow } => {
             let resp = client
-                .post(format!("{}/api/v1/workflows/{}/execute", base_url, workflow))
+                .post(format!(
+                    "{}/api/v1/workflows/{}/execute",
+                    base_url, workflow
+                ))
                 .send()
                 .await?;
-            
+
             let result: serde_json::Value = resp.json().await?;
             print_result(&result, cli.format)?;
         }
-        
-        Commands::Record { name, description, url } => {
+
+        Commands::Record {
+            name,
+            description,
+            url,
+        } => {
             let req = serde_json::json!({
                 "name": name,
                 "description": description.unwrap_or_default(),
                 "start_url": url,
             });
-            
+
             let resp = client
                 .post(format!("{}/api/v1/record/start", base_url))
                 .json(&req)
                 .send()
                 .await?;
-            
+
             let result: serde_json::Value = resp.json().await?;
             print_result(&result, cli.format)?;
         }
-        
+
         Commands::StopRecord => {
             let resp = client
                 .post(format!("{}/api/v1/record/stop", base_url))
                 .send()
                 .await?;
-            
+
             let result: serde_json::Value = resp.json().await?;
             print_result(&result, cli.format)?;
         }
-        
+
         Commands::Agents => {
             let resp = client
                 .get(format!("{}/api/v1/agents", base_url))
                 .send()
                 .await?;
-            
+
             let agents: serde_json::Value = resp.json().await?;
             print_agents(&agents, cli.format)?;
         }
-        
+
         Commands::Pending => {
             let resp = client
                 .get(format!("{}/api/v1/pending-actions", base_url))
                 .send()
                 .await?;
-            
+
             let actions: serde_json::Value = resp.json().await?;
             print_pending_actions(&actions, cli.format)?;
         }
-        
+
         Commands::Approve { id } => {
             let resp = client
                 .post(format!("{}/api/v1/actions/{}/approve", base_url, id))
                 .send()
                 .await?;
-            
+
             let result: serde_json::Value = resp.json().await?;
             print_result(&result, cli.format)?;
         }
-        
+
         Commands::Deny { id } => {
             let resp = client
                 .post(format!("{}/api/v1/actions/{}/deny", base_url, id))
                 .send()
                 .await?;
-            
+
             let result: serde_json::Value = resp.json().await?;
             print_result(&result, cli.format)?;
         }
-        
+
         Commands::Memory => {
             let resp = client
                 .get(format!("{}/api/v1/memory", base_url))
                 .send()
                 .await?;
-            
+
             let memory: serde_json::Value = resp.json().await?;
             print_memory(&memory, cli.format)?;
         }
-        
+
         Commands::Interactive => {
             run_interactive_mode(&client, base_url).await?;
         }
-        
+
         Commands::Watch => {
             watch_events(base_url).await?;
         }
     }
-    
+
     Ok(())
 }
 
-fn print_status(status: &serde_json::Value, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+fn print_status(
+    status: &serde_json::Value,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(status)?);
@@ -307,12 +321,30 @@ fn print_status(status: &serde_json::Value, format: OutputFormat) -> Result<(), 
             if let Some(data) = status.get("data") {
                 println!("OS-Ghost Server Status");
                 println!("======================");
-                println!("Connected: {}", data["connected"].as_bool().unwrap_or(false));
-                println!("Uptime: {} seconds", data["uptime_secs"].as_i64().unwrap_or(0));
-                println!("Active Agents: {}", data["active_agents_count"].as_u64().unwrap_or(0));
-                println!("Pending Actions: {}", data["pending_actions_count"].as_u64().unwrap_or(0));
-                println!("Workflows: {}", data["workflows_count"].as_u64().unwrap_or(0));
-                println!("Memory Entries: {}", data["memory_entries"].as_u64().unwrap_or(0));
+                println!(
+                    "Connected: {}",
+                    data["connected"].as_bool().unwrap_or(false)
+                );
+                println!(
+                    "Uptime: {} seconds",
+                    data["uptime_secs"].as_i64().unwrap_or(0)
+                );
+                println!(
+                    "Active Agents: {}",
+                    data["active_agents_count"].as_u64().unwrap_or(0)
+                );
+                println!(
+                    "Pending Actions: {}",
+                    data["pending_actions_count"].as_u64().unwrap_or(0)
+                );
+                println!(
+                    "Workflows: {}",
+                    data["workflows_count"].as_u64().unwrap_or(0)
+                );
+                println!(
+                    "Memory Entries: {}",
+                    data["memory_entries"].as_u64().unwrap_or(0)
+                );
             }
         }
         OutputFormat::Table => {
@@ -320,16 +352,31 @@ fn print_status(status: &serde_json::Value, format: OutputFormat) -> Result<(), 
             println!("{:<20} Value", "Property");
             println!("{}", "-".repeat(40));
             if let Some(data) = status.get("data") {
-                println!("{:<20} {}", "Connected:", data["connected"].as_bool().unwrap_or(false));
-                println!("{:<20} {}", "Uptime (s):", data["uptime_secs"].as_i64().unwrap_or(0));
-                println!("{:<20} {}", "Active Agents:", data["active_agents_count"].as_u64().unwrap_or(0));
+                println!(
+                    "{:<20} {}",
+                    "Connected:",
+                    data["connected"].as_bool().unwrap_or(false)
+                );
+                println!(
+                    "{:<20} {}",
+                    "Uptime (s):",
+                    data["uptime_secs"].as_i64().unwrap_or(0)
+                );
+                println!(
+                    "{:<20} {}",
+                    "Active Agents:",
+                    data["active_agents_count"].as_u64().unwrap_or(0)
+                );
             }
         }
     }
     Ok(())
 }
 
-fn print_result(result: &serde_json::Value, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+fn print_result(
+    result: &serde_json::Value,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(result)?);
@@ -348,7 +395,10 @@ fn print_result(result: &serde_json::Value, format: OutputFormat) -> Result<(), 
     Ok(())
 }
 
-fn print_workflows(workflows: &serde_json::Value, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+fn print_workflows(
+    workflows: &serde_json::Value,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(workflows)?);
@@ -369,7 +419,10 @@ fn print_workflows(workflows: &serde_json::Value, format: OutputFormat) -> Resul
     Ok(())
 }
 
-fn print_agents(agents: &serde_json::Value, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+fn print_agents(
+    agents: &serde_json::Value,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(agents)?);
@@ -390,7 +443,10 @@ fn print_agents(agents: &serde_json::Value, format: OutputFormat) -> Result<(), 
     Ok(())
 }
 
-fn print_pending_actions(actions: &serde_json::Value, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+fn print_pending_actions(
+    actions: &serde_json::Value,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(actions)?);
@@ -415,7 +471,10 @@ fn print_pending_actions(actions: &serde_json::Value, format: OutputFormat) -> R
     Ok(())
 }
 
-fn print_memory(memory: &serde_json::Value, format: OutputFormat) -> Result<(), Box<dyn std::error::Error>> {
+fn print_memory(
+    memory: &serde_json::Value,
+    format: OutputFormat,
+) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(memory)?);
@@ -424,7 +483,10 @@ fn print_memory(memory: &serde_json::Value, format: OutputFormat) -> Result<(), 
             if let Some(data) = memory.get("data") {
                 println!("Memory Statistics");
                 println!("=================");
-                println!("Total Entries: {}", data["total_entries"].as_u64().unwrap_or(0));
+                println!(
+                    "Total Entries: {}",
+                    data["total_entries"].as_u64().unwrap_or(0)
+                );
             }
         }
     }
@@ -438,17 +500,17 @@ async fn run_interactive_mode(
     println!("OS-Ghost Interactive Mode");
     println!("Type 'help' for available commands, 'exit' to quit.");
     println!();
-    
+
     // Simple interactive loop
     loop {
         print!("ghost> ");
         std::io::Write::flush(&mut std::io::stdout())?;
-        
+
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
-        
+
         let trimmed = input.trim();
-        
+
         match trimmed {
             "exit" | "quit" => {
                 println!("Goodbye!");
@@ -468,24 +530,26 @@ async fn run_interactive_mode(
             }
         }
     }
-    
+
     Ok(())
 }
 
 async fn watch_events(base_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use futures::{SinkExt, StreamExt};
     use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-    use futures::{StreamExt, SinkExt};
-    
-    let ws_url = base_url.replace("http://", "ws://").replace("https://", "wss://");
+
+    let ws_url = base_url
+        .replace("http://", "ws://")
+        .replace("https://", "wss://");
     let url = format!("{}/ws", ws_url);
-    
+
     println!("Connecting to WebSocket: {}", url);
-    
+
     let (ws_stream, _) = connect_async(&url).await?;
     println!("Connected! Watching events... (Press Ctrl+C to exit)");
-    
+
     let (mut write, mut read) = ws_stream.split();
-    
+
     // Send ping every 30 seconds
     let ping_task = tokio::spawn(async move {
         loop {
@@ -495,13 +559,14 @@ async fn watch_events(base_url: &str) -> Result<(), Box<dyn std::error::Error>> 
             }
         }
     });
-    
+
     // Read messages
     while let Some(msg) = read.next().await {
         match msg {
             Ok(Message::Text(text)) => {
                 if let Ok(event) = serde_json::from_str::<serde_json::Value>(&text) {
-                    println!("[{}] {}", 
+                    println!(
+                        "[{}] {}",
                         event["type"].as_str().unwrap_or("unknown"),
                         serde_json::to_string_pretty(&event["data"]).unwrap_or_default()
                     );
@@ -518,7 +583,7 @@ async fn watch_events(base_url: &str) -> Result<(), Box<dyn std::error::Error>> 
             _ => {}
         }
     }
-    
+
     ping_task.abort();
     Ok(())
 }

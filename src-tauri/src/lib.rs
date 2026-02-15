@@ -52,32 +52,30 @@ pub mod server;
 pub mod input;
 
 use ai::ai_provider::SmartAiRouter;
-use core::game_state::{EffectMessage, EffectQueue};
 use ai::gemini_client::GeminiClient;
+use ai::ollama_client::OllamaClient;
+use core::game_state::{EffectMessage, EffectQueue};
+use core::window;
+use core::window::GhostWindow;
 use ipc::Puzzle;
 use memory::LongTermMemory;
-use ai::ollama_client::OllamaClient;
-use std::sync::{Arc, Mutex};
+use std::str::FromStr;
 use std::sync::RwLock;
+use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
-use std::str::FromStr;
-use core::window::GhostWindow;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_updater::UpdaterExt;
-use core::window;
 
 // Import commonly used modules for command handlers
-use data::pairing;
-use data::timeline;
-use data::events_bus;
-use data::skills;
-use data::persona;
-use monitoring::perf;
-use core::notifications;
 use config::privacy;
-
-
+use core::notifications;
+use data::events_bus;
+use data::pairing;
+use data::persona;
+use data::skills;
+use data::timeline;
+use monitoring::perf;
 
 /// Default puzzles for the game
 fn default_puzzles() -> Vec<Puzzle> {
@@ -1184,7 +1182,10 @@ pub fn run() {
 }
 
 async fn run_update_check(app: tauri::AppHandle, install: bool) {
-    let _ = app.emit("updater:checking", serde_json::json!({ "install": install }));
+    let _ = app.emit(
+        "updater:checking",
+        serde_json::json!({ "install": install }),
+    );
 
     let updater = match app.updater() {
         Ok(updater) => updater,
@@ -1396,36 +1397,36 @@ fn rebuild_native_bridge() -> Result<String, String> {
 
     #[cfg(debug_assertions)]
     {
-    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
-    let mut src_tauri_dir = None;
+        let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+        let mut src_tauri_dir = None;
 
-    if let Some(parent) = exe_path.parent() {
-        if let Some(target_dir) = parent.parent() {
-            if let Some(candidate) = target_dir.parent() {
-                let cargo = candidate.join("Cargo.toml");
-                if cargo.exists() {
-                    src_tauri_dir = Some(candidate.to_path_buf());
+        if let Some(parent) = exe_path.parent() {
+            if let Some(target_dir) = parent.parent() {
+                if let Some(candidate) = target_dir.parent() {
+                    let cargo = candidate.join("Cargo.toml");
+                    if cargo.exists() {
+                        src_tauri_dir = Some(candidate.to_path_buf());
+                    }
                 }
             }
         }
-    }
 
-    let src_tauri_dir = src_tauri_dir.ok_or("Unable to locate src-tauri directory")?;
+        let src_tauri_dir = src_tauri_dir.ok_or("Unable to locate src-tauri directory")?;
 
-    let output = std::process::Command::new("cargo")
-        .arg("build")
-        .arg("--bin")
-        .arg("native_bridge")
-        .current_dir(&src_tauri_dir)
-        .output()
-        .map_err(|e| format!("Failed to spawn cargo: {}", e))?;
+        let output = std::process::Command::new("cargo")
+            .arg("build")
+            .arg("--bin")
+            .arg("native_bridge")
+            .current_dir(&src_tauri_dir)
+            .output()
+            .map_err(|e| format!("Failed to spawn cargo: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Bridge build failed: {}", stderr.trim()));
-    }
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Bridge build failed: {}", stderr.trim()));
+        }
 
-    Ok("native_bridge rebuilt".to_string())
+        Ok("native_bridge rebuilt".to_string())
     }
 }
 
@@ -1438,10 +1439,7 @@ fn register_manifest_for_dir(
     // Only create manifest if parent browser config exists (browser is installed)
     if let Some(parent) = manifest_dir.parent() {
         if !parent.exists() {
-            tracing::debug!(
-                "Browser config dir {:?} doesn't exist, skipping",
-                parent
-            );
+            tracing::debug!("Browser config dir {:?} doesn't exist, skipping", parent);
             return Ok(());
         }
     }

@@ -205,9 +205,7 @@ impl AppContextDetector {
             return Err("AppleScript execution failed".to_string());
         }
 
-        let app_name = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let app_name = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         if app_name.is_empty() {
             return Ok(None);
@@ -255,9 +253,7 @@ impl AppContextDetector {
             return Err("PowerShell execution failed".to_string());
         }
 
-        let app_name = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let app_name = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         if app_name.is_empty() {
             return Ok(None);
@@ -274,7 +270,11 @@ impl AppContextDetector {
     async fn detect_linux(&self) -> Result<Option<AppContext>, String> {
         // Try xprop first (X11)
         let output = tokio::process::Command::new("xprop")
-            .args(&["-id", "$(xprop -root _NET_ACTIVE_WINDOW | cut -d ' ' -f 5)", "WM_CLASS"])
+            .args(&[
+                "-id",
+                "$(xprop -root _NET_ACTIVE_WINDOW | cut -d ' ' -f 5)",
+                "WM_CLASS",
+            ])
             .output()
             .await;
 
@@ -357,7 +357,12 @@ impl AppContextDetector {
 
         tracing::debug!(
             "App switch: {} -> {}",
-            history.last().unwrap().from_app.as_deref().unwrap_or("None"),
+            history
+                .last()
+                .unwrap()
+                .from_app
+                .as_deref()
+                .unwrap_or("None"),
             history.last().unwrap().to_app
         );
     }
@@ -422,27 +427,45 @@ fn default_app_categories() -> HashMap<String, AppCategory> {
     // Code Editors
     map.insert("com.microsoft.VSCode".to_string(), AppCategory::CodeEditor);
     map.insert("com.apple.Xcode".to_string(), AppCategory::CodeEditor);
-    map.insert("com.jetbrains.intellij".to_string(), AppCategory::CodeEditor);
+    map.insert(
+        "com.jetbrains.intellij".to_string(),
+        AppCategory::CodeEditor,
+    );
     map.insert("com.sublimetext.4".to_string(), AppCategory::CodeEditor);
     map.insert("com.github.atom".to_string(), AppCategory::CodeEditor);
     map.insert("com.cursor.Cursor".to_string(), AppCategory::CodeEditor);
 
     // Communication
-    map.insert("com.tinyspeck.slackmacgap".to_string(), AppCategory::Communication);
-    map.insert("com.microsoft.teams".to_string(), AppCategory::Communication);
+    map.insert(
+        "com.tinyspeck.slackmacgap".to_string(),
+        AppCategory::Communication,
+    );
+    map.insert(
+        "com.microsoft.teams".to_string(),
+        AppCategory::Communication,
+    );
     map.insert("com.hnc.Discord".to_string(), AppCategory::Communication);
     map.insert("us.zoom.xos".to_string(), AppCategory::Communication);
 
     // Productivity
     map.insert("com.apple.mail".to_string(), AppCategory::Productivity);
-    map.insert("com.microsoft.Outlook".to_string(), AppCategory::Productivity);
+    map.insert(
+        "com.microsoft.Outlook".to_string(),
+        AppCategory::Productivity,
+    );
     map.insert("com.apple.iCal".to_string(), AppCategory::Productivity);
     map.insert("com.notion.id".to_string(), AppCategory::Productivity);
-    map.insert("com.atlassian.trello".to_string(), AppCategory::Productivity);
+    map.insert(
+        "com.atlassian.trello".to_string(),
+        AppCategory::Productivity,
+    );
 
     // System
     map.insert("com.apple.finder".to_string(), AppCategory::System);
-    map.insert("com.apple.systempreferences".to_string(), AppCategory::System);
+    map.insert(
+        "com.apple.systempreferences".to_string(),
+        AppCategory::System,
+    );
     map.insert("com.apple.Terminal".to_string(), AppCategory::System);
 
     map
@@ -501,9 +524,7 @@ fn categorize_by_name(app_name: &str) -> AppCategory {
         || name_lower.contains("vlc")
     {
         AppCategory::Media
-    } else if name_lower.contains("game")
-        || name_lower.contains("steam")
-    {
+    } else if name_lower.contains("game") || name_lower.contains("steam") {
         AppCategory::Game
     } else {
         AppCategory::Other
@@ -531,7 +552,10 @@ mod tests {
     #[test]
     fn test_categorize_by_name() {
         assert_eq!(categorize_by_name("Google Chrome"), AppCategory::Browser);
-        assert_eq!(categorize_by_name("Visual Studio Code"), AppCategory::CodeEditor);
+        assert_eq!(
+            categorize_by_name("Visual Studio Code"),
+            AppCategory::CodeEditor
+        );
         assert_eq!(categorize_by_name("Slack"), AppCategory::Communication);
     }
 

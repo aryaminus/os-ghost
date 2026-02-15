@@ -211,7 +211,11 @@ impl VisionAnalyzer {
     }
 
     /// Find specific element by description
-    pub async fn find_element(&self, image_bytes: &[u8], description: &str) -> Option<VisualElement> {
+    pub async fn find_element(
+        &self,
+        image_bytes: &[u8],
+        description: &str,
+    ) -> Option<VisualElement> {
         match self.analyze_screenshot(image_bytes).await {
             Ok(analysis) => {
                 // Find best matching element
@@ -219,9 +223,10 @@ impl VisionAnalyzer {
                     .elements
                     .into_iter()
                     .filter(|e| {
-                        e.description.to_lowercase().contains(&description.to_lowercase())
-                            || e
-                                .text_content
+                        e.description
+                            .to_lowercase()
+                            .contains(&description.to_lowercase())
+                            || e.text_content
                                 .as_ref()
                                 .map(|t| t.to_lowercase().contains(&description.to_lowercase()))
                                 .unwrap_or(false)
@@ -323,7 +328,11 @@ Respond with JSON:
     }
 
     /// Parse vision model response
-    fn parse_vision_response(&self, response: &str, provider: VisionProvider) -> Result<VisionAnalysis> {
+    fn parse_vision_response(
+        &self,
+        response: &str,
+        provider: VisionProvider,
+    ) -> Result<VisionAnalysis> {
         // Extract JSON from response (models sometimes wrap in markdown)
         let json_str = self.extract_json(response)?;
 

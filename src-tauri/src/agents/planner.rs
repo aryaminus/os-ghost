@@ -180,7 +180,11 @@ Generate 2-5 sub_goals depending on complexity."#,
             .puzzle_clue
             .split_whitespace()
             .filter(|w| w.len() > 4 && !is_stop_word(w))
-            .map(|w| w.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .map(|w| {
+                w.to_lowercase()
+                    .trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_string()
+            })
             .filter(|w| !w.is_empty())
             .collect();
 
@@ -271,7 +275,10 @@ Generate a revised plan that takes a different angle on the puzzle."#,
             let matches: usize = sub_goal
                 .keywords
                 .iter()
-                .filter(|kw| content_lower.contains(&kw.to_lowercase()) || url_lower.contains(&kw.to_lowercase()))
+                .filter(|kw| {
+                    content_lower.contains(&kw.to_lowercase())
+                        || url_lower.contains(&kw.to_lowercase())
+                })
                 .count();
 
             if !sub_goal.keywords.is_empty() {
@@ -307,17 +314,15 @@ Generate a revised plan that takes a different angle on the puzzle."#,
 #[inline]
 fn is_stop_word(word: &str) -> bool {
     const STOP_WORDS: &[&str] = &[
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "must", "shall", "can", "need", "dare",
-        "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
-        "from", "as", "into", "through", "during", "before", "after", "above",
-        "below", "between", "under", "again", "further", "then", "once", "here",
-        "there", "when", "where", "why", "how", "all", "each", "few", "more",
-        "most", "other", "some", "such", "no", "nor", "not", "only", "own",
-        "same", "so", "than", "too", "very", "just", "and", "but", "if", "or",
-        "because", "until", "while", "this", "that", "these", "those", "find",
-        "first", "about", "which", "what", "their", "they", "them", "your",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall",
+        "can", "need", "dare", "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
+        "from", "as", "into", "through", "during", "before", "after", "above", "below", "between",
+        "under", "again", "further", "then", "once", "here", "there", "when", "where", "why",
+        "how", "all", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+        "only", "own", "same", "so", "than", "too", "very", "just", "and", "but", "if", "or",
+        "because", "until", "while", "this", "that", "these", "those", "find", "first", "about",
+        "which", "what", "their", "they", "them", "your",
     ];
     STOP_WORDS.contains(&word.to_lowercase().as_str())
 }

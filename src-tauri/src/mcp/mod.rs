@@ -17,18 +17,20 @@
 //! - Safe system access with progressive trust
 
 pub mod browser;
+pub mod os_tools;
 pub mod sandbox;
 pub mod traits;
 pub mod types;
 pub mod visual_tools;
-pub mod os_tools;
 
 pub use browser::BrowserMcpServer;
 pub use os_tools::OsToolProvider;
 pub use sandbox::{
-    get_sandbox_config, update_sandbox_config, categorize_command, is_command_blocked,
+    categorize_command, get_sandbox_config, is_command_blocked, update_sandbox_config,
     SandboxConfig, SandboxError, ShellCategory, TrustLevel,
 };
 pub use traits::{McpPrompt, McpResource, McpServer, McpTool};
 pub use types::*;
-pub use visual_tools::{FindElementTool, ClickElementTool, FillFieldTool, GetPageElementsTool, VisualToolRegistry};
+pub use visual_tools::{
+    ClickElementTool, FillFieldTool, FindElementTool, GetPageElementsTool, VisualToolRegistry,
+};

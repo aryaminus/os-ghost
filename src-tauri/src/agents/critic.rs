@@ -72,10 +72,18 @@ impl CriticAgent {
 
         // Basic safety checks (patterns that shouldn't appear)
         let unsafe_patterns = [
-            "kill", "die", "death", "murder", "suicide", "hate", 
-            "racist", "sexist", "offensive", "explicit",
+            "kill",
+            "die",
+            "death",
+            "murder",
+            "suicide",
+            "hate",
+            "racist",
+            "sexist",
+            "offensive",
+            "explicit",
         ];
-        
+
         let dialogue_lower = dialogue.to_lowercase();
         for pattern in unsafe_patterns {
             if dialogue_lower.contains(pattern) {
@@ -163,7 +171,10 @@ Safety and quality scores should be 0.0-1.0."#,
 
         match serde_json::from_str::<serde_json::Value>(json_str) {
             Ok(json) => {
-                let approved = json.get("approved").and_then(|v| v.as_bool()).unwrap_or(true);
+                let approved = json
+                    .get("approved")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
 
                 let critique = json
                     .get("critique")
@@ -282,13 +293,12 @@ Respond with ONLY the new dialogue, nothing else."#,
             .ai_router
             .generate_text_light(&prompt)
             .await
-            .map_err(|e| AgentError::ServiceError(format!("Improvement generation failed: {}", e)))?;
+            .map_err(|e| {
+                AgentError::ServiceError(format!("Improvement generation failed: {}", e))
+            })?;
 
         // Clean up the response
-        let cleaned = improved
-            .trim()
-            .trim_matches('"')
-            .to_string();
+        let cleaned = improved.trim().trim_matches('"').to_string();
 
         Ok(cleaned)
     }
@@ -385,8 +395,7 @@ impl Agent for CriticAgent {
 
     fn can_handle(&self, context: &AgentContext) -> bool {
         // Can handle if there's something to critique
-        !context.previous_outputs.is_empty()
-            || context.metadata.contains_key("narrator_output")
+        !context.previous_outputs.is_empty() || context.metadata.contains_key("narrator_output")
     }
 }
 

@@ -114,7 +114,7 @@ pub struct SandboxConfig {
 impl Default for SandboxConfig {
     fn default() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        
+
         Self {
             trust_level: TrustLevel::Untrusted,
             read_allowlist: vec![
@@ -193,7 +193,9 @@ impl SandboxConfig {
             });
         }
 
-        let canonical = path.canonicalize().map_err(|_| SandboxError::PathNotFound)?;
+        let canonical = path
+            .canonicalize()
+            .map_err(|_| SandboxError::PathNotFound)?;
 
         for blocked in &self.blocklist {
             if let Ok(blocked_canonical) = blocked.canonicalize() {
@@ -228,7 +230,9 @@ impl SandboxConfig {
 
         let parent = path.parent().ok_or(SandboxError::InvalidPath)?;
         let canonical_parent = if parent.exists() {
-            parent.canonicalize().map_err(|_| SandboxError::PathNotFound)?
+            parent
+                .canonicalize()
+                .map_err(|_| SandboxError::PathNotFound)?
         } else {
             parent.to_path_buf()
         };
@@ -271,8 +275,14 @@ pub enum SandboxError {
     PathNotAllowed(PathBuf),
     PathNotFound,
     InvalidPath,
-    InsufficientTrust { required: TrustLevel, current: TrustLevel },
-    FileTooLarge { size: usize, max: usize },
+    InsufficientTrust {
+        required: TrustLevel,
+        current: TrustLevel,
+    },
+    FileTooLarge {
+        size: usize,
+        max: usize,
+    },
     ShellCategoryNotAllowed(ShellCategory),
     CommandBlocked(String),
     IoError(String),
@@ -286,7 +296,11 @@ impl std::fmt::Display for SandboxError {
             SandboxError::PathNotFound => write!(f, "Path not found"),
             SandboxError::InvalidPath => write!(f, "Invalid path format"),
             SandboxError::InsufficientTrust { required, current } => {
-                write!(f, "Insufficient trust: requires {:?}, have {:?}", required, current)
+                write!(
+                    f,
+                    "Insufficient trust: requires {:?}, have {:?}",
+                    required, current
+                )
             }
             SandboxError::FileTooLarge { size, max } => {
                 write!(f, "File too large: {} bytes (max {})", size, max)
@@ -325,28 +339,39 @@ pub enum ShellCategory {
 impl ShellCategory {
     pub fn risk_level(&self) -> ActionRiskLevel {
         match self {
-            ShellCategory::ReadInfo | ShellCategory::Search | 
-            ShellCategory::PackageInfo | ShellCategory::GitRead => ActionRiskLevel::Low,
-            ShellCategory::GitWrite | ShellCategory::FileManipulation | 
-            ShellCategory::Network => ActionRiskLevel::Medium,
+            ShellCategory::ReadInfo
+            | ShellCategory::Search
+            | ShellCategory::PackageInfo
+            | ShellCategory::GitRead => ActionRiskLevel::Low,
+            ShellCategory::GitWrite | ShellCategory::FileManipulation | ShellCategory::Network => {
+                ActionRiskLevel::Medium
+            }
             _ => ActionRiskLevel::High,
         }
     }
 
     pub fn min_trust_level(&self) -> TrustLevel {
         match self {
-            ShellCategory::ReadInfo | ShellCategory::Search |
-            ShellCategory::PackageInfo | ShellCategory::GitRead => TrustLevel::ReadOnly,
-            ShellCategory::GitWrite | ShellCategory::FileManipulation |
-            ShellCategory::Network => TrustLevel::Limited,
+            ShellCategory::ReadInfo
+            | ShellCategory::Search
+            | ShellCategory::PackageInfo
+            | ShellCategory::GitRead => TrustLevel::ReadOnly,
+            ShellCategory::GitWrite | ShellCategory::FileManipulation | ShellCategory::Network => {
+                TrustLevel::Limited
+            }
             ShellCategory::FileDeletion | ShellCategory::ProcessManagement => TrustLevel::Elevated,
             ShellCategory::SystemAdmin | ShellCategory::Arbitrary => TrustLevel::Full,
         }
     }
 
     pub fn always_confirm(&self) -> bool {
-        matches!(self, ShellCategory::FileDeletion | ShellCategory::ProcessManagement |
-                       ShellCategory::SystemAdmin | ShellCategory::Arbitrary)
+        matches!(
+            self,
+            ShellCategory::FileDeletion
+                | ShellCategory::ProcessManagement
+                | ShellCategory::SystemAdmin
+                | ShellCategory::Arbitrary
+        )
     }
 
     pub fn is_high_risk(&self) -> bool {
@@ -356,18 +381,54 @@ impl ShellCategory {
 
 lazy_static! {
     static ref COMMAND_PATTERNS: Vec<(Regex, ShellCategory)> = vec![
-        (Regex::new(r"^(ls|dir|pwd|cat|head|tail|wc|file|stat|which|whereis|type|echo|printf)\b").unwrap(), ShellCategory::ReadInfo),
-        (Regex::new(r"^(find|grep|rg|ag|locate|mdfind)\b").unwrap(), ShellCategory::Search),
-        (Regex::new(r"^(brew (list|info|search)|npm (list|ls)|pip (list|show)|cargo (tree|metadata))\b").unwrap(), ShellCategory::PackageInfo),
-        (Regex::new(r"^git\s+(status|log|diff|show|branch|remote|tag|stash list)\b").unwrap(), ShellCategory::GitRead),
-        (Regex::new(r"^git\s+(add|commit|push|pull|merge|rebase|checkout|reset|stash)\b").unwrap(), ShellCategory::GitWrite),
-        (Regex::new(r"^(cp|mv|mkdir|touch|ln)\b").unwrap(), ShellCategory::FileManipulation),
-        (Regex::new(r"^(rm|rmdir)\b").unwrap(), ShellCategory::FileDeletion),
-        (Regex::new(r"^(curl|wget|ping|nc|ssh|scp|rsync)\b").unwrap(), ShellCategory::Network),
-        (Regex::new(r"^(ps|kill|killall|pkill|top|htop)\b").unwrap(), ShellCategory::ProcessManagement),
-        (Regex::new(r"^(sudo|chmod|chown|chgrp|mount|umount)\b").unwrap(), ShellCategory::SystemAdmin),
+        (
+            Regex::new(
+                r"^(ls|dir|pwd|cat|head|tail|wc|file|stat|which|whereis|type|echo|printf)\b"
+            )
+            .unwrap(),
+            ShellCategory::ReadInfo
+        ),
+        (
+            Regex::new(r"^(find|grep|rg|ag|locate|mdfind)\b").unwrap(),
+            ShellCategory::Search
+        ),
+        (
+            Regex::new(
+                r"^(brew (list|info|search)|npm (list|ls)|pip (list|show)|cargo (tree|metadata))\b"
+            )
+            .unwrap(),
+            ShellCategory::PackageInfo
+        ),
+        (
+            Regex::new(r"^git\s+(status|log|diff|show|branch|remote|tag|stash list)\b").unwrap(),
+            ShellCategory::GitRead
+        ),
+        (
+            Regex::new(r"^git\s+(add|commit|push|pull|merge|rebase|checkout|reset|stash)\b")
+                .unwrap(),
+            ShellCategory::GitWrite
+        ),
+        (
+            Regex::new(r"^(cp|mv|mkdir|touch|ln)\b").unwrap(),
+            ShellCategory::FileManipulation
+        ),
+        (
+            Regex::new(r"^(rm|rmdir)\b").unwrap(),
+            ShellCategory::FileDeletion
+        ),
+        (
+            Regex::new(r"^(curl|wget|ping|nc|ssh|scp|rsync)\b").unwrap(),
+            ShellCategory::Network
+        ),
+        (
+            Regex::new(r"^(ps|kill|killall|pkill|top|htop)\b").unwrap(),
+            ShellCategory::ProcessManagement
+        ),
+        (
+            Regex::new(r"^(sudo|chmod|chown|chgrp|mount|umount)\b").unwrap(),
+            ShellCategory::SystemAdmin
+        ),
     ];
-    
     static ref BLOCKED_COMMANDS: Vec<Regex> = vec![
         Regex::new(r"(?i)(mkfs|fdisk|dd\s+if=.*of=/dev|diskutil\s+erase)").unwrap(),
         Regex::new(r":\(\)\s*\{\s*:\|:&\s*\}").unwrap(),
@@ -377,7 +438,6 @@ lazy_static! {
         Regex::new(r"security\s+(find|export|dump)-").unwrap(),
         Regex::new(r"(cat|less|more|head|tail)\s+/etc/(passwd|shadow)").unwrap(),
     ];
-    
     static ref SANDBOX_CONFIG: RwLock<SandboxConfig> = RwLock::new(SandboxConfig::load());
 }
 
@@ -392,14 +452,19 @@ pub fn categorize_command(command: &str) -> ShellCategory {
 }
 
 pub fn is_command_blocked(command: &str) -> bool {
-    BLOCKED_COMMANDS.iter().any(|pattern| pattern.is_match(command))
+    BLOCKED_COMMANDS
+        .iter()
+        .any(|pattern| pattern.is_match(command))
 }
 
 pub fn get_sandbox_config() -> SandboxConfig {
     SANDBOX_CONFIG.read().unwrap().clone()
 }
 
-pub fn update_sandbox_config<F>(f: F) where F: FnOnce(&mut SandboxConfig) {
+pub fn update_sandbox_config<F>(f: F)
+where
+    F: FnOnce(&mut SandboxConfig),
+{
     let mut config = SANDBOX_CONFIG.write().unwrap();
     f(&mut config);
     // Persist to disk
@@ -557,14 +622,18 @@ fn parse_shell_category(category: &str) -> Result<ShellCategory, String> {
 #[tauri::command]
 pub fn enable_shell_category(category: String) -> Result<SandboxConfig, String> {
     let cat = parse_shell_category(&category)?;
-    update_sandbox_config(|c| { c.allowed_shell_categories.insert(cat); });
+    update_sandbox_config(|c| {
+        c.allowed_shell_categories.insert(cat);
+    });
     Ok(get_sandbox_config())
 }
 
 #[tauri::command]
 pub fn disable_shell_category(category: String) -> Result<SandboxConfig, String> {
     let cat = parse_shell_category(&category)?;
-    update_sandbox_config(|c| { c.allowed_shell_categories.remove(&cat); });
+    update_sandbox_config(|c| {
+        c.allowed_shell_categories.remove(&cat);
+    });
     Ok(get_sandbox_config())
 }
 
@@ -618,84 +687,156 @@ pub fn sandbox_read_file_internal(path: String, allow_confirm: bool) -> FileOpRe
 
     match decision {
         PermissionDecision::Deny => {
-            return FileOpResult { success: false, path, content: None, bytes_written: None, error: Some("Autonomy level blocks file access".to_string()), backup_path: None, action_id: None, preview_id: None };
+            return FileOpResult {
+                success: false,
+                path,
+                content: None,
+                bytes_written: None,
+                error: Some("Autonomy level blocks file access".to_string()),
+                backup_path: None,
+                action_id: None,
+                preview_id: None,
+            };
         }
         PermissionDecision::RequireConfirmation => {
             if !allow_confirm {
                 // Already approved; proceed
                 // fall through
             } else {
-            let pending = PendingAction::new(
-                "sandbox.read_file".to_string(),
-                format!("Read file: {}", path),
-                path.clone(),
-                ActionRiskLevel::Low,
-                Some("Sandbox file read requires confirmation".to_string()),
-                Some(serde_json::json!({ "path": path })),
-            );
-
-            let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
-                let preview = manager.start_preview(&pending);
-                manager.set_visual_preview(
-                    &preview.id,
-                    VisualPreview {
-                        preview_type: VisualPreviewType::TextSelection,
-                        content: pending.target.clone(),
-                        width: None,
-                        height: None,
-                        alt_text: format!("Read file {}", pending.target),
-                    },
+                let pending = PendingAction::new(
+                    "sandbox.read_file".to_string(),
+                    format!("Read file: {}", path),
+                    path.clone(),
+                    ActionRiskLevel::Low,
+                    Some("Sandbox file read requires confirmation".to_string()),
+                    Some(serde_json::json!({ "path": path })),
                 );
-                manager.update_progress(&preview.id, 1.0);
-                Some(preview.id)
-            } else {
-                None
-            };
 
-            let action_id = ACTION_QUEUE.add(pending.clone());
-            record_action_created(
-                action_id,
-                pending.action_type,
-                pending.description,
-                pending.target,
-                "low".to_string(),
-                pending.reason,
-                pending.arguments,
-                Some("sandbox".to_string()),
-            );
+                let preview_id = if let Some(manager) =
+                    crate::actions::action_preview::get_preview_manager_mut()
+                {
+                    let preview = manager.start_preview(&pending);
+                    manager.set_visual_preview(
+                        &preview.id,
+                        VisualPreview {
+                            preview_type: VisualPreviewType::TextSelection,
+                            content: pending.target.clone(),
+                            width: None,
+                            height: None,
+                            alt_text: format!("Read file {}", pending.target),
+                        },
+                    );
+                    manager.update_progress(&preview.id, 1.0);
+                    Some(preview.id)
+                } else {
+                    None
+                };
 
-            return FileOpResult { success: false, path, content: None, bytes_written: None, error: Some("Action requires confirmation".to_string()), backup_path: None, action_id: Some(action_id), preview_id };
+                let action_id = ACTION_QUEUE.add(pending.clone());
+                record_action_created(
+                    action_id,
+                    pending.action_type,
+                    pending.description,
+                    pending.target,
+                    "low".to_string(),
+                    pending.reason,
+                    pending.arguments,
+                    Some("sandbox".to_string()),
+                );
+
+                return FileOpResult {
+                    success: false,
+                    path,
+                    content: None,
+                    bytes_written: None,
+                    error: Some("Action requires confirmation".to_string()),
+                    backup_path: None,
+                    action_id: Some(action_id),
+                    preview_id,
+                };
             }
         }
         PermissionDecision::Allow => {}
     }
-    
+
     if let Err(e) = config.can_read(&path_buf) {
-        return FileOpResult { success: false, path, content: None, bytes_written: None, error: Some(e.to_string()), backup_path: None, action_id: None, preview_id: None };
+        return FileOpResult {
+            success: false,
+            path,
+            content: None,
+            bytes_written: None,
+            error: Some(e.to_string()),
+            backup_path: None,
+            action_id: None,
+            preview_id: None,
+        };
     }
-    
+
     match std::fs::metadata(&path_buf) {
         Ok(metadata) if metadata.len() as usize > config.max_read_size => {
-            return FileOpResult { success: false, path, content: None, bytes_written: None, 
-                error: Some(format!("File too large: {} bytes (max {})", metadata.len(), config.max_read_size)), backup_path: None, action_id: None, preview_id: None };
+            return FileOpResult {
+                success: false,
+                path,
+                content: None,
+                bytes_written: None,
+                error: Some(format!(
+                    "File too large: {} bytes (max {})",
+                    metadata.len(),
+                    config.max_read_size
+                )),
+                backup_path: None,
+                action_id: None,
+                preview_id: None,
+            };
         }
         Err(e) => {
-            return FileOpResult { success: false, path, content: None, bytes_written: None, error: Some(e.to_string()), backup_path: None, action_id: None, preview_id: None };
+            return FileOpResult {
+                success: false,
+                path,
+                content: None,
+                bytes_written: None,
+                error: Some(e.to_string()),
+                backup_path: None,
+                action_id: None,
+                preview_id: None,
+            };
         }
         _ => {}
     }
-    
+
     match std::fs::read_to_string(&path_buf) {
         Ok(contents) => {
             update_sandbox_config(|c| c.record_safe_operation());
-            FileOpResult { success: true, path, content: Some(contents), bytes_written: None, error: None, backup_path: None, action_id: None, preview_id: None }
+            FileOpResult {
+                success: true,
+                path,
+                content: Some(contents),
+                bytes_written: None,
+                error: None,
+                backup_path: None,
+                action_id: None,
+                preview_id: None,
+            }
         }
-        Err(e) => FileOpResult { success: false, path, content: None, bytes_written: None, error: Some(e.to_string()), backup_path: None, action_id: None, preview_id: None }
+        Err(e) => FileOpResult {
+            success: false,
+            path,
+            content: None,
+            bytes_written: None,
+            error: Some(e.to_string()),
+            backup_path: None,
+            action_id: None,
+            preview_id: None,
+        },
     }
 }
 
 #[tauri::command]
-pub fn sandbox_write_file(path: String, content: String, create_dirs: Option<bool>) -> FileOpResult {
+pub fn sandbox_write_file(
+    path: String,
+    content: String,
+    create_dirs: Option<bool>,
+) -> FileOpResult {
     sandbox_write_file_internal(path, content, create_dirs, true, None)
 }
 
@@ -720,65 +861,105 @@ pub fn sandbox_write_file_internal(
 
     match decision {
         PermissionDecision::Deny => {
-            return FileOpResult { success: false, path, content: None, bytes_written: None, error: Some("Autonomy level blocks file writes".to_string()), backup_path: None, action_id: None, preview_id: None };
+            return FileOpResult {
+                success: false,
+                path,
+                content: None,
+                bytes_written: None,
+                error: Some("Autonomy level blocks file writes".to_string()),
+                backup_path: None,
+                action_id: None,
+                preview_id: None,
+            };
         }
         PermissionDecision::RequireConfirmation => {
             if !allow_confirm {
                 // Already approved; proceed
             } else {
-            let pending = PendingAction::new(
-                "sandbox.write_file".to_string(),
-                format!("Write file: {}", path),
-                path.clone(),
-                ActionRiskLevel::Medium,
-                Some("Sandbox file write requires confirmation".to_string()),
-                Some(serde_json::json!({ "path": path, "content": content, "create_dirs": create_dirs })),
-            );
-
-            let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
-                let preview = manager.start_preview(&pending);
-                manager.set_visual_preview(
-                    &preview.id,
-                    VisualPreview {
-                        preview_type: VisualPreviewType::TextSelection,
-                        content: pending.target.clone(),
-                        width: None,
-                        height: None,
-                        alt_text: format!("Write file {}", pending.target),
-                    },
+                let pending = PendingAction::new(
+                    "sandbox.write_file".to_string(),
+                    format!("Write file: {}", path),
+                    path.clone(),
+                    ActionRiskLevel::Medium,
+                    Some("Sandbox file write requires confirmation".to_string()),
+                    Some(
+                        serde_json::json!({ "path": path, "content": content, "create_dirs": create_dirs }),
+                    ),
                 );
-                manager.update_progress(&preview.id, 1.0);
-                Some(preview.id)
-            } else {
-                None
-            };
 
-            let action_id = ACTION_QUEUE.add(pending.clone());
-            record_action_created(
-                action_id,
-                pending.action_type,
-                pending.description,
-                pending.target,
-                "medium".to_string(),
-                pending.reason,
-                pending.arguments,
-                Some("sandbox".to_string()),
-            );
+                let preview_id = if let Some(manager) =
+                    crate::actions::action_preview::get_preview_manager_mut()
+                {
+                    let preview = manager.start_preview(&pending);
+                    manager.set_visual_preview(
+                        &preview.id,
+                        VisualPreview {
+                            preview_type: VisualPreviewType::TextSelection,
+                            content: pending.target.clone(),
+                            width: None,
+                            height: None,
+                            alt_text: format!("Write file {}", pending.target),
+                        },
+                    );
+                    manager.update_progress(&preview.id, 1.0);
+                    Some(preview.id)
+                } else {
+                    None
+                };
 
-            return FileOpResult { success: false, path, content: None, bytes_written: None, error: Some("Action requires confirmation".to_string()), backup_path: None, action_id: Some(action_id), preview_id };
+                let action_id = ACTION_QUEUE.add(pending.clone());
+                record_action_created(
+                    action_id,
+                    pending.action_type,
+                    pending.description,
+                    pending.target,
+                    "medium".to_string(),
+                    pending.reason,
+                    pending.arguments,
+                    Some("sandbox".to_string()),
+                );
+
+                return FileOpResult {
+                    success: false,
+                    path,
+                    content: None,
+                    bytes_written: None,
+                    error: Some("Action requires confirmation".to_string()),
+                    backup_path: None,
+                    action_id: Some(action_id),
+                    preview_id,
+                };
             }
         }
         PermissionDecision::Allow => {}
     }
-    
+
     if let Err(e) = config.can_write(&path_buf) {
-        return FileOpResult { success: false, path, content: None, bytes_written: None, error: Some(e.to_string()), backup_path: None, action_id: None, preview_id: None };
+        return FileOpResult {
+            success: false,
+            path,
+            content: None,
+            bytes_written: None,
+            error: Some(e.to_string()),
+            backup_path: None,
+            action_id: None,
+            preview_id: None,
+        };
     }
-    
+
     if create_dirs.unwrap_or(false) {
         if let Some(parent) = path_buf.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
-                return FileOpResult { success: false, path, content: None, bytes_written: None, error: Some(e.to_string()), backup_path: None, action_id: None, preview_id: None };
+                return FileOpResult {
+                    success: false,
+                    path,
+                    content: None,
+                    bytes_written: None,
+                    error: Some(e.to_string()),
+                    backup_path: None,
+                    action_id: None,
+                    preview_id: None,
+                };
             }
         }
     }
@@ -792,7 +973,9 @@ pub fn sandbox_write_file_internal(
 
     let backup_path = if existed {
         let backup = path_buf.with_extension("osghost.bak");
-        std::fs::copy(&path_buf, &backup).ok().map(|_| backup.to_string_lossy().to_string())
+        std::fs::copy(&path_buf, &backup)
+            .ok()
+            .map(|_| backup.to_string_lossy().to_string())
     } else {
         None
     };
@@ -801,9 +984,12 @@ pub fn sandbox_write_file_internal(
         Ok(_) => {
             update_sandbox_config(|c| c.record_safe_operation());
             if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
-                let rollback_id = action_id
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| format!("sandbox.write_file:{}", crate::core::utils::current_timestamp()));
+                let rollback_id = action_id.map(|id| id.to_string()).unwrap_or_else(|| {
+                    format!(
+                        "sandbox.write_file:{}",
+                        crate::core::utils::current_timestamp()
+                    )
+                });
                 rollback.record_file_write(
                     &rollback_id,
                     &path,
@@ -812,9 +998,27 @@ pub fn sandbox_write_file_internal(
                     !existed,
                 );
             }
-            FileOpResult { success: true, path, content: None, bytes_written: Some(content.len()), error: None, backup_path, action_id: None, preview_id: None }
+            FileOpResult {
+                success: true,
+                path,
+                content: None,
+                bytes_written: Some(content.len()),
+                error: None,
+                backup_path,
+                action_id: None,
+                preview_id: None,
+            }
         }
-        Err(e) => FileOpResult { success: false, path, content: None, bytes_written: None, error: Some(e.to_string()), backup_path: None, action_id: None, preview_id: None }
+        Err(e) => FileOpResult {
+            success: false,
+            path,
+            content: None,
+            bytes_written: None,
+            error: Some(e.to_string()),
+            backup_path: None,
+            action_id: None,
+            preview_id: None,
+        },
     }
 }
 
@@ -823,7 +1027,11 @@ pub fn sandbox_list_dir(path: String, include_hidden: Option<bool>) -> ListDirRe
     sandbox_list_dir_internal(path, include_hidden, true)
 }
 
-pub fn sandbox_list_dir_internal(path: String, include_hidden: Option<bool>, allow_confirm: bool) -> ListDirResult {
+pub fn sandbox_list_dir_internal(
+    path: String,
+    include_hidden: Option<bool>,
+    allow_confirm: bool,
+) -> ListDirResult {
     let path_buf = PathBuf::from(&path);
     let include_hidden = include_hidden.unwrap_or(false);
     let config = get_sandbox_config();
@@ -839,61 +1047,87 @@ pub fn sandbox_list_dir_internal(path: String, include_hidden: Option<bool>, all
 
     match decision {
         PermissionDecision::Deny => {
-            return ListDirResult { success: false, path, entries: vec![], count: 0, error: Some("Autonomy level blocks directory listing".to_string()), action_id: None, preview_id: None };
+            return ListDirResult {
+                success: false,
+                path,
+                entries: vec![],
+                count: 0,
+                error: Some("Autonomy level blocks directory listing".to_string()),
+                action_id: None,
+                preview_id: None,
+            };
         }
         PermissionDecision::RequireConfirmation => {
             if !allow_confirm {
                 // Already approved; proceed
             } else {
-            let pending = PendingAction::new(
-                "sandbox.list_dir".to_string(),
-                format!("List directory: {}", path),
-                path.clone(),
-                ActionRiskLevel::Low,
-                Some("Sandbox directory listing requires confirmation".to_string()),
-                Some(serde_json::json!({ "path": path, "include_hidden": include_hidden })),
-            );
-
-            let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
-                let preview = manager.start_preview(&pending);
-                manager.set_visual_preview(
-                    &preview.id,
-                    VisualPreview {
-                        preview_type: VisualPreviewType::TextSelection,
-                        content: pending.target.clone(),
-                        width: None,
-                        height: None,
-                        alt_text: format!("List directory {}", pending.target),
-                    },
+                let pending = PendingAction::new(
+                    "sandbox.list_dir".to_string(),
+                    format!("List directory: {}", path),
+                    path.clone(),
+                    ActionRiskLevel::Low,
+                    Some("Sandbox directory listing requires confirmation".to_string()),
+                    Some(serde_json::json!({ "path": path, "include_hidden": include_hidden })),
                 );
-                manager.update_progress(&preview.id, 1.0);
-                Some(preview.id)
-            } else {
-                None
-            };
 
-            let action_id = ACTION_QUEUE.add(pending.clone());
-            record_action_created(
-                action_id,
-                pending.action_type,
-                pending.description,
-                pending.target,
-                "low".to_string(),
-                pending.reason,
-                pending.arguments,
-                Some("sandbox".to_string()),
-            );
+                let preview_id = if let Some(manager) =
+                    crate::actions::action_preview::get_preview_manager_mut()
+                {
+                    let preview = manager.start_preview(&pending);
+                    manager.set_visual_preview(
+                        &preview.id,
+                        VisualPreview {
+                            preview_type: VisualPreviewType::TextSelection,
+                            content: pending.target.clone(),
+                            width: None,
+                            height: None,
+                            alt_text: format!("List directory {}", pending.target),
+                        },
+                    );
+                    manager.update_progress(&preview.id, 1.0);
+                    Some(preview.id)
+                } else {
+                    None
+                };
 
-            return ListDirResult { success: false, path, entries: vec![], count: 0, error: Some("Action requires confirmation".to_string()), action_id: Some(action_id), preview_id };
+                let action_id = ACTION_QUEUE.add(pending.clone());
+                record_action_created(
+                    action_id,
+                    pending.action_type,
+                    pending.description,
+                    pending.target,
+                    "low".to_string(),
+                    pending.reason,
+                    pending.arguments,
+                    Some("sandbox".to_string()),
+                );
+
+                return ListDirResult {
+                    success: false,
+                    path,
+                    entries: vec![],
+                    count: 0,
+                    error: Some("Action requires confirmation".to_string()),
+                    action_id: Some(action_id),
+                    preview_id,
+                };
             }
         }
         PermissionDecision::Allow => {}
     }
-    
+
     if let Err(e) = config.can_read(&path_buf) {
-        return ListDirResult { success: false, path, entries: vec![], count: 0, error: Some(e.to_string()), action_id: None, preview_id: None };
+        return ListDirResult {
+            success: false,
+            path,
+            entries: vec![],
+            count: 0,
+            error: Some(e.to_string()),
+            action_id: None,
+            preview_id: None,
+        };
     }
-    
+
     match std::fs::read_dir(&path_buf) {
         Ok(dir_entries) => {
             let entries: Vec<DirEntry> = dir_entries
@@ -912,9 +1146,25 @@ pub fn sandbox_list_dir_internal(path: String, include_hidden: Option<bool>, all
                 .collect();
             update_sandbox_config(|c| c.record_safe_operation());
             let count = entries.len();
-            ListDirResult { success: true, path, entries, count, error: None, action_id: None, preview_id: None }
+            ListDirResult {
+                success: true,
+                path,
+                entries,
+                count,
+                error: None,
+                action_id: None,
+                preview_id: None,
+            }
         }
-        Err(e) => ListDirResult { success: false, path, entries: vec![], count: 0, error: Some(e.to_string()), action_id: None, preview_id: None }
+        Err(e) => ListDirResult {
+            success: false,
+            path,
+            entries: vec![],
+            count: 0,
+            error: Some(e.to_string()),
+            action_id: None,
+            preview_id: None,
+        },
     }
 }
 
@@ -923,21 +1173,47 @@ pub async fn sandbox_execute_shell(command: String, working_dir: Option<String>)
     sandbox_execute_shell_internal(command, working_dir, true).await
 }
 
-pub async fn sandbox_execute_shell_internal(command: String, working_dir: Option<String>, allow_confirm: bool) -> ShellOpResult {
+pub async fn sandbox_execute_shell_internal(
+    command: String,
+    working_dir: Option<String>,
+    allow_confirm: bool,
+) -> ShellOpResult {
     let config = get_sandbox_config();
     let privacy = PrivacySettings::load();
-    
+
     if !config.trust_level.permits(TrustLevel::min_for_shell()) {
-        return ShellOpResult { success: false, command, category: "blocked".to_string(), exit_code: None, stdout: None, stderr: None,
-            error: Some(format!("Shell requires {:?} trust, current: {:?}", TrustLevel::Elevated, config.trust_level)), action_id: None, preview_id: None };
+        return ShellOpResult {
+            success: false,
+            command,
+            category: "blocked".to_string(),
+            exit_code: None,
+            stdout: None,
+            stderr: None,
+            error: Some(format!(
+                "Shell requires {:?} trust, current: {:?}",
+                TrustLevel::Elevated,
+                config.trust_level
+            )),
+            action_id: None,
+            preview_id: None,
+        };
     }
-    
+
     if is_command_blocked(&command) {
         update_sandbox_config(|c| c.record_denied_operation());
-        return ShellOpResult { success: false, command, category: "blocked".to_string(), exit_code: None, stdout: None, stderr: None,
-            error: Some("Command blocked by security policy".to_string()), action_id: None, preview_id: None };
+        return ShellOpResult {
+            success: false,
+            command,
+            category: "blocked".to_string(),
+            exit_code: None,
+            stdout: None,
+            stderr: None,
+            error: Some("Command blocked by security policy".to_string()),
+            action_id: None,
+            preview_id: None,
+        };
     }
-    
+
     let category = categorize_command(&command);
     let decision = if allow_confirm {
         evaluate_action(privacy.autonomy_level, category.is_high_risk())
@@ -948,68 +1224,112 @@ pub async fn sandbox_execute_shell_internal(command: String, working_dir: Option
     };
     match decision {
         PermissionDecision::Deny => {
-            return ShellOpResult { success: false, command, category: format!("{:?}", category), exit_code: None, stdout: None, stderr: None,
-                error: Some("Autonomy level blocks this shell category".to_string()), action_id: None, preview_id: None };
+            return ShellOpResult {
+                success: false,
+                command,
+                category: format!("{:?}", category),
+                exit_code: None,
+                stdout: None,
+                stderr: None,
+                error: Some("Autonomy level blocks this shell category".to_string()),
+                action_id: None,
+                preview_id: None,
+            };
         }
         PermissionDecision::RequireConfirmation => {
             if !allow_confirm {
                 // Already approved; proceed
             } else {
-            let pending = PendingAction::new(
-                "sandbox.shell".to_string(),
-                format!("Execute shell command: {}", command),
-                command.clone(),
-                category.risk_level(),
-                Some("Sandbox shell command requires confirmation".to_string()),
-                Some(serde_json::json!({ "command": command, "category": format!("{:?}", category), "working_dir": working_dir })),
-            );
-
-            let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
-                let preview = manager.start_preview(&pending);
-                manager.set_visual_preview(
-                    &preview.id,
-                    VisualPreview {
-                        preview_type: VisualPreviewType::TextSelection,
-                        content: pending.target.clone(),
-                        width: None,
-                        height: None,
-                        alt_text: format!("Shell command: {}", pending.target),
-                    },
+                let pending = PendingAction::new(
+                    "sandbox.shell".to_string(),
+                    format!("Execute shell command: {}", command),
+                    command.clone(),
+                    category.risk_level(),
+                    Some("Sandbox shell command requires confirmation".to_string()),
+                    Some(
+                        serde_json::json!({ "command": command, "category": format!("{:?}", category), "working_dir": working_dir }),
+                    ),
                 );
-                manager.update_progress(&preview.id, 1.0);
-                Some(preview.id)
-            } else {
-                None
-            };
 
-            let action_id = ACTION_QUEUE.add(pending.clone());
-            record_action_created(
-                action_id,
-                pending.action_type,
-                pending.description,
-                pending.target,
-                format!("{:?}", category.risk_level()).to_lowercase(),
-                pending.reason,
-                pending.arguments,
-                Some("sandbox".to_string()),
-            );
+                let preview_id = if let Some(manager) =
+                    crate::actions::action_preview::get_preview_manager_mut()
+                {
+                    let preview = manager.start_preview(&pending);
+                    manager.set_visual_preview(
+                        &preview.id,
+                        VisualPreview {
+                            preview_type: VisualPreviewType::TextSelection,
+                            content: pending.target.clone(),
+                            width: None,
+                            height: None,
+                            alt_text: format!("Shell command: {}", pending.target),
+                        },
+                    );
+                    manager.update_progress(&preview.id, 1.0);
+                    Some(preview.id)
+                } else {
+                    None
+                };
 
-            return ShellOpResult { success: false, command, category: format!("{:?}", category), exit_code: None, stdout: None, stderr: None,
-                error: Some("Action requires confirmation".to_string()), action_id: Some(action_id), preview_id };
+                let action_id = ACTION_QUEUE.add(pending.clone());
+                record_action_created(
+                    action_id,
+                    pending.action_type,
+                    pending.description,
+                    pending.target,
+                    format!("{:?}", category.risk_level()).to_lowercase(),
+                    pending.reason,
+                    pending.arguments,
+                    Some("sandbox".to_string()),
+                );
+
+                return ShellOpResult {
+                    success: false,
+                    command,
+                    category: format!("{:?}", category),
+                    exit_code: None,
+                    stdout: None,
+                    stderr: None,
+                    error: Some("Action requires confirmation".to_string()),
+                    action_id: Some(action_id),
+                    preview_id,
+                };
             }
         }
         PermissionDecision::Allow => {}
     }
     if !config.allowed_shell_categories.contains(&category) {
-        return ShellOpResult { success: false, command, category: format!("{:?}", category), exit_code: None, stdout: None, stderr: None,
-            error: Some(format!("Category {:?} not allowed", category)), action_id: None, preview_id: None };
+        return ShellOpResult {
+            success: false,
+            command,
+            category: format!("{:?}", category),
+            exit_code: None,
+            stdout: None,
+            stderr: None,
+            error: Some(format!("Category {:?} not allowed", category)),
+            action_id: None,
+            preview_id: None,
+        };
     }
-    
+
     if !config.trust_level.permits(category.min_trust_level()) {
-        return ShellOpResult { success: false, command, category: format!("{:?}", category), exit_code: None, stdout: None, stderr: None,
-            error: Some(format!("Category {:?} requires {:?}", category, category.min_trust_level())), action_id: None, preview_id: None };
+        return ShellOpResult {
+            success: false,
+            command,
+            category: format!("{:?}", category),
+            exit_code: None,
+            stdout: None,
+            stderr: None,
+            error: Some(format!(
+                "Category {:?} requires {:?}",
+                category,
+                category.min_trust_level()
+            )),
+            action_id: None,
+            preview_id: None,
+        };
     }
-    
+
     let mut cmd = if cfg!(target_os = "windows") {
         let mut cmd = tokio::process::Command::new("cmd");
         cmd.arg("/C").arg(&command);
@@ -1019,23 +1339,47 @@ pub async fn sandbox_execute_shell_internal(command: String, working_dir: Option
         cmd.arg("-c").arg(&command);
         cmd
     };
-    if let Some(dir) = working_dir { cmd.current_dir(dir); }
-    
+    if let Some(dir) = working_dir {
+        cmd.current_dir(dir);
+    }
+
     match tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await {
         Ok(Ok(output)) => {
             update_sandbox_config(|c| c.record_safe_operation());
             ShellOpResult {
-                success: output.status.success(), command, category: format!("{:?}", category),
+                success: output.status.success(),
+                command,
+                category: format!("{:?}", category),
                 exit_code: output.status.code(),
                 stdout: Some(String::from_utf8_lossy(&output.stdout).to_string()),
                 stderr: Some(String::from_utf8_lossy(&output.stderr).to_string()),
                 error: None,
                 action_id: None,
-                preview_id: None
+                preview_id: None,
             }
         }
-        Ok(Err(e)) => ShellOpResult { success: false, command, category: format!("{:?}", category), exit_code: None, stdout: None, stderr: None, error: Some(e.to_string()), action_id: None, preview_id: None },
-        Err(_) => ShellOpResult { success: false, command, category: format!("{:?}", category), exit_code: None, stdout: None, stderr: None, error: Some("Timeout after 30s".to_string()), action_id: None, preview_id: None }
+        Ok(Err(e)) => ShellOpResult {
+            success: false,
+            command,
+            category: format!("{:?}", category),
+            exit_code: None,
+            stdout: None,
+            stderr: None,
+            error: Some(e.to_string()),
+            action_id: None,
+            preview_id: None,
+        },
+        Err(_) => ShellOpResult {
+            success: false,
+            command,
+            category: format!("{:?}", category),
+            exit_code: None,
+            stdout: None,
+            stderr: None,
+            error: Some("Timeout after 30s".to_string()),
+            action_id: None,
+            preview_id: None,
+        },
     }
 }
 
@@ -1058,11 +1402,23 @@ mod tests {
     #[test]
     fn test_command_categorization() {
         assert_eq!(categorize_command("ls -la"), ShellCategory::ReadInfo);
-        assert_eq!(categorize_command("grep -r pattern ."), ShellCategory::Search);
+        assert_eq!(
+            categorize_command("grep -r pattern ."),
+            ShellCategory::Search
+        );
         assert_eq!(categorize_command("git status"), ShellCategory::GitRead);
-        assert_eq!(categorize_command("git push origin main"), ShellCategory::GitWrite);
-        assert_eq!(categorize_command("rm -rf node_modules"), ShellCategory::FileDeletion);
-        assert_eq!(categorize_command("some_random_command"), ShellCategory::Arbitrary);
+        assert_eq!(
+            categorize_command("git push origin main"),
+            ShellCategory::GitWrite
+        );
+        assert_eq!(
+            categorize_command("rm -rf node_modules"),
+            ShellCategory::FileDeletion
+        );
+        assert_eq!(
+            categorize_command("some_random_command"),
+            ShellCategory::Arbitrary
+        );
     }
 
     #[test]
@@ -1083,10 +1439,13 @@ mod tests {
         config.record_denied_operation();
         assert_eq!(config.trust_score, 0);
     }
-    
+
     #[test]
     fn test_shell_category_parsing() {
-        assert_eq!(parse_shell_category("read_info").unwrap(), ShellCategory::ReadInfo);
+        assert_eq!(
+            parse_shell_category("read_info").unwrap(),
+            ShellCategory::ReadInfo
+        );
         assert!(parse_shell_category("invalid").is_err());
     }
 }

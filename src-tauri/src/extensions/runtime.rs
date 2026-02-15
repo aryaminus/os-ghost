@@ -274,7 +274,9 @@ pub fn request_extension_tool_action(
         format!("Run extension tool: {}", tool.name),
         format!("{}::{}", extension_id, tool.name),
         risk_level,
-        tool.approval_reason.clone().or_else(|| Some("Extension tool requires approval".to_string())),
+        tool.approval_reason
+            .clone()
+            .or_else(|| Some("Extension tool requires approval".to_string())),
         Some(serde_json::json!({
             "extension_id": extension_id,
             "tool_name": tool.name,
@@ -283,23 +285,24 @@ pub fn request_extension_tool_action(
         })),
     );
 
-    let preview_id = if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
-        let preview = manager.start_preview(&pending);
-        manager.set_visual_preview(
-            &preview.id,
-            crate::actions::action_preview::VisualPreview {
-                preview_type: crate::actions::action_preview::VisualPreviewType::TextSelection,
-                content: pending.target.clone(),
-                width: None,
-                height: None,
-                alt_text: format!("Extension tool {}", pending.target),
-            },
-        );
-        manager.update_progress(&preview.id, 1.0);
-        Some(preview.id)
-    } else {
-        None
-    };
+    let preview_id =
+        if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
+            let preview = manager.start_preview(&pending);
+            manager.set_visual_preview(
+                &preview.id,
+                crate::actions::action_preview::VisualPreview {
+                    preview_type: crate::actions::action_preview::VisualPreviewType::TextSelection,
+                    content: pending.target.clone(),
+                    width: None,
+                    height: None,
+                    alt_text: format!("Extension tool {}", pending.target),
+                },
+            );
+            manager.update_progress(&preview.id, 1.0);
+            Some(preview.id)
+        } else {
+            None
+        };
 
     let action_id = crate::actions::ACTION_QUEUE.add(pending.clone());
     crate::actions::action_ledger::record_action_created(
@@ -322,7 +325,10 @@ pub fn request_extension_tool_action(
 }
 
 #[tauri::command]
-pub async fn execute_extension(id: String, args: Option<Vec<String>>) -> Result<ExtensionRunResult, String> {
+pub async fn execute_extension(
+    id: String,
+    args: Option<Vec<String>>,
+) -> Result<ExtensionRunResult, String> {
     let privacy = crate::config::privacy::PrivacySettings::load();
     if privacy.read_only_mode || privacy.trust_profile != "open" {
         return Err("Extension execution blocked by trust profile".to_string());

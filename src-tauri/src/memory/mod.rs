@@ -14,6 +14,6 @@ pub mod session;
 pub mod store;
 
 pub use long_term::LongTermMemory;
-pub use scoped_state::{ScopedState, StateScope, IntoScopedKey};
+pub use scoped_state::{IntoScopedKey, ScopedState, StateScope};
 pub use session::{ActivityEntry, AppMode, SessionMemory};
 pub use store::MemoryStore;

@@ -7,8 +7,8 @@
 //!
 //! The Watchdog runs in parallel, analyzing content for security threats.
 
-use crate::ai::ai_provider::SmartAiRouter;
 use crate::agents::traits::{Agent, AgentContext, AgentOutput, AgentResult, NextAction};
+use crate::ai::ai_provider::SmartAiRouter;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -232,10 +232,12 @@ impl PatternDetectors {
         vec![
             // Direct instruction patterns
             Regex::new(r"(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions?").unwrap(),
-            Regex::new(r"(?i)disregard\s+(all\s+)?(previous|prior)\s+(text|instructions?)").unwrap(),
+            Regex::new(r"(?i)disregard\s+(all\s+)?(previous|prior)\s+(text|instructions?)")
+                .unwrap(),
             Regex::new(r"(?i)forget\s+(everything|all)\s+(you|that)").unwrap(),
             // System prompt extraction
-            Regex::new(r"(?i)what\s+(is|are)\s+your\s+(system|initial)\s+(prompt|instructions?)").unwrap(),
+            Regex::new(r"(?i)what\s+(is|are)\s+your\s+(system|initial)\s+(prompt|instructions?)")
+                .unwrap(),
             Regex::new(r"(?i)reveal\s+your\s+(system|hidden)\s+prompt").unwrap(),
             Regex::new(r"(?i)print\s+your\s+instructions").unwrap(),
             // Role manipulation
@@ -265,7 +267,10 @@ impl PatternDetectors {
             Regex::new(r"(?i)update\s+your\s+(payment|billing)\s+information").unwrap(),
             // Urgency patterns combined with credential requests
             Regex::new(r"(?i)(urgent|immediately|now|action\s+required).*password").unwrap(),
-            Regex::new(r"(?i)your\s+account\s+(has\s+been|will\s+be)\s+(suspended|locked|disabled)").unwrap(),
+            Regex::new(
+                r"(?i)your\s+account\s+(has\s+been|will\s+be)\s+(suspended|locked|disabled)",
+            )
+            .unwrap(),
         ]
     }
 
@@ -273,7 +278,8 @@ impl PatternDetectors {
         vec![
             // Urgency/fear tactics
             Regex::new(r"(?i)(urgent|immediately|act\s+now|limited\s+time)").unwrap(),
-            Regex::new(r"(?i)your\s+(computer|device|account)\s+(is|has\s+been)\s+infected").unwrap(),
+            Regex::new(r"(?i)your\s+(computer|device|account)\s+(is|has\s+been)\s+infected")
+                .unwrap(),
             Regex::new(r"(?i)call\s+(this\s+number|us\s+(immediately|now))").unwrap(),
             // Authority impersonation
             Regex::new(r"(?i)this\s+is\s+(the\s+)?(IRS|FBI|police|government)").unwrap(),
@@ -545,11 +551,7 @@ Content sample:
                 url, sample
             );
 
-            match self
-                .ai_router
-                .generate_text(&prompt)
-                .await
-            {
+            match self.ai_router.generate_text(&prompt).await {
                 Ok(response) => {
                     let response = response.trim().to_uppercase();
                     if response.starts_with("THREAT") {
@@ -609,8 +611,14 @@ impl Agent for WatchdogAgent {
 
         // Build the data HashMap
         let mut data = std::collections::HashMap::new();
-        data.insert("report".to_string(), serde_json::to_value(&report).unwrap_or_default());
-        data.insert("threat_count".to_string(), serde_json::json!(report.threats.len()));
+        data.insert(
+            "report".to_string(),
+            serde_json::to_value(&report).unwrap_or_default(),
+        );
+        data.insert(
+            "threat_count".to_string(),
+            serde_json::json!(report.threats.len()),
+        );
         data.insert("is_safe".to_string(), serde_json::json!(report.is_safe));
 
         Ok(AgentOutput {
@@ -649,8 +657,7 @@ mod tests {
     fn test_credential_harvesting_detection() {
         let detectors = PatternDetectors::new();
 
-        let phishing =
-            "Please enter your password to verify your account. Urgent action required!";
+        let phishing = "Please enter your password to verify your account. Urgent action required!";
         let threats = detectors.check_credentials(phishing, "https://suspicious.com");
         assert!(!threats.is_empty());
 
@@ -663,7 +670,8 @@ mod tests {
     fn test_social_engineering_detection() {
         let detectors = PatternDetectors::new();
 
-        let scam = "URGENT! You've won a free iPhone! Claim your prize immediately! Call this number now!";
+        let scam =
+            "URGENT! You've won a free iPhone! Claim your prize immediately! Call this number now!";
         let threats = detectors.check_social_engineering(scam);
         assert!(!threats.is_empty());
         assert_eq!(threats[0].threat_type, ThreatType::SocialEngineering);

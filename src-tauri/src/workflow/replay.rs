@@ -3,10 +3,9 @@
 //! Replays recorded workflows with safety verification. Checks context,
 //! verifies outcomes, and allows user intervention.
 
-
-use crate::config::privacy::{AutonomyLevel, PrivacySettings};
+use super::recording::{Workflow, WorkflowActionType, WorkflowStep};
 use crate::capture::vision::VisionCapture;
-use super::recording::{Workflow, WorkflowStep, WorkflowActionType};
+use crate::config::privacy::{AutonomyLevel, PrivacySettings};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -142,13 +141,17 @@ impl WorkflowReplayer {
 
         self.is_running = true;
         self.current_step = 0;
-        
+
         let start_time = Instant::now();
         let mut step_results = Vec::new();
         let mut verifications = Vec::new();
         let mut overall_success = true;
 
-        tracing::info!("Starting workflow replay: '{}' ({} steps)", workflow.name, workflow.steps.len());
+        tracing::info!(
+            "Starting workflow replay: '{}' ({} steps)",
+            workflow.name,
+            workflow.steps.len()
+        );
 
         // Navigate to start URL if needed
         if !workflow.start_url.is_empty() {
@@ -175,7 +178,7 @@ impl WorkflowReplayer {
 
             // Execute step
             let step_start = Instant::now();
-            
+
             let (step_success, step_error) = match self.execute_step(step).await {
                 Ok(()) => {
                     tracing::info!("Step {} completed successfully", step.step_number);
@@ -183,7 +186,7 @@ impl WorkflowReplayer {
                 }
                 Err(e) => {
                     tracing::error!("Step {} failed: {}", step.step_number, e);
-                    
+
                     if step.continue_on_error {
                         tracing::warn!("Continuing despite error (continue_on_error=true)");
                         (false, Some(e))
@@ -214,7 +217,10 @@ impl WorkflowReplayer {
 
             // Check if user cancelled
             if let Some(UserOverride::Cancel) = self.user_override.take() {
-                tracing::info!("Workflow replay cancelled by user at step {}", step.step_number);
+                tracing::info!(
+                    "Workflow replay cancelled by user at step {}",
+                    step.step_number
+                );
                 overall_success = false;
                 break;
             }
@@ -241,14 +247,22 @@ impl WorkflowReplayer {
             total_steps: workflow.steps.len() as u32,
             duration_secs: total_duration,
             step_results,
-            error: if overall_success { None } else { Some("One or more steps failed".to_string()) },
+            error: if overall_success {
+                None
+            } else {
+                Some("One or more steps failed".to_string())
+            },
             verifications,
         })
     }
 
     /// Execute a single step
     async fn execute_step(&self, step: &WorkflowStep) -> Result<(), String> {
-        tracing::debug!("Executing step {}: {:?}", step.step_number, step.action_type);
+        tracing::debug!(
+            "Executing step {}: {:?}",
+            step.step_number,
+            step.action_type
+        );
 
         match &step.action_type {
             WorkflowActionType::Navigate { url } => {
@@ -256,16 +270,27 @@ impl WorkflowReplayer {
                 tracing::info!("Would navigate to: {}", url);
                 Ok(())
             }
-            WorkflowActionType::Click { element_description, coordinates } => {
+            WorkflowActionType::Click {
+                element_description,
+                coordinates,
+            } => {
                 // Would: Find element and click via visual automation
                 if let Some(coords) = coordinates {
-                    tracing::info!("Would click '{}' at ({:.2}, {:.2})", element_description, coords.0, coords.1);
+                    tracing::info!(
+                        "Would click '{}' at ({:.2}, {:.2})",
+                        element_description,
+                        coords.0,
+                        coords.1
+                    );
                 } else {
                     tracing::info!("Would find and click '{}'", element_description);
                 }
                 Ok(())
             }
-            WorkflowActionType::Fill { field_description, value } => {
+            WorkflowActionType::Fill {
+                field_description,
+                value,
+            } => {
                 // Would: Find field and fill via visual automation
                 let masked = if value.len() > 3 {
                     format!("{}***", &value[..3])
@@ -275,7 +300,10 @@ impl WorkflowReplayer {
                 tracing::info!("Would fill '{}' with '{}'", field_description, masked);
                 Ok(())
             }
-            WorkflowActionType::Select { dropdown_description, option } => {
+            WorkflowActionType::Select {
+                dropdown_description,
+                option,
+            } => {
                 tracing::info!("Would select '{}' from '{}'", option, dropdown_description);
                 Ok(())
             }
@@ -283,7 +311,10 @@ impl WorkflowReplayer {
                 tracing::info!("Would scroll {:?} by {}", direction, amount);
                 Ok(())
             }
-            WorkflowActionType::Wait { condition, timeout_secs } => {
+            WorkflowActionType::Wait {
+                condition,
+                timeout_secs,
+            } => {
                 tracing::info!("Waiting for {:?} (timeout: {}s)", condition, timeout_secs);
                 // Actually wait
                 tokio::time::sleep(Duration::from_secs(*timeout_secs as u64)).await;
@@ -298,7 +329,9 @@ impl WorkflowReplayer {
                 tracing::info!("Would press keys: {}", mod_str);
                 Ok(())
             }
-            WorkflowActionType::Hover { element_description } => {
+            WorkflowActionType::Hover {
+                element_description,
+            } => {
                 tracing::info!("Would hover over '{}'", element_description);
                 Ok(())
             }
@@ -306,8 +339,15 @@ impl WorkflowReplayer {
                 tracing::info!("Would take screenshot");
                 Ok(())
             }
-            WorkflowActionType::Verify { element_description, should_exist } => {
-                tracing::info!("Would verify '{}' exists={}", element_description, should_exist);
+            WorkflowActionType::Verify {
+                element_description,
+                should_exist,
+            } => {
+                tracing::info!(
+                    "Would verify '{}' exists={}",
+                    element_description,
+                    should_exist
+                );
                 // Would: Check if element exists
                 Ok(())
             }
@@ -316,7 +356,11 @@ impl WorkflowReplayer {
                 // Would: Evaluate condition and execute appropriate branch
                 Ok(())
             }
-            WorkflowActionType::Loop { condition, max_iterations, .. } => {
+            WorkflowActionType::Loop {
+                condition,
+                max_iterations,
+                ..
+            } => {
                 tracing::info!("Loop: {} (max {} iterations)", condition, max_iterations);
                 // Would: Execute loop
                 Ok(())
@@ -331,7 +375,7 @@ impl WorkflowReplayer {
         // 2. Compare with expected visual context
         // 3. Check if element exists
         // 4. Verify page state
-        
+
         // Mock verification
         Some(VerificationResult {
             check_type: VerificationType::VisualMatch,
@@ -345,16 +389,16 @@ impl WorkflowReplayer {
     /// Check if we should pause for this step
     fn should_pause_for_step(&self, step: &WorkflowStep) -> bool {
         match self.autonomy_level {
-            AutonomyLevel::Observer => true, // Always pause
+            AutonomyLevel::Observer => true,  // Always pause
             AutonomyLevel::Suggester => true, // Always pause
             AutonomyLevel::Supervised => {
                 // Pause for potentially destructive actions
                 matches!(
                     step.action_type,
-                    WorkflowActionType::Fill { .. } |
-                    WorkflowActionType::KeyPress { .. } |
-                    WorkflowActionType::If { .. } |
-                    WorkflowActionType::Loop { .. }
+                    WorkflowActionType::Fill { .. }
+                        | WorkflowActionType::KeyPress { .. }
+                        | WorkflowActionType::If { .. }
+                        | WorkflowActionType::Loop { .. }
                 )
             }
             AutonomyLevel::Autonomous => {
@@ -378,18 +422,32 @@ impl WorkflowReplayer {
 
         // Check site allowlist (if any)
         if !self.privacy_settings.visual_automation_allowlist.is_empty() {
-            let site_allowed = self.privacy_settings.visual_automation_allowlist.iter().any(|allowed| {
-                workflow.start_url.to_lowercase().contains(&allowed.to_lowercase())
-            });
+            let site_allowed = self
+                .privacy_settings
+                .visual_automation_allowlist
+                .iter()
+                .any(|allowed| {
+                    workflow
+                        .start_url
+                        .to_lowercase()
+                        .contains(&allowed.to_lowercase())
+                });
             if !site_allowed {
                 return false;
             }
         }
 
         // Check site blocklist
-        let site_blocked = self.privacy_settings.visual_automation_blocklist.iter().any(|blocked| {
-            workflow.start_url.to_lowercase().contains(&blocked.to_lowercase())
-        });
+        let site_blocked = self
+            .privacy_settings
+            .visual_automation_blocklist
+            .iter()
+            .any(|blocked| {
+                workflow
+                    .start_url
+                    .to_lowercase()
+                    .contains(&blocked.to_lowercase())
+            });
         if site_blocked {
             return false;
         }

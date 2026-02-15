@@ -137,7 +137,7 @@ impl ActionLedger {
         match serde_json::to_string(&*guard) {
             Ok(json) => {
                 drop(guard); // Release lock before I/O
-                
+
                 // Async write with compact JSON (not pretty-printed for efficiency)
                 let _ = tokio::task::spawn_blocking(move || {
                     if let Some(parent) = path.parent() {

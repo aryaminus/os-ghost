@@ -6,12 +6,12 @@
 //! agents to discover and invoke browser capabilities through a standardized
 //! interface. See `mcp::browser` for the full MCP implementation.
 
+use crate::config::system_status;
 use crate::core::game_state::EffectQueue;
 use crate::data::events_bus::{record_event, EventKind, EventPriority};
+use crate::data::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 use crate::mcp::browser::{BrowserMcpServer, BrowserState};
 use crate::mcp::{McpServer, ToolRequest};
-use crate::config::system_status;
-use crate::data::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -164,21 +164,22 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
     loop {
         // Read length prefix (4 bytes, little-endian)
         let mut len_buf = [0u8; 4];
-        
+
         // Use timeout for reads to detect dead connections
         let read_result = tokio::time::timeout(
             std::time::Duration::from_secs(30),
-            stream.read_exact(&mut len_buf)
-        ).await;
+            stream.read_exact(&mut len_buf),
+        )
+        .await;
 
         match read_result {
-            Ok(Ok(_)) => {} // Success
+            Ok(Ok(_)) => {}      // Success
             Ok(Err(_)) => break, // Connection closed or error
             Err(_) => {
                 // Timeout
                 tracing::debug!("Connection timed out waiting for message header");
-                break; 
-            }, 
+                break;
+            }
         }
 
         let msg_len = u32::from_le_bytes(len_buf) as usize;
@@ -261,7 +262,9 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                 "page_load" | "tab_changed" => {
                     let privacy = crate::config::privacy::PrivacySettings::load();
                     if privacy.read_only_mode || !privacy.browser_content_consent {
-                        tracing::debug!("Browser content capture disabled; ignoring navigation event");
+                        tracing::debug!(
+                            "Browser content capture disabled; ignoring navigation event"
+                        );
                         continue;
                     }
                     let url = message.url.clone().unwrap_or_default();
@@ -274,7 +277,8 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                         .await;
 
                     // Keep SessionMemory in sync even when not running agent cycles
-                    if let Some(session_mem) = app.try_state::<Arc<crate::memory::SessionMemory>>() {
+                    if let Some(session_mem) = app.try_state::<Arc<crate::memory::SessionMemory>>()
+                    {
                         if let Err(e) = session_mem.update_current_page(&url, Some(&title)) {
                             tracing::warn!("Failed to update session page: {}", e);
                         }
@@ -300,7 +304,10 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
 
                     let mut metadata = serde_json::Map::new();
                     metadata.insert("url".to_string(), serde_json::Value::String(url.clone()));
-                    metadata.insert("title".to_string(), serde_json::Value::String(title.clone()));
+                    metadata.insert(
+                        "title".to_string(),
+                        serde_json::Value::String(title.clone()),
+                    );
                     record_event(
                         EventKind::Navigation,
                         "Browser navigation",
@@ -365,7 +372,10 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     let mut metadata = serde_json::Map::new();
                     metadata.insert("url".to_string(), serde_json::Value::String(url.clone()));
                     metadata.insert("title".to_string(), serde_json::Value::String(title));
-                    metadata.insert("content_bytes".to_string(), serde_json::Value::Number(serde_json::Number::from(body_text.len() as u64)));
+                    metadata.insert(
+                        "content_bytes".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(body_text.len() as u64)),
+                    );
                     record_event(
                         EventKind::Content,
                         "Page content updated",
@@ -380,7 +390,9 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                 "browsing_context" => {
                     let privacy = crate::config::privacy::PrivacySettings::load();
                     if privacy.read_only_mode || !privacy.browser_content_consent {
-                        tracing::debug!("Browser content capture disabled; ignoring browsing context");
+                        tracing::debug!(
+                            "Browser content capture disabled; ignoring browsing context"
+                        );
                         continue;
                     }
                     let history = message.recent_history.clone().unwrap_or_default();
@@ -393,7 +405,9 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     );
 
                     // Update MCP Resource state
-                    mcp_state.update_context(history.clone(), top_sites.clone()).await;
+                    mcp_state
+                        .update_context(history.clone(), top_sites.clone())
+                        .await;
 
                     // Emit to frontend (legacy event)
                     let _ = app.emit(
@@ -416,11 +430,11 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                     let data_url = message.data_url.clone().unwrap_or_default();
                     let timestamp = message.timestamp.unwrap_or(chrono::Utc::now().timestamp());
                     system_status::update_status(|status| {
-                        status.last_tab_screenshot_at = Some(
-                            crate::core::utils::current_timestamp(),
-                        );
+                        status.last_tab_screenshot_at =
+                            Some(crate::core::utils::current_timestamp());
                     });
-                    if let Some(session_mem) = app.try_state::<Arc<crate::memory::SessionMemory>>() {
+                    if let Some(session_mem) = app.try_state::<Arc<crate::memory::SessionMemory>>()
+                    {
                         let _ = session_mem.record_screenshot();
                     }
                     let _ = app.emit(
@@ -515,7 +529,10 @@ async fn handle_client(mut stream: TcpStream, app: AppHandle, mcp_ctx: Arc<McpBr
                 }
             }
         } else {
-            tracing::error!("Failed to parse message from Chrome. Raw: {}", String::from_utf8_lossy(&msg_buf));
+            tracing::error!(
+                "Failed to parse message from Chrome. Raw: {}",
+                String::from_utf8_lossy(&msg_buf)
+            );
             continue;
         }
     }
@@ -608,7 +625,7 @@ pub fn start_native_messaging_server(app: AppHandle) {
 
                     let app_clone = app.clone();
                     let mcp_ctx_clone = mcp_ctx.clone();
-                    
+
                     // Spawn per-connection task
                     tauri::async_runtime::spawn(async move {
                         handle_client(stream, app_clone, mcp_ctx_clone).await;
@@ -643,7 +660,9 @@ pub async fn invoke_mcp_tool(
     if response.success {
         Ok(response.data)
     } else {
-        Err(response.error.unwrap_or_else(|| "Unknown error".to_string()))
+        Err(response
+            .error
+            .unwrap_or_else(|| "Unknown error".to_string()))
     }
 }
 

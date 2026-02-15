@@ -6,10 +6,10 @@ pub mod perf;
 pub mod types;
 
 // Re-export commonly used types
-pub use app_context::{AppContext, AppContextDetector, AppCategory, AppSwitchEvent};
+pub use app_context::{AppCategory, AppContext, AppContextDetector, AppSwitchEvent};
 pub use types::{
-    InvocationMetrics, MetricsCollector, ToolCallRecord, AggregateMetrics,
-    Span, SpanType, SpanStatus, RetryConfig, RetryResult, with_retry,
+    with_retry, AggregateMetrics, InvocationMetrics, MetricsCollector, RetryConfig, RetryResult,
+    Span, SpanStatus, SpanType, ToolCallRecord,
 };
 
 // Activity tracker temporarily disabled - requires rdev dependency not in Cargo.toml

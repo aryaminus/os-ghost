@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
-    AuthorizationCode, AuthUrl, ClientId, ClientSecret, CsrfToken, RedirectUrl, RefreshToken,
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, RefreshToken,
     Scope, TokenResponse, TokenUrl,
 };
 use serde::{Deserialize, Serialize};
@@ -86,8 +86,8 @@ fn read_client_secrets() -> Result<(String, String, String)> {
         }
     }
 
-    let contents = contents
-        .with_context(|| format!("Failed to read client secrets at {}", last_path))?;
+    let contents =
+        contents.with_context(|| format!("Failed to read client secrets at {}", last_path))?;
     let parsed: InstalledClientSecrets = serde_json::from_str(&contents)?;
     let redirect_uri = parsed
         .installed
@@ -205,16 +205,15 @@ fn start_oauth_listener(redirect_uri: &str) -> Result<(mpsc::Receiver<String>, u
     std::thread::spawn(move || {
         if let Ok(Some(request)) = server.recv_timeout(Duration::from_secs(120)) {
             let url = format!("http://127.0.0.1:{}{}", port, request.url());
-            let code = Url::parse(&url)
-                .ok()
-                .and_then(|u| {
-                    u.query_pairs()
-                        .find(|(k, _)| k == "code")
-                        .map(|(_, v)| v.to_string())
-                });
+            let code = Url::parse(&url).ok().and_then(|u| {
+                u.query_pairs()
+                    .find(|(k, _)| k == "code")
+                    .map(|(_, v)| v.to_string())
+            });
 
-            let response = Response::from_string("Authorization complete. You can close this window.")
-                .with_status_code(200);
+            let response =
+                Response::from_string("Authorization complete. You can close this window.")
+                    .with_status_code(200);
             let _ = request.respond(response);
 
             if let Some(code) = code {
@@ -267,11 +266,7 @@ async fn refresh_access_token(client: &BasicClient, refresh: &str) -> Result<Ema
 async fn gmail_api_get(path: &str, access_token: &str) -> Result<serde_json::Value> {
     let url = format!("https://gmail.googleapis.com/gmail/v1/{}", path);
     let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .bearer_auth(access_token)
-        .send()
-        .await?;
+    let resp = client.get(&url).bearer_auth(access_token).send().await?;
 
     let status = resp.status();
     let body = resp.text().await?;
@@ -387,15 +382,15 @@ pub async fn list_inbox(limit: usize) -> Result<Vec<EmailMessage>> {
 
     let mut messages = Vec::new();
     for msg in message_ids {
-        let id = msg
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or_default();
         if id.is_empty() {
             continue;
         }
-        let detail = gmail_api_get(&format!("users/me/messages/{}?format=metadata", id), &access)
-            .await?;
+        let detail = gmail_api_get(
+            &format!("users/me/messages/{}?format=metadata", id),
+            &access,
+        )
+        .await?;
         messages.push(parse_message(&detail));
     }
 
@@ -469,7 +464,10 @@ fn parse_message(detail: &serde_json::Value) -> EmailMessage {
     }
 }
 
-pub async fn triage_inbox(limit: usize, ai_router: Option<&crate::ai::ai_provider::SmartAiRouter>) -> Result<Vec<crate::integrations::integrations::EmailTriageDecision>> {
+pub async fn triage_inbox(
+    limit: usize,
+    ai_router: Option<&crate::ai::ai_provider::SmartAiRouter>,
+) -> Result<Vec<crate::integrations::integrations::EmailTriageDecision>> {
     let messages = list_inbox(limit).await?;
     let mut decisions = Vec::new();
 
@@ -516,7 +514,9 @@ pub async fn triage_inbox(limit: usize, ai_router: Option<&crate::ai::ai_provide
     Ok(decisions)
 }
 
-pub async fn apply_triage(decisions: &[crate::integrations::integrations::EmailTriageDecision]) -> Result<()> {
+pub async fn apply_triage(
+    decisions: &[crate::integrations::integrations::EmailTriageDecision],
+) -> Result<()> {
     let access = get_access_token().await?;
     for decision in decisions {
         match decision.action.as_str() {

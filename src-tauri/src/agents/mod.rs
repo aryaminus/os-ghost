@@ -32,22 +32,20 @@ pub mod traits;
 pub mod verifier;
 pub mod watchdog;
 
+pub use callbacks::{
+    AgentCallback, CallbackContext, CallbackRegistry, LlmRequest, LlmResponse, LoggingCallback,
+    ModelCallback, PolicyCallback, TokenUsage, ToolCall, ToolCallback, ToolResult,
+};
 pub use critic::CriticAgent;
-pub use guardrail::{GuardrailAgent, SafetyEvaluation, ContentType};
+pub use events::{AgentEvent, EventActions, EventAuthor, EventContent, EventPriority, EventStream};
+pub use guardrail::{ContentType, GuardrailAgent, SafetyEvaluation};
 pub use operator::{OperatorAgent, VisualTaskPlanner, VisualTaskResult, VisualTaskStep};
 pub use orchestrator::AgentOrchestrator;
 pub use planner::PlannerAgent;
 pub use traits::{
-    Agent, AgentContext, AgentError, AgentMode, AgentOutput, AgentPriority, AgentResult, NextAction,
-    PlanningContext, RateLimiter, ReflectionFeedback, SearchStrategy, SubGoal,
-};
-pub use events::{
-    AgentEvent, EventActions, EventContent, EventAuthor, EventPriority, EventStream,
-};
-pub use callbacks::{
-    AgentCallback, CallbackContext, CallbackRegistry, LlmRequest, LlmResponse, 
-    LoggingCallback, ModelCallback, PolicyCallback, ToolCallback, ToolCall, ToolResult, TokenUsage,
+    Agent, AgentContext, AgentError, AgentMode, AgentOutput, AgentPriority, AgentResult,
+    NextAction, PlanningContext, RateLimiter, ReflectionFeedback, SearchStrategy, SubGoal,
 };
 pub use watchdog::{
-    WatchdogAgent, WatchdogReport, Threat, ThreatType, SuggestedAction, PatternDetectors,
+    PatternDetectors, SuggestedAction, Threat, ThreatType, WatchdogAgent, WatchdogReport,
 };

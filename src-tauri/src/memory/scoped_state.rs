@@ -56,15 +56,15 @@ pub struct ScopedState {
     /// Temporary state (cleared each invocation)
     #[serde(default)]
     pub temp: HashMap<String, Value>,
-    
+
     /// User-scoped state (persisted per user)
     #[serde(default)]
     pub user: HashMap<String, Value>,
-    
+
     /// Application-scoped state (global)
     #[serde(default)]
     pub app: HashMap<String, Value>,
-    
+
     /// Session-scoped state (default)
     #[serde(default)]
     pub session: HashMap<String, Value>,
@@ -218,32 +218,47 @@ mod tests {
     #[test]
     fn test_scope_parsing() {
         assert_eq!(StateScope::from_key("temp:foo"), (StateScope::Temp, "foo"));
-        assert_eq!(StateScope::from_key("user:name"), (StateScope::User, "name"));
-        assert_eq!(StateScope::from_key("app:version"), (StateScope::App, "version"));
-        assert_eq!(StateScope::from_key("count"), (StateScope::Session, "count"));
+        assert_eq!(
+            StateScope::from_key("user:name"),
+            (StateScope::User, "name")
+        );
+        assert_eq!(
+            StateScope::from_key("app:version"),
+            (StateScope::App, "version")
+        );
+        assert_eq!(
+            StateScope::from_key("count"),
+            (StateScope::Session, "count")
+        );
     }
 
     #[test]
     fn test_scoped_state_operations() {
         let mut state = ScopedState::new();
-        
+
         // Set values in different scopes
         state.set("temp:scratch", serde_json::json!("temporary"));
         state.set("user:name", serde_json::json!("Ghost"));
         state.set("app:version", serde_json::json!("1.0"));
         state.set("puzzle_id", serde_json::json!("puzzle_001"));
-        
+
         // Verify values are in correct scopes
         assert_eq!(state.temp.len(), 1);
         assert_eq!(state.user.len(), 1);
         assert_eq!(state.app.len(), 1);
         assert_eq!(state.session.len(), 1);
-        
+
         // Get values
-        assert_eq!(state.get("temp:scratch"), Some(&serde_json::json!("temporary")));
+        assert_eq!(
+            state.get("temp:scratch"),
+            Some(&serde_json::json!("temporary"))
+        );
         assert_eq!(state.get("user:name"), Some(&serde_json::json!("Ghost")));
-        assert_eq!(state.get("puzzle_id"), Some(&serde_json::json!("puzzle_001")));
-        
+        assert_eq!(
+            state.get("puzzle_id"),
+            Some(&serde_json::json!("puzzle_001"))
+        );
+
         // Clear temp
         state.clear_temp();
         assert!(state.temp.is_empty());
@@ -253,14 +268,17 @@ mod tests {
     #[test]
     fn test_apply_delta() {
         let mut state = ScopedState::new();
-        
+
         let mut delta = HashMap::new();
         delta.insert("temp:result".to_string(), serde_json::json!("success"));
         delta.insert("proximity".to_string(), serde_json::json!(0.75));
-        
+
         state.apply_delta(&delta);
-        
-        assert_eq!(state.get("temp:result"), Some(&serde_json::json!("success")));
+
+        assert_eq!(
+            state.get("temp:result"),
+            Some(&serde_json::json!("success"))
+        );
         assert_eq!(state.get("proximity"), Some(&serde_json::json!(0.75)));
     }
 
@@ -276,10 +294,10 @@ mod tests {
     #[test]
     fn test_typed_access() {
         let mut state = ScopedState::new();
-        
+
         state.set_typed("user:score", &42i32);
         state.set_typed("user:active", &true);
-        
+
         assert_eq!(state.get_typed::<i32>("user:score"), Some(42));
         assert_eq!(state.get_typed::<bool>("user:active"), Some(true));
     }

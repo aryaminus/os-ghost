@@ -9,11 +9,11 @@
 
 use super::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
 use crate::ai::ai_provider::SmartAiRouter;
+use crate::data::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use crate::data::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
 
 /// Blocked patterns that should never appear in outputs (JAILBREAKS / HARMFUL)
 const BLOCKED_PATTERNS: &[&str] = &[

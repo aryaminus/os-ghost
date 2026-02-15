@@ -9,7 +9,9 @@
 
 use super::Workflow;
 use crate::agents::planner::PlannerAgent;
-use crate::agents::traits::{Agent, AgentContext, AgentOutput, AgentResult, NextAction, SearchStrategy};
+use crate::agents::traits::{
+    Agent, AgentContext, AgentOutput, AgentResult, NextAction, SearchStrategy,
+};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -53,17 +55,11 @@ impl PlanningWorkflow {
         match strategy {
             SearchStrategy::Explore => {
                 // Exploration: Observer first to understand the landscape
-                vec![
-                    self.observer.clone(),
-                    self.verifier.clone(),
-                ]
+                vec![self.observer.clone(), self.verifier.clone()]
             }
             SearchStrategy::Focus => {
                 // Focused: Verifier is more important
-                vec![
-                    self.verifier.clone(),
-                    self.observer.clone(),
-                ]
+                vec![self.verifier.clone(), self.observer.clone()]
             }
             SearchStrategy::Verify => {
                 // Verification: Just verify, minimal observation

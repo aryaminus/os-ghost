@@ -12,8 +12,10 @@ pub trait McpResource: Send + Sync {
     fn descriptor(&self) -> ResourceDescriptor;
 
     /// Read the resource content
-    async fn read(&self, query: Option<std::collections::HashMap<String, String>>)
-        -> Result<serde_json::Value, McpError>;
+    async fn read(
+        &self,
+        query: Option<std::collections::HashMap<String, String>>,
+    ) -> Result<serde_json::Value, McpError>;
 
     /// Check if resource content has changed since last read
     fn has_changed(&self) -> bool {
@@ -92,4 +94,3 @@ pub trait McpServer: Send + Sync {
         parameters: std::collections::HashMap<String, String>,
     ) -> Result<String, McpError>;
 }
-

@@ -95,7 +95,8 @@ impl InvocationMetrics {
     /// Add a tool call record
     pub fn add_tool_call(&mut self, record: ToolCallRecord) {
         if let Some(latency) = record.latency_ms {
-            self.tool_latencies.insert(record.tool_name.clone(), latency);
+            self.tool_latencies
+                .insert(record.tool_name.clone(), latency);
         }
         self.tool_calls.push(record);
     }
@@ -158,7 +159,10 @@ impl AggregateMetrics {
         latencies.sort_unstable();
         let avg_latency = latencies.iter().sum::<u64>() as f64 / total as f64;
         let p95_idx = (total as f64 * 0.95) as usize;
-        let p95_latency = latencies.get(p95_idx.min(latencies.len() - 1)).copied().unwrap_or(0);
+        let p95_latency = latencies
+            .get(p95_idx.min(latencies.len() - 1))
+            .copied()
+            .unwrap_or(0);
 
         // Token calculations
         let total_tokens: u64 = invocations.iter().map(|i| i.total_tokens as u64).sum();
@@ -170,7 +174,9 @@ impl AggregateMetrics {
         for inv in invocations {
             for tool in &inv.tool_calls {
                 total_tool_calls += 1;
-                let entry = tool_successes.entry(tool.tool_name.clone()).or_insert((0, 0));
+                let entry = tool_successes
+                    .entry(tool.tool_name.clone())
+                    .or_insert((0, 0));
                 entry.1 += 1; // Total
                 if tool.success {
                     entry.0 += 1; // Successes
@@ -292,7 +298,11 @@ impl Span {
     }
 
     /// Add an attribute to the span
-    pub fn with_attribute<K: Into<String>, V: Into<serde_json::Value>>(mut self, key: K, value: V) -> Self {
+    pub fn with_attribute<K: Into<String>, V: Into<serde_json::Value>>(
+        mut self,
+        key: K,
+        value: V,
+    ) -> Self {
         self.attributes.insert(key.into(), value.into());
         self
     }
@@ -359,7 +369,8 @@ impl MetricsCollector {
         if metrics.success {
             self.success_count.fetch_add(1, Ordering::Relaxed);
         }
-        self.total_tokens.fetch_add(metrics.total_tokens as u64, Ordering::Relaxed);
+        self.total_tokens
+            .fetch_add(metrics.total_tokens as u64, Ordering::Relaxed);
 
         // Add to ring buffer
         if let Ok(mut invocations) = self.invocations.lock() {
@@ -387,7 +398,11 @@ impl MetricsCollector {
         QuickStats {
             total_invocations: total,
             successful_invocations: success,
-            success_rate: if total > 0 { success as f32 / total as f32 } else { 0.0 },
+            success_rate: if total > 0 {
+                success as f32 / total as f32
+            } else {
+                0.0
+            },
             total_tokens: tokens,
         }
     }
@@ -473,10 +488,7 @@ pub enum RetryResult<T, E> {
 }
 
 /// Execute an async operation with retry logic
-pub async fn with_retry<T, E, F, Fut>(
-    config: &RetryConfig,
-    operation: F,
-) -> RetryResult<T, E>
+pub async fn with_retry<T, E, F, Fut>(config: &RetryConfig, operation: F) -> RetryResult<T, E>
 where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
@@ -620,7 +632,8 @@ mod tests {
                     Ok("success")
                 }
             }
-        }).await;
+        })
+        .await;
 
         match result {
             RetryResult::Success(v) => assert_eq!(v, "success"),

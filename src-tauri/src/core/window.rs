@@ -77,7 +77,6 @@ impl GhostWindow {
         Ok(())
     }
 
-
     /// Position window in bottom-right corner of primary monitor
     pub fn position_bottom_right(&self) -> Result<()> {
         if let Ok(Some(monitor)) = self.window.primary_monitor() {

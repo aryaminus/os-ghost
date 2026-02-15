@@ -5,11 +5,10 @@
 //!
 //! Safety: All input actions require explicit approval based on AutonomyLevel
 
-pub mod mouse;
-pub mod keyboard;
-pub mod safety;
 pub mod desktop_capture;
-
+pub mod keyboard;
+pub mod mouse;
+pub mod safety;
 
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -27,10 +26,7 @@ pub struct InputController {
 
 impl InputController {
     /// Create a new input controller
-    pub fn new(
-        autonomy_level: AutonomyLevel,
-        privacy_settings: PrivacySettings,
-    ) -> Self {
+    pub fn new(autonomy_level: AutonomyLevel, privacy_settings: PrivacySettings) -> Self {
         Self {
             safety_checker: InputSafetyChecker::new(),
             autonomy_level,
@@ -52,7 +48,7 @@ impl InputController {
     pub async fn move_mouse(&self, x: i32, y: i32) -> Result<(), InputError> {
         if !self.can_automate() {
             return Err(InputError::NotAllowed(
-                "Input automation not allowed in Observer mode".to_string()
+                "Input automation not allowed in Observer mode".to_string(),
             ));
         }
 
@@ -79,7 +75,7 @@ impl InputController {
     pub async fn click_mouse(&self, button: MouseButton) -> Result<(), InputError> {
         if !self.can_automate() {
             return Err(InputError::NotAllowed(
-                "Input automation not allowed in Observer mode".to_string()
+                "Input automation not allowed in Observer mode".to_string(),
             ));
         }
 
@@ -101,7 +97,7 @@ impl InputController {
     pub async fn scroll(&self, direction: ScrollDirection, amount: i32) -> Result<(), InputError> {
         if !self.can_automate() {
             return Err(InputError::NotAllowed(
-                "Input automation not allowed in Observer mode".to_string()
+                "Input automation not allowed in Observer mode".to_string(),
             ));
         }
 
@@ -123,7 +119,7 @@ impl InputController {
     pub async fn type_text(&self, text: &str) -> Result<(), InputError> {
         if !self.can_automate() {
             return Err(InputError::NotAllowed(
-                "Input automation not allowed in Observer mode".to_string()
+                "Input automation not allowed in Observer mode".to_string(),
             ));
         }
 
@@ -132,7 +128,7 @@ impl InputController {
             warn!("Potentially sensitive text input detected: {}", e);
             if self.autonomy_level == AutonomyLevel::Supervised {
                 return Err(InputError::RequiresApproval(
-                    "Text input requires approval".to_string()
+                    "Text input requires approval".to_string(),
                 ));
             }
         }
@@ -155,7 +151,7 @@ impl InputController {
     pub async fn press_key(&self, key: Key) -> Result<(), InputError> {
         if !self.can_automate() {
             return Err(InputError::NotAllowed(
-                "Input automation not allowed in Observer mode".to_string()
+                "Input automation not allowed in Observer mode".to_string(),
             ));
         }
 
@@ -177,7 +173,7 @@ impl InputController {
     pub async fn press_combo(&self, keys: &[Key]) -> Result<(), InputError> {
         if !self.can_automate() {
             return Err(InputError::NotAllowed(
-                "Input automation not allowed in Observer mode".to_string()
+                "Input automation not allowed in Observer mode".to_string(),
             ));
         }
 
@@ -273,23 +269,85 @@ pub enum ScrollDirection {
 /// Key codes
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Key {
-    A, B, C, D, E, F, G, H, I, J, K, L, M,
-    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-    Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9,
-    Return, Escape, Backspace, Tab, Space,
-    Minus, Equal, LeftBracket, RightBracket,
-    Backslash, Semicolon, Quote, Grave,
-    Comma, Period, Slash,
-    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
-    Home, End, PageUp, PageDown,
-    Left, Right, Up, Down,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Num0,
+    Num1,
+    Num2,
+    Num3,
+    Num4,
+    Num5,
+    Num6,
+    Num7,
+    Num8,
+    Num9,
+    Return,
+    Escape,
+    Backspace,
+    Tab,
+    Space,
+    Minus,
+    Equal,
+    LeftBracket,
+    RightBracket,
+    Backslash,
+    Semicolon,
+    Quote,
+    Grave,
+    Comma,
+    Period,
+    Slash,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Left,
+    Right,
+    Up,
+    Down,
     Command, // macOS Cmd
     Control,
     Shift,
     Option, // macOS Alt
     Alt,    // Windows/Linux Alt
     Delete,
-    Power,  // Power button
+    Power, // Power button
 }
 
 /// Window information
@@ -307,22 +365,22 @@ pub struct WindowInfo {
 pub enum InputError {
     #[error("Input automation not allowed: {0}")]
     NotAllowed(String),
-    
+
     #[error("Safety violation: {0}")]
     SafetyViolation(String),
-    
+
     #[error("Requires approval: {0}")]
     RequiresApproval(String),
-    
+
     #[error("Platform error: {0}")]
     PlatformError(String),
-    
+
     #[error("Invalid coordinates: {0}")]
     InvalidCoordinates(String),
-    
+
     #[error("Window not found: {0}")]
     WindowNotFound(String),
-    
+
     #[error("Other error: {0}")]
     Other(String),
 }

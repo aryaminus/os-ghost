@@ -104,19 +104,22 @@ impl GameState {
         // Try to read from cache first
         if let Ok(cache) = GAME_STATE_CACHE.read() {
             if let Some(ref state) = *cache {
-                tracing::debug!("Using cached game state: {} puzzles solved", state.solved_puzzles.len());
+                tracing::debug!(
+                    "Using cached game state: {} puzzles solved",
+                    state.solved_puzzles.len()
+                );
                 return state.clone();
             }
         }
 
         // Load from disk if not cached
         let state = Self::load_from_disk().await;
-        
+
         // Update cache
         if let Ok(mut cache) = GAME_STATE_CACHE.write() {
             *cache = Some(state.clone());
         }
-        
+
         state
     }
 
@@ -167,12 +170,12 @@ impl GameState {
         let path = Self::state_path();
         let contents = serde_json::to_string_pretty(self)?;
         tokio::fs::write(&path, contents).await?;
-        
+
         // Update cache after successful save
         if let Ok(mut cache) = GAME_STATE_CACHE.write() {
             *cache = Some(self.clone());
         }
-        
+
         tracing::debug!("Saved game state to {:?}", path);
         Ok(())
     }

@@ -168,7 +168,10 @@ impl ChangeDetector {
         self.last_image = Some(Arc::new(rgba_buffer));
         self.last_dimensions = Some(dimensions);
 
-        Ok((self.last_image.as_ref().unwrap().as_ref().clone(), change_result))
+        Ok((
+            self.last_image.as_ref().unwrap().as_ref().clone(),
+            change_result,
+        ))
     }
 
     /// Detect changes between two images

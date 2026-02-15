@@ -190,7 +190,7 @@ impl Agent for VerifierAgent {
 
                     if content_matches {
                         // High confidence for content match, but slightly less than explicit URL match
-                        
+
                         // Add tool call to highlight the matched keywords
                         let tool_call = serde_json::json!({
                             "tool": "browser.highlight_text",

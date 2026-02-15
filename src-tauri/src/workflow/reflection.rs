@@ -46,11 +46,7 @@ pub struct ReflectionWorkflow {
 }
 
 impl ReflectionWorkflow {
-    pub fn new(
-        name: &str,
-        generator: Arc<dyn Agent>,
-        critic: Arc<CriticAgent>,
-    ) -> Self {
+    pub fn new(name: &str, generator: Arc<dyn Agent>, critic: Arc<CriticAgent>) -> Self {
         Self {
             name: name.to_string(),
             generator,
@@ -92,7 +88,7 @@ impl Workflow for ReflectionWorkflow {
 
             // Step 1: Generate output
             let generator_output_result = self.generator.process(&current_context).await;
-            
+
             let generator_output = match generator_output_result {
                 Ok(out) => out,
                 Err(crate::agents::traits::AgentError::CircuitOpen(msg)) => {
@@ -110,14 +106,18 @@ impl Workflow for ReflectionWorkflow {
 
             // Step 2: Critique the output
             // Add the generated text to context for the critic
-            current_context.previous_outputs.push(generated_text.clone());
-            current_context.metadata.insert(
-                "narrator_output".to_string(),
-                generated_text.clone(),
-            );
+            current_context
+                .previous_outputs
+                .push(generated_text.clone());
+            current_context
+                .metadata
+                .insert("narrator_output".to_string(), generated_text.clone());
 
-            let feedback_result = self.critic.critique(&generated_text, &current_context).await;
-            
+            let feedback_result = self
+                .critic
+                .critique(&generated_text, &current_context)
+                .await;
+
             let feedback = match feedback_result {
                 Ok(f) => f,
                 Err(crate::agents::traits::AgentError::CircuitOpen(msg)) => {
@@ -158,10 +158,7 @@ impl Workflow for ReflectionWorkflow {
             }
 
             // Step 4: Prepare for refinement
-            tracing::debug!(
-                "Reflection rejected: {}. Refining...",
-                feedback.critique
-            );
+            tracing::debug!("Reflection rejected: {}. Refining...", feedback.critique);
 
             // Update context with feedback for next iteration
             current_context.last_reflection = Some(feedback.clone());
@@ -190,10 +187,7 @@ impl Workflow for ReflectionWorkflow {
                             "reflection_iteration".to_string(),
                             serde_json::Value::Number((iteration + 1).into()),
                         );
-                        data.insert(
-                            "refined".to_string(),
-                            serde_json::Value::Bool(true),
-                        );
+                        data.insert("refined".to_string(), serde_json::Value::Bool(true));
                         data.insert(
                             "refinement_source".to_string(),
                             serde_json::Value::String("Critic".to_string()),
@@ -241,8 +235,7 @@ pub fn create_narrator_with_reflection(
     critic: Arc<CriticAgent>,
     max_iterations: usize,
 ) -> ReflectionWorkflow {
-    ReflectionWorkflow::new("NarratorReflection", narrator, critic)
-        .max_iterations(max_iterations)
+    ReflectionWorkflow::new("NarratorReflection", narrator, critic).max_iterations(max_iterations)
 }
 
 #[cfg(test)]

@@ -3,14 +3,14 @@
 //! Provides API key authentication for the OS-Ghost server.
 //! In production, this should use more sophisticated auth mechanisms.
 
-use std::sync::Arc;
 use axum::{
     extract::Request,
-    http::{StatusCode, header::HeaderMap},
+    http::{header::HeaderMap, StatusCode},
     middleware::Next,
     response::Response,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Authentication configuration
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -31,7 +31,7 @@ pub async fn auth_middleware(
     if !config.require_auth {
         return Ok(next.run(request).await);
     }
-    
+
     // Check for API key
     let api_key = headers
         .get("X-API-Key")
@@ -42,11 +42,9 @@ pub async fn auth_middleware(
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.strip_prefix("Bearer "))
         });
-    
+
     match (&config.api_key, api_key) {
-        (Some(expected), Some(provided)) if expected == provided => {
-            Ok(next.run(request).await)
-        }
+        (Some(expected), Some(provided)) if expected == provided => Ok(next.run(request).await),
         (None, _) => {
             // No API key configured, allow all
             Ok(next.run(request).await)
@@ -58,10 +56,10 @@ pub async fn auth_middleware(
 /// Generate a secure API key
 pub fn generate_api_key() -> String {
     use rand::Rng;
-    
+
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     const KEY_LEN: usize = 32;
-    
+
     let mut rng = rand::thread_rng();
     let key: String = (0..KEY_LEN)
         .map(|_| {
@@ -69,7 +67,7 @@ pub fn generate_api_key() -> String {
             CHARSET[idx] as char
         })
         .collect();
-    
+
     format!("ghost_{}", key)
 }
 

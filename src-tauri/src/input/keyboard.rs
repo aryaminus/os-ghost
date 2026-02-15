@@ -5,7 +5,7 @@
 //! - Windows: SendInput with VK codes
 //! - Linux: X11 xtest
 
-use super::{Key, InputError};
+use super::{InputError, Key};
 
 // ============================================================================
 // macOS Implementation
@@ -13,27 +13,33 @@ use super::{Key, InputError};
 #[cfg(target_os = "macos")]
 pub mod macos {
     use super::*;
-    
+
     pub fn type_text(_text: &str) -> Result<(), InputError> {
         // TODO: Implement using CoreGraphics
-        Err(InputError::PlatformError("macOS keyboard control requires accessibility permissions".to_string()))
+        Err(InputError::PlatformError(
+            "macOS keyboard control requires accessibility permissions".to_string(),
+        ))
     }
-    
+
     pub fn press_key(_key: Key) -> Result<(), InputError> {
         // TODO: Implement using CoreGraphics
-        Err(InputError::PlatformError("macOS keyboard control requires accessibility permissions".to_string()))
+        Err(InputError::PlatformError(
+            "macOS keyboard control requires accessibility permissions".to_string(),
+        ))
     }
-    
+
     pub fn press_combo(_keys: &[Key]) -> Result<(), InputError> {
         // TODO: Implement using CoreGraphics
-        Err(InputError::PlatformError("macOS keyboard control requires accessibility permissions".to_string()))
+        Err(InputError::PlatformError(
+            "macOS keyboard control requires accessibility permissions".to_string(),
+        ))
     }
-    
+
     fn _map_key_to_macos_keycode(_key: Key) -> u16 {
         // Placeholder - would map to CGKeyCode values
         0
     }
-    
+
     fn _is_modifier(_key: Key) -> bool {
         matches!(_key, Key::Command | Key::Control | Key::Shift | Key::Option)
     }
@@ -46,10 +52,10 @@ pub mod macos {
 pub mod windows {
     use super::*;
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYBD_EVENT_FLAGS,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
         VIRTUAL_KEY,
     };
-    
+
     /// Helper to create a keyboard INPUT struct
     fn make_keyboard_input(vk: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
         INPUT {
@@ -65,46 +71,46 @@ pub mod windows {
             },
         }
     }
-    
+
     pub fn type_text(text: &str) -> Result<(), InputError> {
         for ch in text.chars() {
             type_char(ch)?;
         }
         Ok(())
     }
-    
+
     fn type_char(ch: char) -> Result<(), InputError> {
         unsafe {
             let vk = char_to_vk(ch);
-            
+
             let input = make_keyboard_input(vk, KEYBD_EVENT_FLAGS(0));
             SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-            
+
             // Key up
             let up_input = make_keyboard_input(vk, KEYEVENTF_KEYUP);
             SendInput(&[up_input], std::mem::size_of::<INPUT>() as i32);
-            
+
             std::thread::sleep(std::time::Duration::from_millis(10));
-            
+
             Ok(())
         }
     }
-    
+
     pub fn press_key(key: Key) -> Result<(), InputError> {
         unsafe {
             let vk = map_key_to_vk(key);
-            
+
             let input = make_keyboard_input(vk, KEYBD_EVENT_FLAGS(0));
             SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-            
+
             // Key up
             let up_input = make_keyboard_input(vk, KEYEVENTF_KEYUP);
             SendInput(&[up_input], std::mem::size_of::<INPUT>() as i32);
-            
+
             Ok(())
         }
     }
-    
+
     pub fn press_combo(keys: &[Key]) -> Result<(), InputError> {
         unsafe {
             // Press modifier keys
@@ -113,33 +119,33 @@ pub mod windows {
                 let input = make_keyboard_input(vk, KEYBD_EVENT_FLAGS(0));
                 SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
             }
-            
+
             // Press main key
             if let Some(main_key) = keys.iter().find(|&&k| !is_modifier(k)) {
                 let vk = map_key_to_vk(*main_key);
                 let input = make_keyboard_input(vk, KEYBD_EVENT_FLAGS(0));
                 SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-                
+
                 // Release main key
                 std::thread::sleep(std::time::Duration::from_millis(50));
                 let up_input = make_keyboard_input(vk, KEYEVENTF_KEYUP);
                 SendInput(&[up_input], std::mem::size_of::<INPUT>() as i32);
             }
-            
+
             // Release modifier keys
             for key in keys.iter().rev().filter(|&&k| is_modifier(k)) {
                 let vk = map_key_to_vk(*key);
                 let up_input = make_keyboard_input(vk, KEYEVENTF_KEYUP);
                 SendInput(&[up_input], std::mem::size_of::<INPUT>() as i32);
             }
-            
+
             Ok(())
         }
     }
-    
+
     fn map_key_to_vk(key: Key) -> u16 {
         use ::windows::Win32::UI::Input::KeyboardAndMouse::*;
-        
+
         match key {
             Key::A => VK_A.0,
             Key::B => VK_B.0,
@@ -212,7 +218,7 @@ pub mod windows {
             _ => 0,
         }
     }
-    
+
     fn char_to_vk(ch: char) -> u16 {
         // Simple ASCII mapping
         if ch.is_ascii_alphabetic() {
@@ -228,7 +234,7 @@ pub mod windows {
             }
         }
     }
-    
+
     fn is_modifier(key: Key) -> bool {
         matches!(key, Key::Shift | Key::Control | Key::Command | Key::Option)
     }
@@ -240,24 +246,24 @@ pub mod windows {
 #[cfg(target_os = "linux")]
 pub mod linux {
     use super::*;
-    
+
     pub async fn type_text(text: &str) -> Result<(), InputError> {
         for ch in text.chars() {
             type_char(ch).await?;
         }
         Ok(())
     }
-    
+
     async fn type_char(ch: char) -> Result<(), InputError> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
-        
+
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
-        
+
         // Map char to keycode (simplified - production would use proper keysym to keycode mapping)
         let keycode = char_to_keycode(ch);
-        
+
         // Key press - detail is the keycode
         conn.xtest_fake_input(
             x11rb::protocol::xproto::KEY_PRESS_EVENT,
@@ -268,9 +274,9 @@ pub mod linux {
             0,
             0, // deviceid
         )?;
-        
+
         conn.flush()?;
-        
+
         // Key release
         conn.xtest_fake_input(
             x11rb::protocol::xproto::KEY_RELEASE_EVENT,
@@ -281,23 +287,23 @@ pub mod linux {
             0,
             0, // deviceid
         )?;
-        
+
         conn.flush()?;
-        
+
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-        
+
         Ok(())
     }
-    
+
     pub async fn press_key(key: Key) -> Result<(), InputError> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
-        
+
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
-        
+
         let keycode = map_key_to_keycode(key);
-        
+
         // Key press - detail is the keycode
         conn.xtest_fake_input(
             x11rb::protocol::xproto::KEY_PRESS_EVENT,
@@ -308,9 +314,9 @@ pub mod linux {
             0,
             0, // deviceid
         )?;
-        
+
         conn.flush()?;
-        
+
         conn.xtest_fake_input(
             x11rb::protocol::xproto::KEY_RELEASE_EVENT,
             keycode, // detail (keycode)
@@ -320,19 +326,19 @@ pub mod linux {
             0,
             0, // deviceid
         )?;
-        
+
         conn.flush()?;
-        
+
         Ok(())
     }
-    
+
     pub async fn press_combo(keys: &[Key]) -> Result<(), InputError> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xtest::ConnectionExt as XtestConnectionExt;
-        
+
         let (conn, _) = x11rb::connect(None)?;
         let root = conn.setup().roots[0].root;
-        
+
         // Press modifier keys
         for key in keys.iter().filter(|&&k| is_modifier(k)) {
             let keycode = map_key_to_keycode(*key);
@@ -347,7 +353,7 @@ pub mod linux {
             )?;
             conn.flush()?;
         }
-        
+
         // Press main key
         if let Some(main_key) = keys.iter().find(|&&k| !is_modifier(k)) {
             let keycode = map_key_to_keycode(*main_key);
@@ -361,7 +367,7 @@ pub mod linux {
                 0, // deviceid
             )?;
             conn.flush()?;
-            
+
             // Release main key
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             conn.xtest_fake_input(
@@ -375,7 +381,7 @@ pub mod linux {
             )?;
             conn.flush()?;
         }
-        
+
         // Release modifier keys
         for key in keys.iter().rev().filter(|&&k| is_modifier(k)) {
             let keycode = map_key_to_keycode(*key);
@@ -390,10 +396,10 @@ pub mod linux {
             )?;
             conn.flush()?;
         }
-        
+
         Ok(())
     }
-    
+
     fn map_key_to_keycode(key: Key) -> u8 {
         // X11 keycodes (simplified - production would use proper mapping)
         match key {
@@ -439,7 +445,7 @@ pub mod linux {
             _ => 0,
         }
     }
-    
+
     fn char_to_keycode(ch: char) -> u8 {
         // X11 keycodes for common characters (simplified)
         // Production would use proper keysym to keycode lookup via the keyboard mapping
@@ -470,13 +476,13 @@ pub mod linux {
             'x' | 'X' => 53,
             'y' | 'Y' => 29,
             'z' | 'Z' => 52,
-            ' ' => 65,      // Space
-            '\n' => 36,     // Return
-            '\t' => 23,     // Tab
+            ' ' => 65,  // Space
+            '\n' => 36, // Return
+            '\t' => 23, // Tab
             _ => 0,
         }
     }
-    
+
     fn is_modifier(key: Key) -> bool {
         matches!(key, Key::Shift | Key::Control | Key::Option | Key::Command)
     }
@@ -488,16 +494,22 @@ pub mod linux {
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub mod stub {
     use super::*;
-    
+
     pub fn type_text(_text: &str) -> Result<(), InputError> {
-        Err(InputError::PlatformError("Platform not supported".to_string()))
+        Err(InputError::PlatformError(
+            "Platform not supported".to_string(),
+        ))
     }
-    
+
     pub fn press_key(_key: Key) -> Result<(), InputError> {
-        Err(InputError::PlatformError("Platform not supported".to_string()))
+        Err(InputError::PlatformError(
+            "Platform not supported".to_string(),
+        ))
     }
-    
+
     pub fn press_combo(_keys: &[Key]) -> Result<(), InputError> {
-        Err(InputError::PlatformError("Platform not supported".to_string()))
+        Err(InputError::PlatformError(
+            "Platform not supported".to_string(),
+        ))
     }
 }

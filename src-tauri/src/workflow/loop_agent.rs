@@ -8,7 +8,9 @@
 //! - Supports graceful cancellation via CancellationToken
 
 use super::Workflow;
-use crate::agents::traits::{Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction};
+use crate::agents::traits::{
+    Agent, AgentContext, AgentError, AgentOutput, AgentResult, NextAction,
+};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -108,7 +110,11 @@ impl LoopWorkflow {
             let output = match output_result {
                 Ok(out) => out,
                 Err(AgentError::CircuitOpen(msg)) => {
-                    tracing::warn!("Circuit breaker open in loop '{}': {}. Pausing loop.", self.name, msg);
+                    tracing::warn!(
+                        "Circuit breaker open in loop '{}': {}. Pausing loop.",
+                        self.name,
+                        msg
+                    );
                     // Wait with cancellation support
                     tokio::select! {
                         _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {},
@@ -181,7 +187,10 @@ impl LoopWorkflow {
                     new_proximity * 100.0,
                     stagnation_count
                 );
-                current_context.planning.failed_approaches.push(failed_approach);
+                current_context
+                    .planning
+                    .failed_approaches
+                    .push(failed_approach);
                 stagnation_count = 0;
             }
 
@@ -225,11 +234,7 @@ impl Workflow for LoopWorkflow {
 
 /// Create an adaptive loop with planner integration
 /// This loop can revise its search strategy based on stagnation
-pub fn create_adaptive_loop(
-    observer: Arc<dyn Agent>,
-    max_iter: usize,
-    delay: u64,
-) -> LoopWorkflow {
+pub fn create_adaptive_loop(observer: Arc<dyn Agent>, max_iter: usize, delay: u64) -> LoopWorkflow {
     LoopWorkflow::new(
         "AdaptiveLoop",
         observer,
@@ -242,10 +247,10 @@ pub fn create_adaptive_loop(
     .stagnation_threshold(2) // Lower threshold for faster adaptation
     .with_context_modifier(Box::new(|ctx, output| {
         let mut new_ctx = ctx.clone();
-        
+
         // Update proximity
         new_ctx.proximity = output.confidence;
-        
+
         // Determine new strategy based on progress
         let strategy = if output.confidence > 0.7 {
             crate::agents::traits::SearchStrategy::Verify
@@ -254,10 +259,10 @@ pub fn create_adaptive_loop(
         } else {
             crate::agents::traits::SearchStrategy::Explore
         };
-        
+
         new_ctx.planning.strategy = strategy;
         new_ctx.previous_outputs.push(output.result.clone());
-        
+
         new_ctx
     }))
 }

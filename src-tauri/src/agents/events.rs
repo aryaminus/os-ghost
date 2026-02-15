@@ -1,5 +1,5 @@
 //! Event System - ADK-style event flow with actions
-//! 
+//!
 //! Implements the Event pattern from Google ADK:
 //! - Events carry content, metadata, and action deltas
 //! - EventActions control workflow behavior (escalate, transfer, state delta)
@@ -71,24 +71,24 @@ pub struct EventActions {
     /// State updates to apply (key -> value)
     /// Keys can have scope prefixes: temp:, user:, app:, session: (default)
     pub state_delta: HashMap<String, serde_json::Value>,
-    
+
     /// Artifact updates (artifact_name -> version increment)
     pub artifact_delta: HashMap<String, u32>,
-    
+
     /// Transfer control to another agent
     pub transfer_to_agent: Option<String>,
-    
+
     /// Escalate to human/supervisor
     /// When true, the workflow should pause and wait for human input
     pub escalate: bool,
-    
+
     /// Skip LLM summarization of tool results
     /// Used when tool output should be passed directly to user
     pub skip_summarization: bool,
-    
+
     /// Request workflow termination
     pub terminate: bool,
-    
+
     /// Priority level for this event (higher = more important)
     pub priority: EventPriority,
 }
@@ -102,7 +102,11 @@ impl EventActions {
     }
 
     /// Add a state delta entry
-    pub fn add_state<K: Into<String>, V: Into<serde_json::Value>>(mut self, key: K, value: V) -> Self {
+    pub fn add_state<K: Into<String>, V: Into<serde_json::Value>>(
+        mut self,
+        key: K,
+        value: V,
+    ) -> Self {
         self.state_delta.insert(key.into(), value.into());
         self
     }
@@ -146,28 +150,28 @@ pub enum EventPriority {
 pub struct AgentEvent {
     /// Unique event identifier
     pub id: String,
-    
+
     /// Who generated this event
     pub author: EventAuthor,
-    
+
     /// Invocation/request ID this event belongs to
     pub invocation_id: String,
-    
+
     /// Unix timestamp (milliseconds)
     pub timestamp: u64,
-    
+
     /// Event content
     pub content: EventContent,
-    
+
     /// Actions/side effects to apply
     pub actions: EventActions,
-    
+
     /// Whether this is a partial/streaming event
     pub partial: bool,
-    
+
     /// Whether this is a final response
     pub is_final: bool,
-    
+
     /// Custom metadata
     pub metadata: HashMap<String, serde_json::Value>,
 }
@@ -298,7 +302,11 @@ impl AgentEvent {
     }
 
     /// Add metadata
-    pub fn with_metadata<K: Into<String>, V: Into<serde_json::Value>>(mut self, key: K, value: V) -> Self {
+    pub fn with_metadata<K: Into<String>, V: Into<serde_json::Value>>(
+        mut self,
+        key: K,
+        value: V,
+    ) -> Self {
         self.metadata.insert(key.into(), value.into());
         self
     }
@@ -413,7 +421,7 @@ mod tests {
         let actions = EventActions::with_state("temp:result", "success")
             .add_state("user:preference", "dark")
             .escalate();
-        
+
         assert!(actions.escalate);
         assert_eq!(actions.state_delta.len(), 2);
         assert!(actions.state_delta.contains_key("temp:result"));
@@ -422,17 +430,17 @@ mod tests {
     #[test]
     fn test_event_stream() {
         let mut stream = EventStream::new("inv_001");
-        
+
         stream.push(AgentEvent::text("Observer", "inv_001", "Analyzing..."));
         stream.push(
             AgentEvent::text("Narrator", "inv_001", "Found a clue!")
                 .with_actions(EventActions::with_state("proximity", 0.7))
-                .as_final()
+                .as_final(),
         );
 
         assert_eq!(stream.events().len(), 2);
         assert!(stream.final_response().is_some());
-        
+
         let deltas = stream.collect_state_deltas();
         assert!(deltas.contains_key("proximity"));
     }
@@ -442,7 +450,7 @@ mod tests {
         let actions = EventActions::with_state("temp:scratch", "value")
             .add_state("user:name", "Ghost")
             .add_state("app:version", "1.0")
-            .add_state("session_count", 5);  // No prefix = session scope
+            .add_state("session_count", 5); // No prefix = session scope
 
         assert!(actions.state_delta.contains_key("temp:scratch"));
         assert!(actions.state_delta.contains_key("user:name"));

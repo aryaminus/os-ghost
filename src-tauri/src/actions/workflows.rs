@@ -82,7 +82,10 @@ pub fn plan_for_action(action_type: &str, args: &serde_json::Value) -> WorkflowP
 
     if action_type == "sandbox.write_file" {
         let path = args.get("path").cloned().unwrap_or(serde_json::Value::Null);
-        let content = args.get("content").cloned().unwrap_or(serde_json::Value::Null);
+        let content = args
+            .get("content")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         steps.push(WorkflowStep {
             id: format!("step_verify_{}", crate::core::utils::current_timestamp()),
             action_type: "verify.sandbox_write".to_string(),
@@ -100,7 +103,10 @@ pub fn plan_for_action(action_type: &str, args: &serde_json::Value) -> WorkflowP
             rollback_action_type: None,
         });
     } else if action_type == "sandbox.shell" {
-        let command = args.get("command").cloned().unwrap_or(serde_json::Value::Null);
+        let command = args
+            .get("command")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         steps.push(WorkflowStep {
             id: format!("step_verify_{}", crate::core::utils::current_timestamp()),
             action_type: "verify.shell".to_string(),
@@ -255,10 +261,7 @@ fn verify_step(
                 .get("path")
                 .and_then(|v| v.as_str())
                 .ok_or("Missing path for verification")?;
-            let content = step
-                .arguments
-                .get("content")
-                .and_then(|v| v.as_str());
+            let content = step.arguments.get("content").and_then(|v| v.as_str());
             let path_buf = std::path::PathBuf::from(path);
             if !path_buf.exists() {
                 return Err("guardrail: File write verification failed".to_string());
@@ -290,14 +293,14 @@ fn verify_step(
                 return Err(format!("guardrail: Directory not allowed: {:?}", err));
             }
             let json = output_json.ok_or("guardrail: Missing list output")?;
-            let success = json.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let success = json
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if !success {
                 return Err("guardrail: List directory failed".to_string());
             }
-            let output_path = json
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let output_path = json.get("path").and_then(|v| v.as_str()).unwrap_or("");
             if output_path != path {
                 return Err("guardrail: List path mismatch".to_string());
             }
@@ -314,7 +317,10 @@ fn verify_step(
         }
         "verify.shell" => {
             let json = output_json.ok_or("guardrail: Missing shell output")?;
-            let success = json.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let success = json
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if !success {
                 return Err("guardrail: Shell command failed".to_string());
             }
@@ -363,20 +369,17 @@ fn verify_step(
                         .get("notes", id)
                         .map_err(|_| "guardrail: Note lookup failed".to_string())?;
                     let note = note.ok_or("guardrail: Note missing after write".to_string())?;
-                    let expected_title = json
-                        .get("title")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let expected_body = json
-                        .get("body")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let expected_title = json.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                    let expected_body = json.get("body").and_then(|v| v.as_str()).unwrap_or("");
                     if note.title != expected_title || note.body != expected_body {
                         return Err("guardrail: Note content mismatch".to_string());
                     }
                 }
                 "notes.delete" => {
-                    let success = json.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let success = json
+                        .get("success")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     if !success {
                         return Err("guardrail: Note delete failed".to_string());
                     }
@@ -446,10 +449,14 @@ pub fn rollback_action(action_type: &str, action_id: u64) -> WorkflowResult {
                 };
             }
             "sandbox.shell" | "sandbox.list_dir" => {
-                rollback.undo_stack.block_undo(&action_id, "Rollback not supported for sandbox read/shell");
+                rollback
+                    .undo_stack
+                    .block_undo(&action_id, "Rollback not supported for sandbox read/shell");
             }
             _ => {
-                rollback.undo_stack.block_undo(&action_id, "No rollback handler for action type");
+                rollback
+                    .undo_stack
+                    .block_undo(&action_id, "No rollback handler for action type");
             }
         }
     }

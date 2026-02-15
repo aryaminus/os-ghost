@@ -387,14 +387,18 @@ pub fn email_begin_oauth(provider: String) -> Result<EmailSettings, String> {
         return Err("Only Gmail is supported".to_string());
     }
     tauri::async_runtime::block_on(async {
-        crate::integrations::email::begin_oauth().await.map_err(|e| e.to_string())
+        crate::integrations::email::begin_oauth()
+            .await
+            .map_err(|e| e.to_string())
     })
 }
 
 #[tauri::command]
 pub fn email_disconnect() -> Result<EmailSettings, String> {
     tauri::async_runtime::block_on(async {
-        crate::integrations::email::disconnect().await.map_err(|e| e.to_string())
+        crate::integrations::email::disconnect()
+            .await
+            .map_err(|e| e.to_string())
     })
 }
 

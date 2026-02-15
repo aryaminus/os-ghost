@@ -16,9 +16,9 @@
 
 use super::traits::*;
 use super::types::*;
+use crate::actions::action_ledger::record_action_created;
 use crate::actions::action_preview::{VisualPreview, VisualPreviewType};
 use crate::actions::actions::{ActionRiskLevel, PendingAction, ACTION_QUEUE};
-use crate::actions::action_ledger::record_action_created;
 use crate::config::permissions::{evaluate_action, PermissionDecision};
 use crate::config::privacy::PrivacySettings;
 use async_trait::async_trait;
@@ -83,7 +83,11 @@ impl BrowserState {
         }
 
         if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
-            let title_opt = if title.is_empty() { None } else { Some(title.as_str()) };
+            let title_opt = if title.is_empty() {
+                None
+            } else {
+                Some(title.as_str())
+            };
             rollback.update_page_state(&url, title_opt);
         }
 
@@ -582,7 +586,12 @@ pub struct BrowserMcpServer {
 impl BrowserMcpServer {
     /// Create a new browser MCP server
     pub fn new(state: Arc<BrowserState>, effect_sender: EffectSender) -> Self {
-        Self::new_with_vision(state, effect_sender, None, crate::config::privacy::AutonomyLevel::Observer)
+        Self::new_with_vision(
+            state,
+            effect_sender,
+            None,
+            crate::config::privacy::AutonomyLevel::Observer,
+        )
     }
 
     /// Create a new browser MCP server with visual capabilities
@@ -610,10 +619,16 @@ impl BrowserMcpServer {
         // Add visual tools if vision is available
         if let Some(vision) = vision_capture {
             use crate::mcp::visual_tools::*;
-            
+
             tools.push(Box::new(FindElementTool::new(Arc::clone(&vision))));
-            tools.push(Box::new(ClickElementTool::new(Arc::clone(&vision), autonomy_level)));
-            tools.push(Box::new(FillFieldTool::new(Arc::clone(&vision), autonomy_level)));
+            tools.push(Box::new(ClickElementTool::new(
+                Arc::clone(&vision),
+                autonomy_level,
+            )));
+            tools.push(Box::new(FillFieldTool::new(
+                Arc::clone(&vision),
+                autonomy_level,
+            )));
             tools.push(Box::new(GetPageElementsTool::new(vision)));
         }
 
@@ -701,11 +716,11 @@ impl McpServer for BrowserMcpServer {
         match self.find_tool(&request.tool_name) {
             Some(tool) => {
                 let descriptor = tool.descriptor();
-                
+
                 // Check privacy and autonomy settings for side-effect tools
                 if descriptor.is_side_effect {
                     let privacy = PrivacySettings::load();
-                    
+
                     // Read-only mode blocks all side effects
                     if privacy.read_only_mode {
                         return ToolResponse {
@@ -719,7 +734,7 @@ impl McpServer for BrowserMcpServer {
                             execution_time_ms: start.elapsed().as_millis() as u64,
                         };
                     }
-                    
+
                     // Check autonomy level
                     if !privacy.autonomy_level.allows_actions() {
                         return ToolResponse {
@@ -733,7 +748,7 @@ impl McpServer for BrowserMcpServer {
                             execution_time_ms: start.elapsed().as_millis() as u64,
                         };
                     }
-                    
+
                     // Determine risk level based on action type
                     let risk_level = match descriptor.name.as_str() {
                         "browser.navigate" => ActionRiskLevel::High,
@@ -745,42 +760,51 @@ impl McpServer for BrowserMcpServer {
                     let preview_policy = privacy.preview_policy;
                     let should_preview = match preview_policy {
                         crate::config::privacy::PreviewPolicy::Always => true,
-                        crate::config::privacy::PreviewPolicy::HighRisk => risk_level.is_high_risk(),
+                        crate::config::privacy::PreviewPolicy::HighRisk => {
+                            risk_level.is_high_risk()
+                        }
                         crate::config::privacy::PreviewPolicy::Off => false,
                     };
 
                     // Check if confirmation is required
-                    let decision = evaluate_action(privacy.autonomy_level, risk_level.is_high_risk());
+                    let decision =
+                        evaluate_action(privacy.autonomy_level, risk_level.is_high_risk());
                     if matches!(decision, PermissionDecision::RequireConfirmation)
-                        || matches!(preview_policy, crate::config::privacy::PreviewPolicy::Always)
+                        || matches!(
+                            preview_policy,
+                            crate::config::privacy::PreviewPolicy::Always
+                        )
                     {
                         // Get target description for the action
                         let target = match descriptor.name.as_str() {
-                            "browser.navigate" => request.arguments
+                            "browser.navigate" => request
+                                .arguments
                                 .get("url")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown URL")
                                 .to_string(),
-                            "browser.inject_effect" => request.arguments
+                            "browser.inject_effect" => request
+                                .arguments
                                 .get("effect")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("effect")
                                 .to_string(),
-                            "browser.highlight_text" => request.arguments
+                            "browser.highlight_text" => request
+                                .arguments
                                 .get("text")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("text")
                                 .to_string(),
                             _ => "action".to_string(),
                         };
-                        
+
                         let description = match descriptor.name.as_str() {
                             "browser.navigate" => format!("Navigate browser to: {}", target),
                             "browser.inject_effect" => format!("Apply visual effect: {}", target),
                             "browser.highlight_text" => format!("Highlight text: {}", target),
                             _ => format!("Execute: {}", descriptor.name),
                         };
-                        
+
                         // Create pending action for user confirmation
                         let preview_target = target.clone();
                         let description_clone = description.clone(); // Clone before moving to PendingAction
@@ -795,38 +819,40 @@ impl McpServer for BrowserMcpServer {
 
                         // Create an action preview for richer UX (if manager available)
                         let preview_id = if should_preview {
-                            if let Some(manager) = crate::actions::action_preview::get_preview_manager_mut() {
+                            if let Some(manager) =
+                                crate::actions::action_preview::get_preview_manager_mut()
+                            {
                                 let preview = manager.start_preview(&pending);
 
-                            match descriptor.name.as_str() {
-                                "browser.navigate" => {
-                                    manager.set_visual_preview(
-                                        &preview.id,
-                                        VisualPreview {
-                                            preview_type: VisualPreviewType::UrlCard,
-                                            content: preview_target.clone(),
-                                            width: None,
-                                            height: None,
-                                            alt_text: format!("Navigate to {}", preview_target),
-                                        },
-                                    );
+                                match descriptor.name.as_str() {
+                                    "browser.navigate" => {
+                                        manager.set_visual_preview(
+                                            &preview.id,
+                                            VisualPreview {
+                                                preview_type: VisualPreviewType::UrlCard,
+                                                content: preview_target.clone(),
+                                                width: None,
+                                                height: None,
+                                                alt_text: format!("Navigate to {}", preview_target),
+                                            },
+                                        );
+                                    }
+                                    "browser.highlight_text" => {
+                                        manager.set_visual_preview(
+                                            &preview.id,
+                                            VisualPreview {
+                                                preview_type: VisualPreviewType::TextSelection,
+                                                content: preview_target.clone(),
+                                                width: None,
+                                                height: None,
+                                                alt_text: format!("Highlight '{}'", preview_target),
+                                            },
+                                        );
+                                    }
+                                    _ => {}
                                 }
-                                "browser.highlight_text" => {
-                                    manager.set_visual_preview(
-                                        &preview.id,
-                                        VisualPreview {
-                                            preview_type: VisualPreviewType::TextSelection,
-                                            content: preview_target.clone(),
-                                            width: None,
-                                            height: None,
-                                            alt_text: format!("Highlight '{}'", preview_target),
-                                        },
-                                    );
-                                }
-                                _ => {}
-                            }
 
-                            manager.update_progress(&preview.id, 1.0);
+                                manager.update_progress(&preview.id, 1.0);
                                 Some(preview.id)
                             } else {
                                 None
@@ -847,7 +873,7 @@ impl McpServer for BrowserMcpServer {
                             Some(request.arguments.clone()),
                             Some("mcp_browser".to_string()),
                         );
-                        
+
                         return ToolResponse {
                             request_id: request.request_id,
                             success: false,
@@ -879,24 +905,39 @@ impl McpServer for BrowserMcpServer {
                 match tool.execute(arguments.clone()).await {
                     Ok(data) => {
                         if descriptor.is_side_effect {
-                            if let Some(rollback) = crate::actions::rollback::get_rollback_manager() {
+                            if let Some(rollback) = crate::actions::rollback::get_rollback_manager()
+                            {
                                 match descriptor.name.as_str() {
                                     "browser.navigate" => {
-                                        if let Some(url) = arguments.get("url").and_then(|v| v.as_str()) {
-                                            rollback.record_navigation(&request.request_id, url, None);
+                                        if let Some(url) =
+                                            arguments.get("url").and_then(|v| v.as_str())
+                                        {
+                                            rollback.record_navigation(
+                                                &request.request_id,
+                                                url,
+                                                None,
+                                            );
                                         }
                                     }
                                     "browser.inject_effect" => {
-                                        if let Some(effect) = arguments.get("effect").and_then(|v| v.as_str()) {
+                                        if let Some(effect) =
+                                            arguments.get("effect").and_then(|v| v.as_str())
+                                        {
                                             let duration = arguments
                                                 .get("duration")
                                                 .and_then(|v| v.as_u64())
                                                 .unwrap_or(1000);
-                                            rollback.record_effect(&request.request_id, effect, duration);
+                                            rollback.record_effect(
+                                                &request.request_id,
+                                                effect,
+                                                duration,
+                                            );
                                         }
                                     }
                                     "browser.highlight_text" => {
-                                        if let Some(text) = arguments.get("text").and_then(|v| v.as_str()) {
+                                        if let Some(text) =
+                                            arguments.get("text").and_then(|v| v.as_str())
+                                        {
                                             rollback.record_highlight(&request.request_id, text);
                                         }
                                     }

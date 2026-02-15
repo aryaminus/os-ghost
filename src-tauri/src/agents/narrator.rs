@@ -98,7 +98,12 @@ OUTPUT ONLY THE FINAL DIALOGUE LINE, nothing else. No quotes, no explanation."#,
             context.puzzle_clue,
             mood.as_prompt(),
             context.planning.strategy,
-            context.planning.sub_goals.iter().filter(|g| g.achieved).count(),
+            context
+                .planning
+                .sub_goals
+                .iter()
+                .filter(|g| g.achieved)
+                .count(),
             context.planning.sub_goals.len(),
             mood.as_prompt(),
             mood.as_prompt()
@@ -141,8 +146,7 @@ Generate an EXCITED, TRIUMPHANT message (max 100 chars) celebrating their discov
 Be mystical, grateful, and joyous.
 
 OUTPUT ONLY THE CELEBRATION LINE:"#,
-            context.puzzle_clue,
-            context.hints_revealed
+            context.puzzle_clue, context.hints_revealed
         );
 
         let dialogue = self

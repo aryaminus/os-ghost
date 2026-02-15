@@ -115,20 +115,21 @@ impl LongTermMemory {
 
         // Update stats atomically
         let hints_used = puzzle.hints_used;
-        self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
-            let mut stats = old.unwrap_or_else(|| {
-                // Initialize if missing
-                let now = crate::core::utils::current_timestamp();
-                PlayerStats {
-                    first_played: now,
-                    last_played: now,
-                    ..Default::default()
-                }
-            });
-            stats.puzzles_solved += 1;
-            stats.total_hints_used += hints_used;
-            Some(stats)
-        })?;
+        self.store
+            .update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
+                let mut stats = old.unwrap_or_else(|| {
+                    // Initialize if missing
+                    let now = crate::core::utils::current_timestamp();
+                    PlayerStats {
+                        first_played: now,
+                        last_played: now,
+                        ..Default::default()
+                    }
+                });
+                stats.puzzles_solved += 1;
+                stats.total_hints_used += hints_used;
+                Some(stats)
+            })?;
 
         Ok(())
     }
@@ -171,17 +172,14 @@ impl LongTermMemory {
 
     /// Get player statistics
     pub fn get_stats(&self) -> Result<PlayerStats> {
-        Ok(self
-            .store
-            .get(STATS_TREE, "player")?
-            .unwrap_or_else(|| {
-                let now = current_timestamp();
-                PlayerStats {
-                    first_played: now,
-                    last_played: now,
-                    ..Default::default()
-                }
-            }))
+        Ok(self.store.get(STATS_TREE, "player")?.unwrap_or_else(|| {
+            let now = current_timestamp();
+            PlayerStats {
+                first_played: now,
+                last_played: now,
+                ..Default::default()
+            }
+        }))
     }
 
     // --- HITL Feedback (Chapter 13) ---
@@ -192,22 +190,23 @@ impl LongTermMemory {
 
         // Update stats atomically
         let is_positive = feedback.is_positive;
-        self.store.update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
-            let mut stats = old.unwrap_or_else(|| {
-                let now = crate::core::utils::current_timestamp();
-                PlayerStats {
-                    first_played: now,
-                    last_played: now,
-                    ..Default::default()
+        self.store
+            .update(STATS_TREE, "player", move |old: Option<PlayerStats>| {
+                let mut stats = old.unwrap_or_else(|| {
+                    let now = crate::core::utils::current_timestamp();
+                    PlayerStats {
+                        first_played: now,
+                        last_played: now,
+                        ..Default::default()
+                    }
+                });
+                if is_positive {
+                    stats.total_positive_feedback += 1;
+                } else {
+                    stats.total_negative_feedback += 1;
                 }
-            });
-            if is_positive {
-                stats.total_positive_feedback += 1;
-            } else {
-                stats.total_negative_feedback += 1;
-            }
-            Some(stats)
-        })?;
+                Some(stats)
+            })?;
 
         Ok(())
     }
@@ -258,21 +257,23 @@ impl LongTermMemory {
 
     /// Record an escalation (user is stuck)
     pub fn record_escalation(&self, escalation: Escalation) -> Result<()> {
-        self.store.set(ESCALATIONS_TREE, &escalation.id, &escalation)?;
+        self.store
+            .set(ESCALATIONS_TREE, &escalation.id, &escalation)?;
 
         // Update stats atomically
-        self.store.update(STATS_TREE, "player", |old: Option<PlayerStats>| {
-            let mut stats = old.unwrap_or_else(|| {
-                let now = crate::core::utils::current_timestamp();
-                PlayerStats {
-                    first_played: now,
-                    last_played: now,
-                    ..Default::default()
-                }
-            });
-            stats.total_escalations += 1;
-            Some(stats)
-        })?;
+        self.store
+            .update(STATS_TREE, "player", |old: Option<PlayerStats>| {
+                let mut stats = old.unwrap_or_else(|| {
+                    let now = crate::core::utils::current_timestamp();
+                    PlayerStats {
+                        first_played: now,
+                        last_played: now,
+                        ..Default::default()
+                    }
+                });
+                stats.total_escalations += 1;
+                Some(stats)
+            })?;
 
         Ok(())
     }
@@ -304,15 +305,19 @@ impl LongTermMemory {
     /// Mark an escalation as resolved
     pub fn resolve_escalation(&self, escalation_id: &str, resolution: &str) -> Result<()> {
         let res_str = resolution.to_string();
-        self.store.update(ESCALATIONS_TREE, escalation_id, move |old: Option<Escalation>| {
-            if let Some(mut esc) = old {
-                esc.resolved = true;
-                esc.resolution = Some(res_str.clone());
-                Some(esc)
-            } else {
-                None
-            }
-        })?;
+        self.store.update(
+            ESCALATIONS_TREE,
+            escalation_id,
+            move |old: Option<Escalation>| {
+                if let Some(mut esc) = old {
+                    esc.resolved = true;
+                    esc.resolution = Some(res_str.clone());
+                    Some(esc)
+                } else {
+                    None
+                }
+            },
+        )?;
         Ok(())
     }
 
@@ -335,16 +340,15 @@ impl LongTermMemory {
 fn rand_suffix() -> u32 {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
-    
+
     static COUNTER: AtomicU32 = AtomicU32::new(0);
-    
+
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
-    
+
     // Combine counter and nanos for better uniqueness
     (counter.wrapping_mul(31) ^ nanos) % 1_000_000
 }
-

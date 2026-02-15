@@ -7,11 +7,9 @@ pub mod integrations;
 
 // Re-export commonly used types and Tauri commands from integrations.rs
 pub use integrations::{
-    CalendarSettings, FilesSettings, add_note, list_notes, delete_note, update_note,
-    EmailSettings, EmailMessage, EmailTriageDecision, 
-    get_calendar_settings, update_calendar_settings, get_upcoming_events,
-    get_files_settings, update_files_settings, list_recent_files,
-    get_email_settings, update_email_settings, email_oauth_status,
-    email_begin_oauth, email_disconnect, list_email_inbox,
-    triage_email_inbox, apply_email_triage
+    add_note, apply_email_triage, delete_note, email_begin_oauth, email_disconnect,
+    email_oauth_status, get_calendar_settings, get_email_settings, get_files_settings,
+    get_upcoming_events, list_email_inbox, list_notes, list_recent_files, triage_email_inbox,
+    update_calendar_settings, update_email_settings, update_files_settings, update_note,
+    CalendarSettings, EmailMessage, EmailSettings, EmailTriageDecision, FilesSettings,
 };

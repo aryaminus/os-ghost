@@ -178,7 +178,11 @@ impl OllamaClient {
             }),
         };
 
-        tracing::debug!("Ollama vision request to {} with model {}", url, vision_model);
+        tracing::debug!(
+            "Ollama vision request to {} with model {}",
+            url,
+            vision_model
+        );
 
         let response = self
             .client
@@ -378,7 +382,8 @@ Be strict and accurate. Only return true if the visual proof CLEARLY matches the
             .await?;
         let clean_text = clean_json_response(&text);
 
-        let result: crate::ai::gemini_client::VerificationResult = serde_json::from_str(clean_text)?;
+        let result: crate::ai::gemini_client::VerificationResult =
+            serde_json::from_str(clean_text)?;
         Ok(result)
     }
 
@@ -421,7 +426,10 @@ Respond ONLY with valid JSON."#,
         let text = self.generate_json(&prompt).await?;
 
         let puzzle: crate::ai::gemini_client::AdaptivePuzzle = serde_json::from_str(&text)
-            .context(format!("Failed to parse adaptive puzzle JSON. Raw: {}", text))?;
+            .context(format!(
+                "Failed to parse adaptive puzzle JSON. Raw: {}",
+                text
+            ))?;
 
         Ok(puzzle)
     }

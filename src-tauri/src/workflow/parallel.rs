@@ -80,10 +80,7 @@ impl Workflow for ParallelWorkflow {
 
         for chunk in eligible_agents.chunks(self.max_concurrency) {
             // Create futures for this batch
-            let futures: Vec<_> = chunk
-                .iter()
-                .map(|agent| agent.process(context))
-                .collect();
+            let futures: Vec<_> = chunk.iter().map(|agent| agent.process(context)).collect();
 
             // Run batch in parallel
             let results = join_all(futures).await;
@@ -116,7 +113,6 @@ pub fn create_parallel_checks(agents: Vec<Arc<dyn Agent>>) -> ParallelWorkflow {
     }
     workflow
 }
-
 
 #[cfg(test)]
 mod tests {
