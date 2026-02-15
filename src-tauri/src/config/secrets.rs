@@ -3,6 +3,12 @@
 //! Provides secure storage for API keys and sensitive credentials using the system keychain.
 //! Uses the keyring crate for cross-platform secure storage (macOS Keychain, Windows Credential Manager, Linux Secret Service).
 //!
+//! Security Features (IronClaw-inspired):
+//! - Encrypted storage in system keychain
+//! - Host-boundary secret injection (never exposed to tools)
+//! - Per-tool secret authorization
+//! - Secret leak detection integration
+//!
 //! ZeroClaw reference: https://github.com/theonlyhennygod/zeroclaw
 
 use keyring::Entry;
@@ -131,6 +137,149 @@ pub fn has_api_key(provider: &str) -> bool {
 // Known provider keys
 pub fn get_known_providers() -> Vec<&'static str> {
     vec!["gemini", "openai", "anthropic", "ollama"]
+}
+
+// ============================================================================
+// Host-Boundary Secret Injection (IronClaw-inspired)
+// ============================================================================
+//
+// Secrets are NEVER exposed to tool code. They are injected at the host boundary
+// only when making authenticated requests, and stripped from responses before
+// the tool sees them.
+
+use crate::security::leak_detector;
+
+/// A secret injection context - tracks which secrets have been authorized for which tools
+#[derive(Debug, Clone, Default)]
+pub struct SecretInjectionContext {
+    /// Map of tool_name -> authorized secrets for that tool
+    authorized_secrets: HashMap<String, Vec<String>>,
+}
+
+lazy_static::lazy_static! {
+    static ref INJECTION_CONTEXT: RwLock<SecretInjectionContext> = RwLock::new(SecretInjectionContext::default());
+}
+
+/// Authorize a secret for use by a specific tool
+pub fn authorize_secret_for_tool(tool_name: &str, secret_key: &str) {
+    if let Ok(mut ctx) = INJECTION_CONTEXT.write() {
+        ctx.authorized_secrets
+            .entry(tool_name.to_string())
+            .or_insert_with(Vec::new)
+            .push(secret_key.to_string());
+    }
+}
+
+/// Revoke all secrets for a specific tool
+pub fn revoke_tool_secrets(tool_name: &str) {
+    if let Ok(mut ctx) = INJECTION_CONTEXT.write() {
+        ctx.authorized_secrets.remove(tool_name);
+    }
+}
+
+/// Check if a tool is authorized to use a specific secret
+pub fn is_tool_authorized(tool_name: &str, secret_key: &str) -> bool {
+    if let Ok(ctx) = INJECTION_CONTEXT.read() {
+        ctx.authorized_secrets
+            .get(tool_name)
+            .map(|secrets| secrets.contains(&secret_key.to_string()))
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
+/// Inject secrets into HTTP headers at the host boundary
+/// Only injects secrets that are authorized for the calling tool
+pub fn inject_secrets_for_request(
+    tool_name: &str,
+    url: &str,
+    mut headers: HashMap<String, String>,
+) -> Result<HashMap<String, String>, String> {
+    // First check if URL is allowed
+    let allowed = crate::security::http_allowlist::check_url_allowed(url);
+    if !allowed.allowed {
+        return Err(format!("URL not allowed: {}", allowed.reason));
+    }
+
+    // Check for leak in URL before any secret injection
+    let leak_result = leak_detector::scan_for_leaks(url);
+    if leak_result.blocked {
+        return Err(format!(
+            "Potential leak detected in URL: {:?}",
+            leak_result.matches
+        ));
+    }
+
+    // Only inject authorized secrets
+    if let Ok(ctx) = INJECTION_CONTEXT.read() {
+        if let Some(secrets) = ctx.authorized_secrets.get(tool_name) {
+            for secret_key in secrets {
+                if let Ok(secret) = get_secret(secret_key) {
+                    // Determine header name from secret key
+                    let header_name = match secret_key.as_str() {
+                        k if k.contains("openai") => "Authorization",
+                        k if k.contains("anthropic") => "x-api-key",
+                        k if k.contains("gemini") => "x-goog-api-key",
+                        _ => "Authorization",
+                    };
+
+                    // Format header value
+                    let header_value = if header_name == "Authorization" {
+                        format!("Bearer {}", secret)
+                    } else {
+                        secret.clone()
+                    };
+
+                    headers.insert(header_name.to_string(), header_value);
+                }
+            }
+        }
+    }
+
+    // Scan headers for leaks before sending
+    let headers_str = headers
+        .iter()
+        .map(|(k, v)| format!("{}: {}", k, v))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let leak_result = leak_detector::scan_for_leaks(&headers_str);
+    if leak_result.blocked {
+        return Err(format!(
+            "Potential leak detected in headers: {:?}",
+            leak_result.matches
+        ));
+    }
+
+    Ok(headers)
+}
+
+/// Scan response for leaked secrets and sanitize if needed
+pub fn sanitize_response(
+    tool_name: &str,
+    status: u16,
+    headers: Option<&HashMap<String, String>>,
+    body: Option<&str>,
+) -> Result<String, String> {
+    // Scan response for leaks
+    let leak_result = leak_detector::scan_response(status, headers, body);
+
+    if leak_result.blocked {
+        tracing::warn!(
+            "Potential credential leak detected in response to tool '{}': {:?}",
+            tool_name,
+            leak_result.matches
+        );
+
+        // Return sanitized content
+        if let Some(sanitized) = leak_result.sanitized_content {
+            return Ok(sanitized);
+        }
+    }
+
+    // Return original content
+    Ok(body.unwrap_or("").to_string())
 }
 
 // ============================================================================

@@ -45,17 +45,12 @@ pub struct SystemSettings {
     pub performance_mode: PerformanceMode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum PerformanceMode {
     Eco,
+    #[default]
     Balanced,
     High,
-}
-
-impl Default for PerformanceMode {
-    fn default() -> Self {
-        Self::Balanced
-    }
 }
 
 impl Default for SystemSettings {

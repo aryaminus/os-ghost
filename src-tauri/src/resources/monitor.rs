@@ -20,7 +20,15 @@ impl ResourceMonitor {
             sys: Arc::new(Mutex::new(sys)),
         }
     }
+}
 
+impl Default for ResourceMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ResourceMonitor {
     /// Check if the system is under heavy load based on the current mode
     /// Returns true if the app should PAUSE/THROTTLE background activities
     pub fn should_pause(&self, mode: PerformanceMode) -> bool {

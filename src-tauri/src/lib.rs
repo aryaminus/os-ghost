@@ -51,6 +51,9 @@ pub mod server;
 // Native OS Input Control (Phase 5: Native automation like UI-TARS)
 pub mod input;
 
+// Security (IronClaw-inspired)
+pub mod security;
+
 use ai::ai_provider::SmartAiRouter;
 use ai::gemini_client::GeminiClient;
 use ai::ollama_client::OllamaClient;

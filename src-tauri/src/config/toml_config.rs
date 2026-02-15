@@ -16,7 +16,7 @@ lazy_static::lazy_static! {
     static ref TOML_CONFIG: RwLock<Option<TomlConfig>> = RwLock::new(None);
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TomlConfig {
     #[serde(default)]
     pub core: CoreConfig,
@@ -247,22 +247,6 @@ pub struct IdentityConfig {
 
 fn default_identity_format() -> String {
     "openclaw".to_string()
-}
-
-impl TomlConfig {
-    pub fn default() -> Self {
-        Self {
-            core: CoreConfig::default(),
-            memory: MemoryConfig::default(),
-            gateway: GatewayConfig::default(),
-            autonomy: AutonomyConfig::default(),
-            runtime: RuntimeConfig::default(),
-            heartbeat: HeartbeatConfig::default(),
-            tunnel: TunnelConfig::default(),
-            browser: BrowserConfig::default(),
-            identity: IdentityConfig::default(),
-        }
-    }
 }
 
 fn get_config_path() -> PathBuf {
