@@ -1,4 +1,6 @@
 //! Lightweight scheduler for companion routines
+//!
+//! Enhanced with Moltis-inspired cron-based task scheduling.
 
 use crate::data::events_bus::{record_event, EventKind, EventPriority};
 use crate::data::timeline::{record_timeline_event, TimelineEntryType, TimelineStatus};
@@ -10,6 +12,17 @@ use tauri::{AppHandle, Emitter, Manager};
 
 const SCHEDULER_SETTINGS_FILE: &str = "scheduler_settings.json";
 
+/// Scheduled task definition (Moltis-inspired)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTask {
+    pub id: String,
+    pub name: String,
+    pub cron_expression: String,
+    pub command: String,
+    pub enabled: bool,
+    pub last_run: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchedulerSettings {
     pub daily_brief_enabled: bool,
@@ -18,6 +31,8 @@ pub struct SchedulerSettings {
     pub quiet_hours_enabled: bool,
     pub quiet_hours_start: String,
     pub quiet_hours_end: String,
+    #[serde(default)]
+    pub custom_tasks: Vec<ScheduledTask>,
 }
 
 impl Default for SchedulerSettings {
@@ -29,6 +44,7 @@ impl Default for SchedulerSettings {
             quiet_hours_enabled: true,
             quiet_hours_start: "22:00".to_string(),
             quiet_hours_end: "07:00".to_string(),
+            custom_tasks: Vec::new(),
         }
     }
 }
@@ -91,6 +107,55 @@ pub fn update_scheduler_settings(
     settings.quiet_hours_enabled = quiet_hours_enabled;
     settings.quiet_hours_start = quiet_hours_start;
     settings.quiet_hours_end = quiet_hours_end;
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+// ============================================================================
+// Custom Scheduled Tasks (Moltis-inspired)
+// ============================================================================
+
+#[tauri::command]
+pub fn get_scheduled_tasks() -> Vec<ScheduledTask> {
+    SchedulerSettings::load().custom_tasks
+}
+
+#[tauri::command]
+pub fn add_scheduled_task(
+    name: String,
+    cron_expression: String,
+    command: String,
+) -> Result<SchedulerSettings, String> {
+    let mut settings = SchedulerSettings::load();
+    
+    let task = ScheduledTask {
+        id: uuid::Uuid::new_v4().to_string(),
+        name,
+        cron_expression,
+        command,
+        enabled: true,
+        last_run: None,
+    };
+    
+    settings.custom_tasks.push(task);
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn remove_scheduled_task(task_id: String) -> Result<SchedulerSettings, String> {
+    let mut settings = SchedulerSettings::load();
+    settings.custom_tasks.retain(|t| t.id != task_id);
+    settings.save().map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn toggle_scheduled_task(task_id: String, enabled: bool) -> Result<SchedulerSettings, String> {
+    let mut settings = SchedulerSettings::load();
+    if let Some(task) = settings.custom_tasks.iter_mut().find(|t| t.id == task_id) {
+        task.enabled = enabled;
+    }
     settings.save().map_err(|e| e.to_string())?;
     Ok(settings)
 }

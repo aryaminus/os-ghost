@@ -54,6 +54,9 @@ pub mod input;
 // Security (IronClaw-inspired)
 pub mod security;
 
+// Plugin system (Moltis-inspired hooks)
+pub mod plugins;
+
 use ai::ai_provider::SmartAiRouter;
 use ai::gemini_client::GeminiClient;
 use ai::ollama_client::OllamaClient;
@@ -203,6 +206,10 @@ pub fn run() {
         .setup(|app| {
             crate::actions::rollback::init_rollback_manager();
             crate::actions::rollback::set_undo_executor(crate::actions::rollback::default_undo_executor());
+            // Initialize plugin hooks (Moltis-inspired)
+            crate::plugins::hooks::init_hooks();
+            // Initialize workspace context files (Moltis-inspired)
+            crate::data::workspace_context::init_workspace_context();
             // App menu + accessibility-friendly standard items
             let app_settings_item = MenuItem::with_id(
                 app,
@@ -1179,6 +1186,20 @@ pub fn run() {
             ipc::pause_workflow_execution,
             ipc::resume_workflow_execution,
             ipc::cancel_workflow_execution,
+            // Plugin/Hook commands (Moltis-inspired)
+            plugins::hooks::get_hooks,
+            plugins::hooks::reload_hooks_cmd,
+            plugins::hooks::enable_hook_cmd,
+            plugins::hooks::disable_hook_cmd,
+            plugins::hooks::get_hook_state,
+            // Workspace context commands (Moltis-inspired)
+            data::workspace_context::get_workspace_context_files,
+            data::workspace_context::reload_workspace_context_cmd,
+            data::workspace_context::get_tools_md_path,
+            data::workspace_context::get_agents_md_path,
+            data::workspace_context::get_boot_md_path,
+            // TOML config validation (Moltis-inspired)
+            config::toml_config::validate_toml_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

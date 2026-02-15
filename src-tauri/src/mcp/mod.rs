@@ -19,6 +19,7 @@
 pub mod browser;
 pub mod os_tools;
 pub mod sandbox;
+pub mod sanitization;
 pub mod traits;
 pub mod types;
 pub mod visual_tools;
@@ -29,6 +30,7 @@ pub use sandbox::{
     categorize_command, get_sandbox_config, is_command_blocked, update_sandbox_config,
     SandboxConfig, SandboxError, ShellCategory, TrustLevel,
 };
+pub use sanitization::{sanitize_output, sanitize_output_with_limit, sanitize_tool_result};
 pub use traits::{McpPrompt, McpResource, McpServer, McpTool};
 pub use types::*;
 pub use visual_tools::{

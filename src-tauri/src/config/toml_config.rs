@@ -416,6 +416,136 @@ pub fn reset_toml_config() -> Result<(), String> {
     save_toml_config(&default_config)
 }
 
+// ============================================================================
+// Config Validation (Moltis-inspired)
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigValidationResult {
+    pub valid: bool,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+    pub suggestions: Vec<String>,
+}
+
+impl Default for ConfigValidationResult {
+    fn default() -> Self {
+        Self {
+            valid: true,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+            suggestions: Vec::new(),
+        }
+    }
+}
+
+/// Known config fields for validation
+fn get_known_fields() -> Vec<&'static str> {
+    vec![
+        "core.api_key",
+        "core.default_provider",
+        "core.default_model",
+        "core.default_temperature",
+        "memory.backend",
+        "memory.auto_save",
+        "memory.embedding_provider",
+        "memory.vector_weight",
+        "memory.keyword_weight",
+        "gateway.require_pairing",
+        "gateway.allow_public_bind",
+        "gateway.port",
+        "autonomy.level",
+        "autonomy.workspace_only",
+        "autonomy.allowed_commands",
+        "autonomy.forbidden_paths",
+        "runtime.kind",
+        "heartbeat.enabled",
+        "heartbeat.interval_minutes",
+        "tunnel.provider",
+        "browser.enabled",
+        "browser.allowed_domains",
+        "identity.format",
+        "identity.path",
+        "identity.inline",
+    ]
+}
+
+/// Validate TOML config
+pub fn validate_toml_config(config: &TomlConfig) -> ConfigValidationResult {
+    let mut result = ConfigValidationResult::default();
+
+    // Check security settings
+    if config.gateway.allow_public_bind && config.gateway.port == 0 {
+        result
+            .warnings
+            .push("Gateway allows public bind but port is 0 - may expose to network".to_string());
+    }
+
+    if config.gateway.allow_public_bind && config.gateway.require_pairing {
+        result.warnings.push(
+            "Public bind enabled with pairing required - consider if this is the intended setup"
+                .to_string(),
+        );
+    }
+
+    // Check autonomy settings
+    if config.autonomy.level == "full" {
+        result.warnings.push(
+            "Autonomy level set to 'full' - agent can execute any command without supervision"
+                .to_string(),
+        );
+    }
+
+    // Check forbidden paths for path traversal
+    for path in &config.autonomy.forbidden_paths {
+        if path.contains("..") {
+            result
+                .errors
+                .push(format!("Forbidden path contains '..': {}", path));
+            result.valid = false;
+        }
+    }
+
+    // Check temperature range
+    if config.core.default_temperature < 0.0 || config.core.default_temperature > 2.0 {
+        result.errors.push(format!(
+            "Temperature {} is outside valid range 0.0-2.0",
+            config.core.default_temperature
+        ));
+        result.valid = false;
+    }
+
+    // Suggestions
+    if config.memory.embedding_provider.is_none() {
+        result
+            .suggestions
+            .push("Consider setting embedding_provider for better memory search".to_string());
+    }
+
+    if !config.heartbeat.enabled {
+        result
+            .suggestions
+            .push("Heartbeat is disabled - remote access may not work without it".to_string());
+    }
+
+    result
+}
+
+/// Check for unknown config fields (for future compatibility)
+pub fn check_unknown_fields(_raw: &toml::Value) -> Vec<String> {
+    let unknown = Vec::new();
+    get_known_fields(); // This would need proper field extraction
+
+    // For now, just return empty - proper implementation would parse TOML structure
+    unknown
+}
+
+#[tauri::command]
+pub fn validate_toml_settings() -> ConfigValidationResult {
+    let config = load_toml_config();
+    validate_toml_config(&config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

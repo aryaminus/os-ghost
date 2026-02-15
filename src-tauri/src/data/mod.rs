@@ -6,3 +6,4 @@ pub mod pairing;
 pub mod persona;
 pub mod skills;
 pub mod timeline;
+pub mod workspace_context;
