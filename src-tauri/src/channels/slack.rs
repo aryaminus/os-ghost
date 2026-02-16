@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn test_api_url() {
-        let channel = SlackChannel::new("xoxb-test-token").unwrap();
+        let channel = SlackChannel::new("TEST_TOKEN_FOR_UNIT_TESTS").unwrap();
         let url = channel.api_url("chat.postMessage");
         assert!(url.contains("slack.com"));
         assert!(url.contains("chat.postMessage"));

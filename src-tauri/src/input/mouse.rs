@@ -75,6 +75,9 @@ pub mod windows {
     }
 
     pub fn move_mouse(x: i32, y: i32) -> Result<(), InputError> {
+        // SAFETY: Direct FFI call to Windows SendInput API
+        // This is safe because we correctly construct the INPUT struct
+        // and the Windows API guarantees proper handling
         unsafe {
             let input = make_mouse_input(x, y, 0, MOUSEEVENTF_MOVE);
             SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
@@ -83,6 +86,9 @@ pub mod windows {
     }
 
     pub fn click_mouse(button: MouseButton) -> Result<(), InputError> {
+        // SAFETY: Direct FFI call to Windows SendInput API for mouse clicks
+        // This is safe because we correctly construct the INPUT struct
+        // and use the correct button flags
         unsafe {
             let (down_flag, up_flag) = match button {
                 MouseButton::Left => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
@@ -106,6 +112,9 @@ pub mod windows {
     }
 
     pub fn scroll(direction: ScrollDirection, amount: i32) -> Result<(), InputError> {
+        // SAFETY: Direct FFI call to Windows SendInput API for mouse wheel
+        // This is safe because we correctly construct the INPUT struct
+        // with the correct wheel delta value
         unsafe {
             let wheel_delta = match direction {
                 ScrollDirection::Up | ScrollDirection::Down => {

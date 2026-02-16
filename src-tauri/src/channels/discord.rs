@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_api_url() {
-        let channel = DiscordChannel::new("test.token").unwrap();
+        let channel = DiscordChannel::new("TEST_TOKEN_FOR_UNIT_TESTS").unwrap();
         let url = channel.api_url("/channels/123/messages");
         assert!(url.contains("discord.com"));
         assert!(url.contains("channels/123"));

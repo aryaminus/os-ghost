@@ -193,12 +193,17 @@ impl AgentOrchestrator {
         let prompt_clone = prompt.clone();
 
         // Spawn so we don't block IPC
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             match operator.execute_visual_task(&prompt_clone, steps).await {
                 Ok(result) => tracing::info!("Assistance task completed: {:?}", result),
                 Err(e) => tracing::error!("Assistance task failed: {}", e),
             }
         });
+        
+        // Handle spawn error
+        if let Err(e) = handle.await {
+            tracing::error!("Failed to join assistance task: {}", e);
+        }
 
         Ok("Assistance started".to_string())
     }
@@ -338,6 +343,8 @@ impl AgentOrchestrator {
             if let Err(e) = session.clear_temp_state() {
                 tracing::debug!("Failed to clear temp state: {}", e);
             }
+        } else {
+            tracing::warn!("Failed to acquire session lock for clearing temp state");
         }
 
         // ADK: Run before_agent callbacks
@@ -542,6 +549,8 @@ impl AgentOrchestrator {
                 if let Err(e) = session.apply_state_delta(&state_delta) {
                     tracing::warn!("Failed to apply state delta: {}", e);
                 }
+            } else {
+                tracing::warn!("Failed to acquire session lock for applying state delta");
             }
         }
 
@@ -639,6 +648,8 @@ impl AgentOrchestrator {
             if let Err(e) = session.set_proximity(proximity) {
                 tracing::warn!("Failed to update session proximity: {}", e);
             }
+        } else {
+            tracing::warn!("Failed to acquire session lock for updating proximity");
         }
 
         // ADK: Record invocation metrics

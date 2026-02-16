@@ -160,6 +160,14 @@ impl Clone for MemoryStore {
     }
 }
 
+impl Drop for MemoryStore {
+    fn drop(&mut self) {
+        if let Err(e) = self.db.flush() {
+            tracing::warn!("Failed to flush memory store on drop: {}", e);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -71,8 +71,9 @@ impl HeartbeatEngine {
         tracing::info!("Heartbeat engine started with {} minute interval", self.interval_mins);
         
         {
-            let mut state = HEARTBEAT_STATE.write().unwrap();
-            state.running = true;
+            if let Ok(mut state) = HEARTBEAT_STATE.write() {
+                state.running = true;
+            }
         }
         
         loop {
@@ -81,10 +82,11 @@ impl HeartbeatEngine {
             if let Err(e) = self.tick(&tx).await {
                 tracing::error!("Heartbeat tick error: {}", e);
                 
-                let mut state = HEARTBEAT_STATE.write().unwrap();
-                state.errors.push(e.to_string());
-                if state.errors.len() > 10 {
-                    state.errors.remove(0);
+                if let Ok(mut state) = HEARTBEAT_STATE.write() {
+                    state.errors.push(e.to_string());
+                    if state.errors.len() > 10 {
+                        state.errors.remove(0);
+                    }
                 }
             }
         }
@@ -97,8 +99,14 @@ impl HeartbeatEngine {
         if let Some(ref dir) = self.workspace_dir {
             let tasks_file = std::path::Path::new(dir).join("HEARTBEAT.md");
             if tasks_file.exists() {
-                let content = std::fs::read_to_string(&tasks_file)
-                    .map_err(|e| e.to_string())?;
+                // Use spawn_blocking to avoid blocking the async runtime
+                let tasks_file_path = tasks_file.clone();
+                let content = tokio::task::spawn_blocking(move || {
+                    std::fs::read_to_string(&tasks_file_path)
+                })
+                .await
+                .map_err(|e| format!("Task join error: {}", e))?
+                .map_err(|e| format!("Failed to read HEARTBEAT.md: {}", e))?;
                 
                 let tasks = Self::parse_tasks(&content);
                 
@@ -124,14 +132,15 @@ impl HeartbeatEngine {
         
         // Update state
         {
-            let mut state = HEARTBEAT_STATE.write().unwrap();
-            state.tasks_executed += 1;
-            state.last_task_time = Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0)
-            );
+            if let Ok(mut state) = HEARTBEAT_STATE.write() {
+                state.tasks_executed += 1;
+                state.last_task_time = Some(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                );
+            }
         }
         
         Ok(())
@@ -144,11 +153,18 @@ impl HeartbeatEngine {
     }
     
     async fn execute_task(&self, task: &HeartbeatTask) -> Result<String, String> {
+        let command = &task.command;
+        
+        // Check if command is blocked by security policy
+        if crate::mcp::sandbox::is_command_blocked(command) {
+            return Err(format!("Command blocked by security policy: {}", command));
+        }
+        
         let output = tokio::process::Command::new("sh")
-            .args(["-c", &task.command])
+            .args(["-c", command])
             .output()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Failed to execute command: {}", e))?;
         
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -158,9 +174,12 @@ impl HeartbeatEngine {
     }
     
     pub fn stop() {
-        let mut state = HEARTBEAT_STATE.write().unwrap();
-        state.running = false;
-        tracing::info!("Heartbeat engine stopped");
+        if let Ok(mut state) = HEARTBEAT_STATE.write() {
+            state.running = false;
+            tracing::info!("Heartbeat engine stopped");
+        } else {
+            tracing::error!("Failed to acquire write lock on heartbeat state");
+        }
     }
 }
 
@@ -196,41 +215,44 @@ impl DaemonManager {
     }
     
     pub fn register_component(&self, name: &str) {
-        let mut components = self.components.write().unwrap();
-        components.push(DaemonComponent {
-            name: name.to_string(),
-            running: false,
-            restart_count: 0,
-            last_error: None,
-        });
+        if let Ok(mut components) = self.components.write() {
+            components.push(DaemonComponent {
+                name: name.to_string(),
+                running: false,
+                restart_count: 0,
+                last_error: None,
+            });
+        }
     }
     
     pub fn set_running(&self, name: &str, running: bool) {
-        let mut components = self.components.write().unwrap();
-        if let Some(comp) = components.iter_mut().find(|c| c.name == name) {
-            comp.running = running;
-            if running {
-                comp.last_error = None;
+        if let Ok(mut components) = self.components.write() {
+            if let Some(comp) = components.iter_mut().find(|c| c.name == name) {
+                comp.running = running;
+                if running {
+                    comp.last_error = None;
+                }
             }
         }
     }
     
     pub fn record_error(&self, name: &str, error: &str) {
-        let mut components = self.components.write().unwrap();
-        if let Some(comp) = components.iter_mut().find(|c| c.name == name) {
-            comp.last_error = Some(error.to_string());
-            comp.restart_count += 1;
+        if let Ok(mut components) = self.components.write() {
+            if let Some(comp) = components.iter_mut().find(|c| c.name == name) {
+                comp.last_error = Some(error.to_string());
+                comp.restart_count += 1;
+            }
         }
     }
     
     pub fn status(&self) -> Vec<DaemonComponent> {
-        self.components.read().unwrap().clone()
+        self.components.read().map(|c| c.clone()).unwrap_or_default()
     }
     
     pub fn all_running(&self) -> bool {
-        self.components.read().unwrap()
-            .iter()
-            .all(|c| c.running)
+        self.components.read()
+            .map(|c| c.iter().all(|c| c.running))
+            .unwrap_or(false)
     }
 }
 
@@ -250,7 +272,7 @@ lazy_static::lazy_static! {
 
 #[tauri::command]
 pub fn get_heartbeat_state() -> HeartbeatState {
-    HEARTBEAT_STATE.read().unwrap().clone()
+    HEARTBEAT_STATE.read().map(|s| s.clone()).unwrap_or_default()
 }
 
 #[tauri::command]

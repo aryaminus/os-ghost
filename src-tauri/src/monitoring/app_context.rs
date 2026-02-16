@@ -211,13 +211,23 @@ impl AppContextDetector {
             return Ok(None);
         }
 
+        // Sanitize app name to prevent AppleScript injection
+        let sanitized_name = app_name
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-' || *c == '_')
+            .collect::<String>();
+        
+        if sanitized_name.is_empty() {
+            return Ok(None);
+        }
+
         // Get bundle identifier
         let bundle_output = tokio::process::Command::new("osascript")
             .args([
                 "-e",
                 &format!(
                     "tell application \"System Events\" to get bundle identifier of application process \"{}\"",
-                    app_name
+                    sanitized_name
                 ),
             ])
             .output()

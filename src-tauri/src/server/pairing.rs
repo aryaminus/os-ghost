@@ -59,16 +59,43 @@ fn current_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
+fn constant_time_compare(a: &str, b: &str) -> bool {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+
+    if a_bytes.len() != b_bytes.len() {
+        return false;
+    }
+
+    let mut result = true;
+    for (x, y) in a_bytes.iter().zip(b_bytes.iter()) {
+        result &= x == y;
+    }
+    result
+}
+
 fn generate_code() -> String {
-    let mut rng = rand::thread_rng();
-    let code: u32 = rng.gen_range(100000..999999);
+    use rand::RngCore;
+    let mut rng = rand::rngs::OsRng;
+    let mut bytes = [0u8; 4];
+    rng.fill_bytes(&mut bytes);
+    let code = u32::from_le_bytes(bytes) % 900000 + 100000;
     code.to_string()
 }
 
 fn generate_token() -> String {
-    let mut rng = rand::thread_rng();
-    let bytes: Vec<u8> = (0..32).map(|_| rng.gen()).collect();
+    use rand::RngCore;
+    let mut rng = rand::rngs::OsRng;
+    let mut bytes = [0u8; 32];
+    rng.fill_bytes(&mut bytes);
     base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE, &bytes)
+}
+
+fn cleanup_expired_tokens() {
+    if let Ok(mut tokens) = ACTIVE_TOKENS.write() {
+        let now = current_timestamp();
+        tokens.retain(|t| t.expires_at > now);
+    }
 }
 
 // ============================================================================
@@ -146,6 +173,9 @@ pub fn validate_pairing_code(code: &str) -> Result<String, PairingError> {
     };
 
     if let Ok(mut tokens) = ACTIVE_TOKENS.write() {
+        // Cleanup expired tokens before adding new one
+        let now = current_timestamp();
+        tokens.retain(|t| t.expires_at > now);
         tokens.push(auth_token);
     }
 
@@ -154,6 +184,9 @@ pub fn validate_pairing_code(code: &str) -> Result<String, PairingError> {
 }
 
 pub fn validate_token(token: &str) -> bool {
+    // Cleanup expired tokens first
+    cleanup_expired_tokens();
+
     let tokens = if let Ok(t) = ACTIVE_TOKENS.read() {
         t.clone()
     } else {
@@ -163,7 +196,8 @@ pub fn validate_token(token: &str) -> bool {
     let now = current_timestamp();
 
     for t in &tokens {
-        if t.token == token && now < t.expires_at {
+        // Use constant-time comparison to prevent timing attacks
+        if constant_time_compare(&t.token, token) && now < t.expires_at {
             return true;
         }
     }

@@ -16,6 +16,7 @@ const WorkflowsSection = ({ settingsState }) => {
     startUrl: "",
   });
   const [showNewForm, setShowNewForm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   // Load workflows on mount
   useEffect(() => {
@@ -114,8 +115,11 @@ const WorkflowsSection = ({ settingsState }) => {
   };
 
   const handleDeleteWorkflow = async (workflowId) => {
-    if (!confirm("Are you sure you want to delete this workflow?")) return;
-    
+    // Use state-based confirmation instead of native confirm()
+    setDeleteConfirm(workflowId);
+  };
+  
+  const handleConfirmDelete = async (workflowId) => {
     try {
       await invoke("delete_workflow", { id: workflowId });
       await loadWorkflows();
@@ -126,6 +130,11 @@ const WorkflowsSection = ({ settingsState }) => {
       console.error("Failed to delete workflow", err);
       setError("Failed to delete workflow");
     }
+    setDeleteConfirm(null);
+  };
+  
+  const handleCancelDelete = () => {
+    setDeleteConfirm(null);
   };
 
   const formatDuration = (seconds) => {
@@ -139,6 +148,28 @@ const WorkflowsSection = ({ settingsState }) => {
         <h2>Workflows</h2>
         <p>Record and replay repetitive browser tasks</p>
       </header>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={handleCancelDelete}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Confirm Delete</h3>
+            <p>Are you sure you want to delete this workflow?</p>
+            <div className="modal-actions">
+              <button type="button" className="ghost-button" onClick={handleCancelDelete}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() => handleConfirmDelete(deleteConfirm)}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="settings-card">
         <div className="card-row">

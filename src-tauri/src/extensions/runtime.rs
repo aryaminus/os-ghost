@@ -13,6 +13,25 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static WATCH_STARTED: AtomicBool = AtomicBool::new(false);
 static EXTENSION_CACHE: RwLock<Vec<ExtensionStatus>> = RwLock::new(Vec::new());
 
+// Allowlist for permitted extension tool commands
+const ALLOWED_TOOL_COMMANDS: &[&str] = &[
+    "python3", "python", "node", "ruby", "perl", "bash", "sh", "pwsh", "powershell",
+];
+
+fn is_tool_command_allowed(command: &str) -> bool {
+    // Extract base command from full command line
+    let base = command.split_whitespace().next().unwrap_or(command);
+    let base = if base.contains('/') || base.contains('\\') {
+        Path::new(base)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(base)
+    } else {
+        base
+    };
+    ALLOWED_TOOL_COMMANDS.contains(&base)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtensionManifest {
     pub id: String,
@@ -168,6 +187,11 @@ pub async fn execute_extension_tool_internal(
         .iter()
         .find(|t| t.name == tool_name)
         .ok_or_else(|| "Tool not found".to_string())?;
+
+    // Validate command is in allowlist
+    if !is_tool_command_allowed(&tool.command) {
+        return Err(format!("Extension tool command not allowed: {}", tool.command));
+    }
 
     // Cross-platform shell execution
     let mut command = if cfg!(target_os = "windows") {

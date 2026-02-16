@@ -829,9 +829,10 @@ pub fn run() {
 
             // Create shared memory instances (used by both Orchestrator and Monitor)
             // Note: We use std::sync::Mutex here because:
-            // 1. The underlying sled database is already thread-safe
+            // 1. The underlying sled database is already thread-safe (Arc-wrapped internally)
             // 2. Lock durations are short (just for state reads/writes)
             // 3. The mutex protects higher-level state coordination, not sled access
+            // 4. MemoryStore already implements Clone by Arc-cloning internally
             let store = memory::MemoryStore::new().map_err(|e| {
                 tracing::error!("Failed to create memory store: {}", e);
                 e

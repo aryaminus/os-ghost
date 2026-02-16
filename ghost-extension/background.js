@@ -332,17 +332,46 @@ function connectToNative() {
 function handleNativeMessage(message) {
 	log("Received from native:", message);
 
-		switch (message.action) {
-			case "ping":
-				sendToNative({ type: "heartbeat", timestamp: Date.now() });
-				break;
-			case "permissions":
-				permissions = {
-					allowBrowserContent: !!message.data?.allow_browser_content,
-					allowTabCapture: !!message.data?.allow_tab_capture,
-				};
-				log("Updated permissions:", permissions);
-				break;
+	// Validate message structure
+	if (!message || typeof message !== 'object') {
+		warn("Invalid message received from native app");
+		return;
+	}
+
+	// Whitelist of allowed actions from native app
+	const ALLOWED_ACTIONS = [
+		'ping',
+		'permissions',
+		'capture_visible_tab',
+		'inject_effect',
+		'hello',
+		'status',
+		'config_update'
+	];
+
+	// Validate action is in whitelist
+	if (message.action && !ALLOWED_ACTIONS.includes(message.action)) {
+		warn("Unknown action from native app:", message.action);
+		return;
+	}
+
+	// Validate data for permissions changes
+	if (message.action === 'permissions') {
+		if (message.data && typeof message.data === 'object') {
+			// Only allow specific boolean fields
+			permissions = {
+				allowBrowserContent: !!message.data?.allow_browser_content,
+				allowTabCapture: !!message.data?.allow_tab_capture,
+			};
+		}
+		log("Updated permissions:", permissions);
+		return;
+	}
+
+	switch (message.action) {
+		case "ping":
+			sendToNative({ type: "heartbeat", timestamp: Date.now() });
+			break;
 			case "capture_visible_tab":
 				if (!permissions.allowTabCapture) {
 					warn("Tab capture blocked by consent");

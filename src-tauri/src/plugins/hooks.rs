@@ -24,6 +24,33 @@ lazy_static::lazy_static! {
     static ref HOOK_STATE: RwLock<HookState> = RwLock::new(HookState::default());
 }
 
+// Allowlist of permitted commands for hook execution
+const ALLOWED_HOOK_COMMANDS: &[&str] = &[
+    "bash",
+    "sh",
+    "python3",
+    "python",
+    "node",
+    "ruby",
+    "perl",
+    "powershell",
+    "pwsh",
+];
+
+fn is_command_allowed(command: &str) -> bool {
+    // Get the base command (first component of path or command)
+    let base = if command.contains('/') || command.contains('\\') {
+        Path::new(command)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(command)
+    } else {
+        command
+    };
+
+    ALLOWED_HOOK_COMMANDS.contains(&base)
+}
+
 // ============================================================================
 // Hook Types
 // ============================================================================
@@ -241,13 +268,14 @@ pub fn execute_hook(hook: &HookDefinition, payload: &HookPayload) -> HookResult 
 
     // Check circuit breaker
     {
-        let state = HOOK_STATE.read().unwrap();
-        if state.is_disabled(&hook.name) {
-            return HookResult {
-                action: HookAction::Continue,
-                data: None,
-                reason: Some("Hook disabled due to repeated failures".to_string()),
-            };
+        if let Ok(state) = HOOK_STATE.read() {
+            if state.is_disabled(&hook.name) {
+                return HookResult {
+                    action: HookAction::Continue,
+                    data: None,
+                    reason: Some("Hook disabled due to repeated failures".to_string()),
+                };
+            }
         }
     }
 
@@ -263,6 +291,16 @@ pub fn execute_hook(hook: &HookDefinition, payload: &HookPayload) -> HookResult 
             };
         }
     };
+
+    // Validate command is in allowlist before execution
+    if !is_command_allowed(&hook.command) {
+        tracing::error!("Hook command not allowed: {}", hook.command);
+        return HookResult {
+            action: HookAction::Continue,
+            data: None,
+            reason: Some(format!("Command not allowed: {}", hook.command)),
+        };
+    }
 
     // Execute command synchronously
     let output = std::process::Command::new(&hook.command)

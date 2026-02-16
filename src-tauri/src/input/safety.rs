@@ -127,10 +127,6 @@ impl InputSafetyChecker {
             (vec![Key::Command, Key::Option, Key::Escape], "Force quit"),
             // Sleep
             (vec![Key::Command, Key::Option, Key::Power], "Sleep"),
-            (
-                vec![Key::Control, Key::Alt, Key::Delete],
-                "System interrupt",
-            ),
             // Log out
             (vec![Key::Command, Key::Shift, Key::Q], "Log out"),
             // Lock screen
@@ -209,10 +205,21 @@ impl InputSafetyChecker {
 
     /// Check if text looks like an SSN
     fn looks_like_ssn(text: &str) -> bool {
-        // Simple pattern: XXX-XX-XXXX or XXXXXXXXX
+        // Proper SSN pattern: XXX-XX-XXXX or XXXXXXXXX
+        // Must check for the dashes format or validate area/group numbers
         let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
 
-        digits.len() == 9
+        if digits.len() != 9 {
+            return false;
+        }
+
+        // Check for valid SSN format (area number cannot be 000, 666, or 900-999)
+        // Group number cannot be 00, serial number cannot be 0000
+        let area: u32 = digits[0..3].parse().unwrap_or(0);
+        let group: u32 = digits[3..5].parse().unwrap_or(0);
+        let serial: u32 = digits[5..9].parse().unwrap_or(0);
+
+        (area != 0 && area != 666 && area < 900) && group != 0 && serial != 0
     }
 
     /// Check if key combo matches

@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_api_url() {
-        let channel = TelegramChannel::new("123456DEF123:ABC-4ghIkl-zyx57W2v1u123ew11").unwrap();
+        let channel = TelegramChannel::new("TEST_TOKEN_FOR_UNIT_TESTS").unwrap();
         let url = channel.api_url("sendMessage");
         assert!(url.contains("api.telegram.org"));
         assert!(url.contains("sendMessage"));

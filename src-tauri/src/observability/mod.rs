@@ -224,6 +224,8 @@ pub mod otel {
     use std::sync::RwLock;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    const MAX_TRACES: usize = 1000;
+
     lazy_static::lazy_static! {
         static ref TRACES: RwLock<Vec<Trace>> = RwLock::new(Vec::new());
     }
@@ -260,6 +262,11 @@ pub mod otel {
 
         if let Ok(mut traces) = TRACES.write() {
             traces.push(trace);
+            // Prune old traces to prevent unbounded memory growth
+            if traces.len() > MAX_TRACES {
+                let remove_count = traces.len() - MAX_TRACES + 100;
+                traces.drain(0..remove_count);
+            }
         }
 
         id

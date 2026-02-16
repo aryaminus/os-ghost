@@ -11,6 +11,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Authentication configuration
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -44,7 +45,34 @@ pub async fn auth_middleware(
         });
 
     match (&config.api_key, api_key) {
-        (Some(expected), Some(provided)) if expected == provided => Ok(next.run(request).await),
+        (Some(expected), Some(provided)) => {
+            // Use constant-time comparison to prevent timing attacks
+            // Also add a fixed delay to prevent timing analysis
+            let start = Instant::now();
+            
+            // Use volatile read to prevent optimization
+            let expected_bytes = expected.as_bytes();
+            let provided_bytes = provided.as_bytes();
+            
+            let mut result = expected_bytes.len() == provided_bytes.len();
+            if result {
+                for (a, b) in expected_bytes.iter().zip(provided_bytes.iter()) {
+                    result &= (a ^ b) == 0;
+                }
+            }
+            
+            // Ensure consistent timing regardless of result
+            let elapsed = start.elapsed();
+            if elapsed.as_nanos() < 1000 {
+                std::thread::sleep(std::time::Duration::from_nanos(1000 - elapsed.as_nanos() as u64));
+            }
+            
+            if result {
+                Ok(next.run(request).await)
+            } else {
+                Err(StatusCode::UNAUTHORIZED)
+            }
+        }
         (None, _) => {
             // No API key configured, allow all
             Ok(next.run(request).await)

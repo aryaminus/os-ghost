@@ -483,6 +483,17 @@ fn find_chrome_path() -> Option<String> {
 pub async fn launch_chrome(url: Option<String>) -> Result<(), String> {
     let chrome_path = find_chrome_path().ok_or("Chrome not found")?;
 
+    // Validate URL if provided
+    if let Some(ref url) = url {
+        let normalized = url.trim();
+        let allowed = normalized.starts_with("https://")
+            || normalized.starts_with("http://")
+            || normalized.starts_with("file://");
+        if !allowed {
+            return Err("Unsupported URL scheme for Chrome launch".to_string());
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         let mut cmd = std::process::Command::new("open");
@@ -595,17 +606,23 @@ pub async fn generate_adaptive_puzzle(
 
     {
         let mut puzzles = puzzles.write().map_err(|e| format!("Lock error: {}", e))?;
-        while puzzles
-            .iter()
-            .filter(|p| p.id.starts_with("adaptive_"))
-            .count()
-            >= 5
-        {
-            if let Some(idx) = puzzles.iter().position(|p| p.id.starts_with("adaptive_")) {
-                puzzles.remove(idx);
-            } else {
-                break;
-            }
+        
+        // Efficiently manage adaptive puzzles - keep max 5
+        // First, count existing adaptive puzzles
+        let adaptive_count = puzzles.iter().filter(|p| p.id.starts_with("adaptive_")).count();
+        
+        // If we're at or above the limit, remove oldest ones (first ones in the vec)
+        if adaptive_count >= 5 {
+            let remove_count = adaptive_count - 4; // Keep 5, remove excess
+            let mut removed = 0;
+            puzzles.retain(|p| {
+                if removed < remove_count && p.id.starts_with("adaptive_") {
+                    removed += 1;
+                    false
+                } else {
+                    true
+                }
+            });
         }
         puzzles.push(puzzle);
     }
@@ -1764,7 +1781,10 @@ use std::sync::Mutex;
 static WORKFLOW_STORE: Mutex<Option<WorkflowStore>> = Mutex::new(None);
 
 fn get_workflow_store() -> WorkflowStore {
-    WORKFLOW_STORE.lock().unwrap().clone().unwrap_or_default()
+    WORKFLOW_STORE.lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .unwrap_or_default()
 }
 
 /// Start recording a new workflow

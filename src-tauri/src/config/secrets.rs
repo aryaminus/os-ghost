@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 const SERVICE_NAME: &str = "os-ghost";
+const MAX_CACHE_SIZE: usize = 50;
 
 lazy_static::lazy_static! {
     static ref SECRET_CACHE: RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
@@ -51,8 +52,14 @@ pub fn store_secret(key: &str, value: &str) -> Result<(), SecretError> {
     let entry = Entry::new(SERVICE_NAME, key)?;
     entry.set_password(value)?;
 
-    // Update cache
+    // Update cache with size limit
     if let Ok(mut cache) = SECRET_CACHE.write() {
+        // Evict oldest entries if cache is full
+        while cache.len() >= MAX_CACHE_SIZE {
+            if let Some(first_key) = cache.keys().next().cloned() {
+                cache.remove(&first_key);
+            }
+        }
         cache.insert(key.to_string(), value.to_string());
     }
 

@@ -176,23 +176,26 @@ impl UndoStack {
     where
         F: Fn(&UndoableAction) -> Result<(), String> + Send + Sync + 'static,
     {
-        let mut guard = self.undo_executor.lock().unwrap();
-        *guard = Some(Box::new(executor));
+        if let Ok(mut guard) = self.undo_executor.lock() {
+            *guard = Some(Box::new(executor));
+        }
     }
 
     /// Push an action onto the undo stack
     pub fn push(&self, action: UndoableAction) {
-        let mut stack = self.actions.lock().unwrap();
-        stack.push_front(action);
+        if let Ok(mut stack) = self.actions.lock() {
+            stack.push_front(action);
 
-        // Limit stack size
-        while stack.len() > MAX_UNDO_STACK_SIZE {
-            stack.pop_back();
+            // Limit stack size
+            while stack.len() > MAX_UNDO_STACK_SIZE {
+                stack.pop_back();
+            }
+
+            // Clear redo stack when new action is pushed
+            if let Ok(mut redo) = self.redo_stack.lock() {
+                redo.clear();
+            }
         }
-
-        // Clear redo stack when new action is pushed
-        let mut redo = self.redo_stack.lock().unwrap();
-        redo.clear();
     }
 
     /// Record a navigation action
@@ -258,8 +261,16 @@ impl UndoStack {
     /// Undo the most recent action
     pub fn undo(&self) -> UndoResult {
         let action = {
-            let mut stack = self.actions.lock().unwrap();
-            stack.pop_front()
+            if let Ok(mut stack) = self.actions.lock() {
+                stack.pop_front()
+            } else {
+                return UndoResult {
+                    success: false,
+                    action: None,
+                    error: Some("Failed to acquire lock".to_string()),
+                    restored_state: None,
+                };
+            }
         };
 
         match action {
@@ -274,18 +285,23 @@ impl UndoStack {
                 }
 
                 // Execute the undo if we have an executor
-                if let Some(executor) = &*self.undo_executor.lock().unwrap() {
-                    if let Err(e) = executor(&action) {
-                        // Put action back on stack if undo failed
-                        let mut stack = self.actions.lock().unwrap();
-                        stack.push_front(action.clone());
+                let executor_opt = self.undo_executor.lock().ok();
 
-                        return UndoResult {
-                            success: false,
-                            action: Some(action),
-                            error: Some(e),
-                            restored_state: None,
-                        };
+                if let Some(executor_guard) = executor_opt {
+                    if let Some(executor) = executor_guard.as_ref() {
+                        if let Err(e) = executor(&action) {
+                            // Put action back on stack if undo failed
+                            if let Ok(mut stack) = self.actions.lock() {
+                                stack.push_front(action.clone());
+                            }
+
+                            return UndoResult {
+                                success: false,
+                                action: Some(action),
+                                error: Some(e),
+                                restored_state: None,
+                            };
+                        }
                     }
                 }
 

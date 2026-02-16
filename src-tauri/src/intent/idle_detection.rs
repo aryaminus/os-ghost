@@ -66,12 +66,13 @@ impl IdleDetector {
         let is_idle = Arc::clone(&self.is_idle);
         let idle_since = Arc::clone(&self.idle_since);
         let idle_threshold = self.idle_threshold;
+        let running = Arc::clone(&self.running);
 
         // Spawn monitoring task
         tokio::spawn(async move {
             let check_interval = Duration::from_secs(5); // Check every 5 seconds
 
-            loop {
+            while running.load(Ordering::SeqCst) {
                 tokio::time::sleep(check_interval).await;
 
                 // Get last activity time
@@ -94,6 +95,7 @@ impl IdleDetector {
                     tracing::info!("User is no longer idle");
                 }
             }
+            tracing::debug!("Idle detection loop exited");
         });
     }
 
