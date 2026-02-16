@@ -8,6 +8,7 @@
 //! - `app:` - Application-scoped (global settings)
 //! - (no prefix) - Session-scoped (default)
 
+pub mod advanced;
 pub mod compaction;
 pub mod hybrid;
 pub mod long_term;
@@ -15,6 +16,10 @@ pub mod scoped_state;
 pub mod session;
 pub mod store;
 
+pub use advanced::{
+    AdvancedMemory, ExportedWorkflow, FileDrop, MemoryEntry, MemoryKind, Mood,
+    OperationalMode, PersonalityGenome, RetrievalConfig,
+};
 pub use compaction::{get_boot_tasks, inject_workspace_context, run_silent_memory_turn, should_compact};
 pub use long_term::LongTermMemory;
 pub use scoped_state::{IntoScopedKey, ScopedState, StateScope};

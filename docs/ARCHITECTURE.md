@@ -111,6 +111,16 @@ Multi-channel messaging (`src-tauri/src/channels/`):
 - **Discord** - Bot integration
 - **Slack** - App integration
 
+## Advanced Memory (HermitClaw-Inspired)
+
+Memory system (`src-tauri/src/memory/advanced.rs`) enhanced with:
+
+- **Three-Factor Retrieval**: Scores memories by recency + importance + relevance
+- **Reflection Hierarchy**: Synthesizes insights when cumulative importance exceeds threshold (50)
+- **Mood System**: Autonomous behavior modes (Research, DeepDive, Coder, Writer, Explorer, Organizer)
+- **Focus Mode**: Task-locked operation - Ghost ignores autonomous behaviors until complete
+- **Personality Genome**: Entropy-based unique identity generation from keyboard input
+
 ## Hybrid Memory (ZeroClaw-Inspired)
 
 Memory system (`src-tauri/src/memory/hybrid.rs`) combines:
@@ -118,6 +128,21 @@ Memory system (`src-tauri/src/memory/hybrid.rs`) combines:
 - **SQLite** - Structured data
 - **FTS5** - Full-text search
 - **Vector search** - Semantic similarity
+
+## Workflow Export (DroidClaw-Inspired)
+
+Workflow system (`src-tauri/src/workflow/mod.rs`) supports:
+
+- **JSON Export**: Export recorded workflows to DroidClaw-compatible JSON format
+- **Portable Workflows**: Share and reuse workflows across platforms
+
+## File Drop Processing (HermitClaw-Inspired)
+
+File watcher (`src-tauri/src/data/file_drop.rs`) provides:
+
+- **Directory Monitoring**: Watches for new files in workspace
+- **Auto-Processing**: Detects and processes text files, images, PDFs
+- **Supported Types**: txt, md, py, json, csv, pdf, png, jpg, gif, webp
 
 ## AIEOS Identity (ZeroClaw-Inspired)
 
@@ -127,6 +152,7 @@ AI Entity Object Specification (`src-tauri/src/data/identity.rs`) provides stand
 - Psychology (traits, MBTI, moral compass)
 - Linguistics (text style, formality)
 - Motivations (goals, fears)
+- **Personality Genome**: Entropy-based unique identity from keyboard input (HermitClaw-inspired)
 
 ## IPC & Events
 

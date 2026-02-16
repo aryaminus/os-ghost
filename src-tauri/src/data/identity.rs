@@ -13,6 +13,7 @@
 //! - History (origin story, education)
 //! - Interests (hobbies, favorites)
 
+use crate::memory::PersonalityGenome;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::sync::RwLock;
@@ -406,6 +407,144 @@ pub fn get_current_identity() -> Option<AIEOSIdentity> {
 // ============================================================================
 // Tauri Commands
 // ============================================================================
+
+/// Generate personality genome from keyboard entropy (HermitClaw-style)
+///
+/// Takes keystrokes and generates a deterministic genome that selects:
+/// - 3 curiosity domains from 50 options
+/// - 2 thinking styles from 16 options  
+/// - 1 temperament from 8 options
+///
+/// The same keystrokes always produce the same personality.
+#[tauri::command]
+pub fn generate_personality_genome(keystrokes: String) -> PersonalityGenome {
+    use crate::memory::advanced::PersonalityGenome;
+
+    // Hash the keystrokes using SHA-512 for deterministic genome
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    keystrokes.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    // Curiosity domains (50 options)
+    let curiosity_domains = vec![
+        "mycology",
+        "fractal geometry",
+        "tidepool ecology",
+        "quantum computing",
+        "byzantine history",
+        "origami mathematics",
+        "deep sea biology",
+        "language evolution",
+        "astrophysics",
+        "neurosymbolic AI",
+        "viral evolution",
+        "glaciology",
+        "cognitive archaeology",
+        "complex systems",
+        "information theory",
+        "synthetic biology",
+        "topology",
+        "chaos theory",
+        "materials science",
+        "bioinformatics",
+        "ethnomusicology",
+        "computational linguistics",
+        "network science",
+        "thermodynamics",
+        "cryptography",
+        "game theory",
+        "category theory",
+        "number theory",
+        "particle physics",
+        "organic chemistry",
+        "cell biology",
+        "developmental psychology",
+        "sociolinguistics",
+        "economic history",
+        "philosophy of mind",
+        "formal verification",
+        "robotics",
+        "computer vision",
+        "natural language processing",
+        "reinforcement learning",
+        "distributed systems",
+        "programming language theory",
+        "software engineering",
+        "data visualization",
+        "human-computer interaction",
+        "accessibility",
+        "digital humanities",
+        "archaeogenetics",
+        "paleoclimatology",
+        "exoplanet geology",
+        " SETI",
+    ];
+
+    // Thinking styles (16 options)
+    let thinking_styles = vec![
+        "connecting disparate ideas",
+        "inverting assumptions",
+        "first principles reasoning",
+        "analogical thinking",
+        "lateral thinking",
+        "systems thinking",
+        "design thinking",
+        "critical thinking",
+        "creative synthesis",
+        "reductionist analysis",
+        "abstraction",
+        "pattern recognition",
+        "counterfactual reasoning",
+        "bayesian updating",
+        "dialectical reasoning",
+        "metacognitive reflection",
+    ];
+
+    // Temperaments (8 options)
+    let temperaments = vec![
+        "playful and associative",
+        "methodical and precise",
+        "intuitive and exploratory",
+        "analytical and detached",
+        "creative and improvisational",
+        "systematic and thorough",
+        "curious and open-minded",
+        "pragmatic and focused",
+    ];
+
+    // Select based on hash
+    let mut hash_val = hash;
+
+    let num_domains = 3;
+    let selected_domains: Vec<String> = (0..num_domains)
+        .map(|_| {
+            let idx = (hash_val % curiosity_domains.len() as u64) as usize;
+            hash_val = hash_val.wrapping_mul(31).wrapping_add(idx as u64);
+            curiosity_domains[idx].to_string()
+        })
+        .collect();
+
+    let num_styles = 2;
+    let selected_styles: Vec<String> = (0..num_styles)
+        .map(|_| {
+            let idx = (hash_val % thinking_styles.len() as u64) as usize;
+            hash_val = hash_val.wrapping_mul(31).wrapping_add(idx as u64);
+            thinking_styles[idx].to_string()
+        })
+        .collect();
+
+    let temperament_idx = (hash_val % temperaments.len() as u64) as usize;
+    let temperament = temperaments[temperament_idx].to_string();
+
+    PersonalityGenome {
+        curiosity_domains: selected_domains,
+        thinking_styles: selected_styles,
+        temperament,
+    }
+}
 
 #[tauri::command]
 pub fn load_aieos_identity(

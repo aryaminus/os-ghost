@@ -42,6 +42,30 @@ pub use reflection::{create_narrator_with_reflection, ReflectionConfig, Reflecti
 pub use replay::{ReplayProgress, ReplayResult, StepResult, VerificationResult, WorkflowReplayer};
 pub use sequential::SequentialWorkflow;
 
+/// Export workflow to DroidClaw-style JSON format
+/// This allows workflows to be shared and reused across platforms
+pub fn export_workflow_to_json(workflow: &RecordedWorkflow) -> String {
+    use crate::memory::advanced::{ExportedWorkflow, WorkflowStep as ExportStep};
+    
+    let steps: Vec<ExportStep> = workflow.steps.iter().map(|step| {
+        // Convert action to human-readable goal
+        let goal = format!("{}: {}", step.step_number, step.description);
+        
+        ExportStep {
+            app: None,
+            goal,
+            form_data: None,
+        }
+    }).collect();
+    
+    let exported = ExportedWorkflow {
+        name: workflow.name.clone(),
+        steps,
+    };
+    
+    exported.to_json()
+}
+
 use crate::agents::traits::{AgentContext, AgentError, AgentOutput, AgentResult};
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;

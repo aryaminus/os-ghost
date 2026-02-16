@@ -1,6 +1,7 @@
 //! Session memory - short-term working memory for current game session
 //! Stores current puzzle state, recent interactions, activity history, and mode state
 
+use super::advanced::{Mood, OperationalMode};
 use super::scoped_state::ScopedState;
 use super::store::MemoryStore;
 use crate::core::utils::current_timestamp;
@@ -99,6 +100,21 @@ pub struct SessionState {
     /// Latest page content for analysis
     #[serde(default, skip)]
     pub current_content: Option<String>,
+    /// Operational mode (Autonomous, Focus, Companion)
+    #[serde(default)]
+    pub operational_mode: OperationalMode,
+    /// Current mood for autonomous behavior
+    #[serde(default)]
+    pub current_mood: Option<Mood>,
+    /// Focus task - when in Focus mode, what is the user asking for
+    #[serde(default)]
+    pub focus_task: Option<String>,
+    /// Focus mode started timestamp
+    #[serde(default)]
+    pub focus_started_at: Option<u64>,
+    /// Cumulative importance score for reflection triggering
+    #[serde(default)]
+    pub cumulative_importance: u32,
 }
 
 impl Default for SessionState {
@@ -126,8 +142,13 @@ impl Default for SessionState {
             last_screenshot_at: 0,
             last_analysis_at: 0,
             last_intent_action_at: 0,
-            intent_cooldown_secs: 0,
+            intent_cooldown_secs: 60,
             current_content: None,
+            operational_mode: OperationalMode::Autonomous,
+            current_mood: Some(Mood::Explorer),
+            focus_task: None,
+            focus_started_at: None,
+            cumulative_importance: 0,
         }
     }
 }
