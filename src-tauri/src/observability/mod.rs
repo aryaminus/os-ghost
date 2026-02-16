@@ -220,6 +220,7 @@ pub fn reset_metrics() {
 // ============================================================================
 
 pub mod otel {
+    use serde::Serialize;
     use std::sync::RwLock;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -227,7 +228,7 @@ pub mod otel {
         static ref TRACES: RwLock<Vec<Trace>> = RwLock::new(Vec::new());
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Serialize)]
     pub struct Trace {
         pub id: String,
         pub name: String,
@@ -237,7 +238,7 @@ pub mod otel {
         pub attributes: std::collections::HashMap<String, String>,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Serialize)]
     pub enum TraceStatus {
         Ok,
         Error(String),

@@ -4,10 +4,9 @@
 
 use async_trait::async_trait;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use serde::Deserialize;
 
-use super::{Channel, ChannelError, ChannelInfo, ChannelMessage, ChannelConfig};
+use super::{Channel, ChannelError, ChannelInfo, ChannelMessage};
 
 pub struct TelegramChannel {
     client: Client,
@@ -101,12 +100,14 @@ impl Channel for TelegramChannel {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TelegramUpdate {
     update_id: u64,
     message: Option<TelegramMessage>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TelegramMessage {
     message_id: u64,
@@ -116,6 +117,7 @@ struct TelegramMessage {
     date: u64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TelegramUser {
     id: u64,
@@ -123,6 +125,7 @@ struct TelegramUser {
     first_name: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TelegramChat {
     id: i64,

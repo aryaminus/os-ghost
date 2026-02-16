@@ -33,6 +33,13 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [systemNotificationsEnabled, setSystemNotificationsEnabled] = useState(true);
 
+  // Channel state (ZeroClaw-inspired)
+  const [availableChannels, setAvailableChannels] = useState([]);
+  const [channelConfig, setChannelConfig] = useState({ telegram: "", discord: "", slack: "" });
+
+  // AIEOS Identity state (ZeroClaw-inspired)
+  const [identityData, setIdentityData] = useState(null);
+
   useEffect(() => {
     let mounted = true;
     const loadSettings = async () => {
@@ -134,9 +141,41 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
     }
   }, [systemNotificationsEnabled]);
 
+  // Channel handlers (ZeroClaw-inspired)
+  const loadChannels = useCallback(async () => {
+    try {
+      const available = await invoke("get_available_channels");
+      setAvailableChannels(Array.isArray(available) ? available : []);
+    } catch (err) {
+      console.error("Failed to load channels", err);
+    }
+  }, []);
+
+  const saveChannel = useCallback(async (channel) => {
+    try {
+      // Store as secret - this would need to be implemented
+      await invoke("secrets_store", { key: `channel_${channel}`, value: channelConfig[channel] });
+    } catch (err) {
+      console.error(`Failed to save ${channel} channel`, err);
+    }
+  }, [channelConfig]);
+
+  // AIEOS Identity handlers (ZeroClaw-inspired)
+  const loadIdentity = useCallback(async () => {
+    try {
+      const identity = await invoke("get_current_aieos_identity");
+      setIdentityData(identity);
+    } catch (err) {
+      console.error("Failed to load identity", err);
+      setIdentityData(null);
+    }
+  }, []);
+
   useEffect(() => {
     refreshNotifications();
-  }, [refreshNotifications]);
+    loadChannels();
+    loadIdentity();
+  }, [refreshNotifications, loadChannels, loadIdentity]);
 
   const refreshEvents = useCallback(async () => {
     setLoadingEvents(true);
@@ -852,6 +891,108 @@ const IntegrationsSection = ({ settingsState, onSettingsUpdated }) => {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Channels (ZeroClaw-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Channels</h3>
+          <button type="button" className="ghost-button" onClick={loadChannels}>
+            Refresh
+          </button>
+        </div>
+        <p className="card-note">
+          Connect via Telegram, Discord, or Slack for multi-channel messaging.
+        </p>
+        
+        <div className="settings-grid">
+          <div>
+            <label className="card-label">Telegram</label>
+            <div className="input-group">
+              <input
+                className="text-input"
+                type="text"
+                placeholder="Bot token"
+                value={channelConfig.telegram}
+                onChange={(e) => setChannelConfig((prev) => ({ ...prev, telegram: e.target.value }))}
+              />
+              <button type="button" onClick={() => saveChannel("telegram")} disabled={!channelConfig.telegram.trim()}>
+                Save
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="card-label">Discord</label>
+            <div className="input-group">
+              <input
+                className="text-input"
+                type="text"
+                placeholder="Bot token"
+                value={channelConfig.discord}
+                onChange={(e) => setChannelConfig((prev) => ({ ...prev, discord: e.target.value }))}
+              />
+              <button type="button" onClick={() => saveChannel("discord")} disabled={!channelConfig.discord.trim()}>
+                Save
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="card-label">Slack</label>
+            <div className="input-group">
+              <input
+                className="text-input"
+                type="text"
+                placeholder="Bot token"
+                value={channelConfig.slack}
+                onChange={(e) => setChannelConfig((prev) => ({ ...prev, slack: e.target.value }))}
+              />
+              <button type="button" onClick={() => saveChannel("slack")} disabled={!channelConfig.slack.trim()}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {availableChannels.length > 0 && (
+          <div className="card-row">
+            <span className="card-label">Available:</span>
+            <span className="card-value">{availableChannels.join(", ")}</span>
+          </div>
+        )}
+      </div>
+
+      {/* AIEOS Identity (ZeroClaw-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>AI Identity</h3>
+          <button type="button" className="ghost-button" onClick={loadIdentity}>
+            Reload
+          </button>
+        </div>
+        <p className="card-note">
+          Define the AI persona using AIEOS (AI Entity Object Specification).
+        </p>
+        
+        {identityData ? (
+          <div className="settings-grid">
+            <div>
+              <span className="card-label">Name</span>
+              <span className="card-value">{identityData.identity?.name || "Unnamed"}</span>
+            </div>
+            <div>
+              <span className="card-label">Bio</span>
+              <span className="card-value">{identityData.identity?.bio || "No bio"}</span>
+            </div>
+            <div>
+              <span className="card-label">Traits</span>
+              <span className="card-value">
+                {identityData.psychology?.traits?.join(", ") || "None"}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <p className="card-note">No identity configured. Create identity.json in data directory.</p>
         )}
       </div>
 

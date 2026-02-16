@@ -53,6 +53,16 @@ const DeveloperSection = ({ settingsState }) => {
   const [newDomain, setNewDomain] = useState("");
   const [leakTestResult, setLeakTestResult] = useState(null);
 
+  // Tunnel state (ZeroClaw-inspired)
+  const [tunnelConfig, setTunnelConfig] = useState({ provider: "none", cloudflareToken: "", tailscaleHostname: "", ngrokToken: "" });
+  const [tunnelUrl, setTunnelUrl] = useState(null);
+  const [tunnelRunning, setTunnelRunning] = useState(false);
+
+  // Observability state (ZeroClaw-inspired)
+  const [metrics, setMetrics] = useState(null);
+  const [traces, setTraces] = useState([]);
+  const [observabilityLoading, setObservabilityLoading] = useState(false);
+
   const handleClearPending = async () => {
     await invoke("clear_pending_actions");
   };
@@ -214,6 +224,74 @@ const DeveloperSection = ({ settingsState }) => {
     }
   }, []);
 
+  // Tunnel handlers (ZeroClaw-inspired)
+  const refreshTunnel = useCallback(async () => {
+    setSecurityLoading(true);
+    try {
+      const running = await invoke("is_tunnel_running");
+      setTunnelRunning(running);
+      const url = await invoke("get_tunnel_url");
+      setTunnelUrl(url);
+    } catch (err) {
+      console.error("Failed to refresh tunnel", err);
+    } finally {
+      setSecurityLoading(false);
+    }
+  }, []);
+
+  const startTunnel = useCallback(async () => {
+    setSecurityLoading(true);
+    try {
+      await invoke("configure_tunnel", { config: tunnelConfig });
+      await invoke("start_tunnel", { localHost: "127.0.0.1", localPort: 7842 });
+      await refreshTunnel();
+    } catch (err) {
+      console.error("Failed to start tunnel", err);
+    } finally {
+      setSecurityLoading(false);
+    }
+  }, [tunnelConfig, refreshTunnel]);
+
+  const stopTunnel = useCallback(async () => {
+    setSecurityLoading(true);
+    try {
+      await invoke("stop_tunnel");
+      await refreshTunnel();
+    } catch (err) {
+      console.error("Failed to stop tunnel", err);
+    } finally {
+      setSecurityLoading(false);
+    }
+  }, [refreshTunnel]);
+
+  // Observability handlers (ZeroClaw-inspired)
+  const refreshMetrics = useCallback(async () => {
+    setObservabilityLoading(true);
+    try {
+      const m = await invoke("get_current_metrics");
+      setMetrics(m);
+      const t = await invoke("get_traces", { limit: 10 });
+      setTraces(Array.isArray(t) ? t : []);
+    } catch (err) {
+      console.error("Failed to load metrics", err);
+    } finally {
+      setObservabilityLoading(false);
+    }
+  }, []);
+
+  const resetMetrics = useCallback(async () => {
+    setObservabilityLoading(true);
+    try {
+      await invoke("metrics_reset");
+      await invoke("traces_clear");
+      await refreshMetrics();
+    } catch (err) {
+      console.error("Failed to reset metrics", err);
+    } finally {
+      setObservabilityLoading(false);
+    }
+  }, [refreshMetrics]);
+
   const refreshActionLedger = useCallback(async () => {
     setLedgerLoading(true);
     try {
@@ -293,7 +371,9 @@ const DeveloperSection = ({ settingsState }) => {
     refreshHooks();
     refreshSanitizerSettings();
     refreshSecuritySettings();
-  }, [refreshActionLedger, refreshRecentEvents, refreshEventBusConfig, refreshHooks, refreshSanitizerSettings, refreshSecuritySettings]);
+    refreshTunnel();
+    refreshMetrics();
+  }, [refreshActionLedger, refreshRecentEvents, refreshEventBusConfig, refreshHooks, refreshSanitizerSettings, refreshSecuritySettings, refreshTunnel, refreshMetrics]);
 
   return (
     <section className="settings-section">
@@ -911,6 +991,143 @@ const DeveloperSection = ({ settingsState }) => {
             {leakTestResult.error && (
               <p className="error-text">{leakTestResult.error}</p>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Tunnel (ZeroClaw-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Tunnel</h3>
+          <div className="button-row">
+            <button
+              type="button"
+              onClick={refreshTunnel}
+              disabled={securityLoading}
+              className="ghost-button"
+            >
+              Refresh
+            </button>
+            {tunnelRunning ? (
+              <button type="button" onClick={stopTunnel} className="danger-button">
+                Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startTunnel}
+                disabled={securityLoading || tunnelConfig.provider === "none"}
+              >
+                Start
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="card-note">
+          Expose local server via Cloudflare, Tailscale, or ngrok tunnel.
+        </p>
+        <div className="settings-grid">
+          <div>
+            <label className="card-label">Provider</label>
+            <select
+              className="text-input"
+              value={tunnelConfig.provider}
+              onChange={(e) => setTunnelConfig((prev) => ({ ...prev, provider: e.target.value }))}
+            >
+              <option value="none">None</option>
+              <option value="cloudflare">Cloudflare</option>
+              <option value="tailscale">Tailscale</option>
+              <option value="ngrok">ngrok</option>
+            </select>
+          </div>
+          {tunnelConfig.provider === "cloudflare" && (
+            <div>
+              <label className="card-label">Cloudflare Token</label>
+              <input
+                className="text-input"
+                type="password"
+                placeholder="Your Cloudflare token"
+                value={tunnelConfig.cloudflareToken}
+                onChange={(e) => setTunnelConfig((prev) => ({ ...prev, cloudflareToken: e.target.value }))}
+              />
+            </div>
+          )}
+          {tunnelConfig.provider === "tailscale" && (
+            <div>
+              <label className="card-label">Tailscale Hostname</label>
+              <input
+                className="text-input"
+                type="text"
+                placeholder="your-hostname.tail-scale.ts.net"
+                value={tunnelConfig.tailscaleHostname}
+                onChange={(e) => setTunnelConfig((prev) => ({ ...prev, tailscaleHostname: e.target.value }))}
+              />
+            </div>
+          )}
+          {tunnelConfig.provider === "ngrok" && (
+            <div>
+              <label className="card-label">ngrok Token</label>
+              <input
+                className="text-input"
+                type="password"
+                placeholder="Your ngrok token"
+                value={tunnelConfig.ngrokToken}
+                onChange={(e) => setTunnelConfig((prev) => ({ ...prev, ngrokToken: e.target.value }))}
+              />
+            </div>
+          )}
+        </div>
+        {tunnelRunning && tunnelUrl && (
+          <div className="result-box">
+            <p><strong>Tunnel URL:</strong> <a href={tunnelUrl} target="_blank" rel="noopener">{tunnelUrl}</a></p>
+          </div>
+        )}
+      </div>
+
+      {/* Observability (ZeroClaw-inspired) */}
+      <div className="settings-card">
+        <div className="card-row">
+          <h3>Observability</h3>
+          <div className="button-row">
+            <button
+              type="button"
+              onClick={refreshMetrics}
+              disabled={observabilityLoading}
+              className="ghost-button"
+            >
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={resetMetrics}
+              disabled={observabilityLoading}
+              className="ghost-button"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+        <p className="card-note">
+          View Prometheus metrics and OpenTelemetry traces.
+        </p>
+        {metrics && (
+          <div className="settings-grid">
+            <div><span className="card-label">Requests</span><span className="card-value">{metrics.requests_total}</span></div>
+            <div><span className="card-label">AI Calls</span><span className="card-value">{metrics.ai_calls_total}</span></div>
+            <div><span className="card-label">Actions</span><span className="card-value">{metrics.actions_executed}</span></div>
+            <div><span className="card-label">Memory Entries</span><span className="card-value">{metrics.memory_entries}</span></div>
+          </div>
+        )}
+        {traces.length > 0 && (
+          <div className="result-box">
+            <p><strong>Recent Traces:</strong></p>
+            <ul>
+              {traces.slice(0, 5).map((t) => (
+                <li key={t.id}>
+                  {t.name} - {t.status?.Error ? `Error: ${t.status.Error}` : "OK"}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

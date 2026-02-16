@@ -16,6 +16,23 @@ A screen-aware meta-game where an AI entity lives in your desktop, transforming 
 - **Hot/cold feedback** - Get closer to solving mysteries
 - **Persistent memory** - Progress saves between sessions
 
+### Advanced Features (Inspired by ZeroClaw, IronClaw, Moltis)
+
+- **Multi-Channel Support** - Connect via Telegram, Discord, Slack
+- **Tunnel Integration** - Expose local server via Cloudflare, Tailscale, or ngrok
+- **AIEOS Identity** - Define AI personas with standardized identity format
+- **Observability** - Prometheus metrics and OpenTelemetry tracing
+- **Hybrid Memory** - SQLite + FTS5 + vector search for rich memory
+- **Heartbeat/Scheduler** - Periodic task execution for autonomous agents
+- **Hook System** - Lifecycle hooks (BeforeToolCall, AfterToolCall, etc.)
+- **Workspace Context** - TOOLS.md, AGENTS.md, BOOT.md context files
+- **Scheduled Tasks** - Cron-based task scheduling
+- **Config Validation** - TOML configuration validation
+- **Security Features**:
+  - Leak Detection - Scan for 20+ credential patterns
+  - HTTP Allowlisting - Domain/path wildcards for tool access
+  - Tool Output Sanitization - Strip secrets before LLM feedback
+
 ## Installation
 
 ### Option 1: Download Release (Recommended)

@@ -26,6 +26,8 @@ The `SmartAiRouter` (`src-tauri/src/ai/ai_provider.rs`) intelligently routes req
 
 - **Gemini**: For complex visual analysis and reasoning.
 - **Ollama**: For local, fast, or private tasks.
+- **Anthropic**: Claude models for advanced reasoning.
+- **OpenAI**: GPT models for text generation.
 
 ### Multi-Agent System
 
@@ -34,10 +36,97 @@ The system is composed of specialized agents (`src-tauri/src/agents/`):
 - **PuzzleAgent**: Analyzes clues and web content to solve puzzles.
 - **NavigationAgent**: Tracks browser history and context.
 - **SystemAgent**: Monitors OS-level events.
+- **Narrator**: Generates dialogue and narrative.
+- **Observer**: Monitors user activity and context.
+- **Critic**: Evaluates actions for safety and quality.
+- **Planner**: Creates action plans.
+- **Verifier**: Validates task completion.
 
 ## Model Context Protocol (MCP)
 
 OS Ghost implements MCP abstractions (`src-tauri/src/mcp/`) to standardize how the agents interact with external tools and resources, making it extensible and compatible with the broader agentic ecosystem.
+
+## Security (IronClaw-Inspired)
+
+### Leak Detection
+
+The security module (`src-tauri/src/security/leak_detector.rs`) scans tool inputs and outputs for potential credential exfiltration using 20+ pattern detectors:
+
+- API keys (OpenAI, Anthropic, GitHub, AWS, etc.)
+- Tokens (JWT, OAuth, session tokens)
+- Private keys (SSH, PGP)
+- Passwords in config files
+
+### HTTP Allowlisting
+
+Domain and path allowlisting (`src-tauri/src/security/http_allowlist.rs`) restricts tool HTTP access to approved endpoints, preventing data exfiltration.
+
+### Tool Output Sanitization
+
+All tool output is sanitized (`src-tauri/src/mcp/sanitization.rs`) before being fed back to the LLM:
+- Secrets stripped
+- Base64 decoded content scanned
+- Large outputs truncated
+
+## Hook System (Moltis-Inspired)
+
+The plugin/hook system (`src-tauri/src/plugins/hooks.rs`) provides lifecycle events:
+
+- `BeforeToolCall` - Validate/modify tool invocation
+- `AfterToolCall` - Process tool results
+- `OnError` - Handle tool failures
+- `OnCircuitBreakerOpen` - Respond to repeated failures
+
+## Workspace Context (Moltis-Inspired)
+
+Context files (`src-tauri/src/data/workspace_context.rs`) are loaded from the data directory:
+
+- **TOOLS.md** - Tool documentation and policies
+- **AGENTS.md** - Agent instructions
+- **BOOT.md** - Startup context
+
+These are injected into agent prompts for workspace-specific behavior.
+
+## Scheduler & Heartbeat
+
+The scheduler module (`src-tauri/src/scheduler/`) provides:
+
+- **Cron-based scheduled tasks** - Run commands on schedule
+- **Heartbeat engine** - Periodic task execution
+- **Daemon management** - Monitor component health
+
+## Tunnel Integration (ZeroClaw-Inspired)
+
+Tunnel support (`src-tauri/src/server/tunnel/`) exposes local services:
+
+- **Cloudflare Tunnel** - Cloudflare Zero Trust
+- **Tailscale** - Mesh VPN
+- **ngrok** - Simple tunnel
+
+## Channels (ZeroClaw-Inspired)
+
+Multi-channel messaging (`src-tauri/src/channels/`):
+
+- **Telegram** - Bot API integration
+- **Discord** - Bot integration
+- **Slack** - App integration
+
+## Hybrid Memory (ZeroClaw-Inspired)
+
+Memory system (`src-tauri/src/memory/hybrid.rs`) combines:
+
+- **SQLite** - Structured data
+- **FTS5** - Full-text search
+- **Vector search** - Semantic similarity
+
+## AIEOS Identity (ZeroClaw-Inspired)
+
+AI Entity Object Specification (`src-tauri/src/data/identity.rs`) provides standardized persona definition:
+
+- Identity (names, bio, origin)
+- Psychology (traits, MBTI, moral compass)
+- Linguistics (text style, formality)
+- Motivations (goals, fears)
 
 ## IPC & Events
 

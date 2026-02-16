@@ -184,7 +184,7 @@ impl ChannelFactory {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChannelConfig {
     pub api_token: Option<String>,
     pub bot_token: Option<String>,
@@ -192,22 +192,17 @@ pub struct ChannelConfig {
     pub allowed_senders: Vec<String>,
 }
 
-impl Default for ChannelConfig {
-    fn default() -> Self {
-        Self {
-            api_token: None,
-            bot_token: None,
-            webhook_path: None,
-            allowed_senders: vec![],
-        }
-    }
-}
-
 // ============================================================================
 // CLI Channel Implementation
 // ============================================================================
 
 pub struct CliChannel;
+
+impl Default for CliChannel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl CliChannel {
     pub fn new() -> Self {
@@ -254,6 +249,7 @@ impl Channel for CliChannel {
 // Webhook Channel Implementation
 // ============================================================================
 
+#[allow(dead_code)]
 pub struct WebhookChannel {
     webhook_path: Option<String>,
     pending_messages: std::sync::Mutex<Vec<ChannelMessage>>,

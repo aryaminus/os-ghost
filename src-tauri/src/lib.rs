@@ -60,6 +60,12 @@ pub mod input;
 // Plugin system (Moltis-inspired hooks)
 pub mod plugins;
 
+// Channels (ZeroClaw-inspired multi-channel messaging)
+pub mod channels;
+
+// Observability (ZeroClaw-inspired metrics & tracing)
+pub mod observability;
+
 use ai::ai_provider::SmartAiRouter;
 use ai::gemini_client::GeminiClient;
 use ai::ollama_client::OllamaClient;
@@ -1239,6 +1245,40 @@ pub fn run() {
             mcp::sanitization::sanitize_output,
             mcp::sanitization::sanitize_output_with_limit,
             mcp::sanitization::get_sanitizer_max_size,
+            // Channel commands (ZeroClaw-inspired)
+            channels::get_available_channels,
+            channels::get_registered_channels,
+            channels::get_channel_info,
+            // TOML config commands
+            config::toml_config::get_toml_settings,
+            config::toml_config::save_toml_settings,
+            config::toml_config::get_toml_config_path,
+            config::toml_config::reset_toml_config,
+            config::toml_config::validate_toml_settings,
+            // Memory commands (ZeroClaw-inspired)
+            memory::hybrid::memory_store,
+            memory::hybrid::memory_recall,
+            memory::hybrid::memory_delete,
+            memory::hybrid::memory_search,
+            memory::hybrid::memory_stats,
+            // Observability commands (ZeroClaw-inspired)
+            observability::get_current_metrics,
+            observability::get_prometheus_metrics,
+            observability::metrics_reset,
+            observability::get_traces,
+            observability::traces_clear,
+            // Secrets/encrypted config commands (ZeroClaw-inspired)
+            config::secrets::secrets_store,
+            config::secrets::secrets_get,
+            config::secrets::secrets_delete,
+            config::secrets::secrets_has,
+            config::secrets::secrets_list,
+            config::secrets::secrets_clear_cache,
+            config::secrets::store_provider_api_key,
+            config::secrets::get_provider_api_key,
+            config::secrets::delete_provider_api_key,
+            config::secrets::has_provider_api_key,
+            config::secrets::get_configured_providers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

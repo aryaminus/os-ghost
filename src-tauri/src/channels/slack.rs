@@ -4,8 +4,6 @@
 
 use async_trait::async_trait;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use super::{Channel, ChannelError, ChannelInfo, ChannelMessage};
 

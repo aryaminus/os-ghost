@@ -125,7 +125,35 @@ docker run -p 7842:7842 -e OSGHOST_API_KEY=your-key os-ghost-server
 - Dangerous key combinations are blocked (Cmd+Q, Alt+F4)
 - Screen coordinates validated
 - Rate limiting enforced
-- Sensitive text patterns detected
+- Sensitive text patterns detected (leak detection)
+
+### Tunnel Configuration
+
+Expose local server via Cloudflare, Tailscale, or ngrok:
+
+```bash
+# Cloudflare Tunnel
+export OSGHOST_TUNNEL__PROVIDER="cloudflare"
+export OSGHOST_TUNNEL__CLOUDFLARE_TOKEN="your-token"
+
+# Tailscale
+export OSGHOST_TUNNEL__PROVIDER="tailscale"
+export OSGHOST_TUNNEL__TAILSCALE_HOSTNAME="your-hostname"
+
+# ngrok
+export OSGHOST_TUNNEL__PROVIDER="ngrok"
+export OSGHOST_TUNNEL__NGROK_TOKEN="your-token"
+```
+
+### Observability
+
+Enable Prometheus metrics and OpenTelemetry tracing:
+
+```bash
+export OSGHOST_OBSERVABILITY__PROMETHEUS__ENABLED="true"
+export OSGHOST_OBSERVABILITY__PROMETHEUS__PORT="9090"
+export OSGHOST_OBSERVABILITY__OTEL__ENDPOINT="http://localhost:4317"
+```
 
 ## Monitoring
 
