@@ -70,7 +70,6 @@ pub enum ScrollDirection {
 }
 
 /// Operator Agent for visual task execution
-#[allow(dead_code)]
 pub struct OperatorAgent {
     vision_capture: Arc<VisionCapture>,
     input_controller: Arc<InputController>,

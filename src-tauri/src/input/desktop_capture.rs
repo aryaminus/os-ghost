@@ -64,24 +64,65 @@ pub async fn list_windows() -> Result<Vec<WindowInfo>, InputError> {
 #[cfg(target_os = "macos")]
 pub mod macos {
     use super::*;
+    use screenshots::Screen;
+    use screenshots::image::ImageFormat;
+    use std::io::Cursor;
 
     pub async fn capture_desktop() -> Result<Vec<u8>, InputError> {
-        // TODO: Implement using CoreGraphics
-        // Requires screen recording permissions
-        Err(InputError::PlatformError(
-            "macOS desktop capture requires screen recording permissions".to_string(),
-        ))
+        // Use the screenshots crate which handles permissions gracefully
+        match Screen::all() {
+            Ok(screens) => {
+                if screens.is_empty() {
+                    return Err(InputError::PlatformError(
+                        "No screens available for capture".to_string(),
+                    ));
+                }
+
+                // Capture the main display (first screen)
+                let screen = &screens[0];
+                
+                match screen.capture() {
+                    Ok(image) => {
+                        // Encode as PNG
+                        let mut buffer = Vec::new();
+                        match image.write_to(&mut Cursor::new(&mut buffer), ImageFormat::Png) {
+                            Ok(_) => Ok(buffer),
+                            Err(e) => Err(InputError::PlatformError(
+                                format!("Failed to encode screenshot as PNG: {}", e)
+                            )),
+                        }
+                    }
+                    Err(e) => {
+                        // Check if it's a permissions error
+                        if e.to_string().to_lowercase().contains("permission") {
+                            Err(InputError::PlatformError(
+                                "Screen recording permission required. Please grant permission in System Settings > Privacy & Security > Screen Recording".to_string()
+                            ))
+                        } else {
+                            Err(InputError::PlatformError(
+                                format!("Failed to capture screen: {}", e)
+                            ))
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                Err(InputError::PlatformError(
+                    format!("Failed to get screens: {}", e)
+                ))
+            }
+        }
     }
 
     pub async fn capture_window(_window_id: &str) -> Result<Vec<u8>, InputError> {
-        // TODO: Implement using CoreGraphics
-        Err(InputError::PlatformError(
-            "macOS window capture requires screen recording permissions".to_string(),
-        ))
+        // Window capture on macOS is complex and requires accessibility permissions
+        // For now, fall back to desktop capture
+        capture_desktop().await
     }
 
     pub async fn list_windows() -> Result<Vec<WindowInfo>, InputError> {
-        // TODO: Implement using CoreGraphics window list
+        // Window listing on macOS requires CoreGraphics and accessibility permissions
+        // Return a single desktop entry for now
         Ok(vec![WindowInfo {
             id: "0".to_string(),
             title: "Desktop".to_string(),

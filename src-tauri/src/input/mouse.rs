@@ -15,31 +15,29 @@ pub mod macos {
     use super::*;
 
     pub fn move_mouse(_x: i32, _y: i32) -> Result<(), InputError> {
-        // TODO: Implement using CoreGraphics
-        // Requires proper API setup - stubbed for now
+        // macOS input automation requires accessibility permissions and proper CGEvent implementation
+        // This is intentionally disabled to prevent runtime crashes until fully implemented
         Err(InputError::PlatformError(
-            "macOS mouse control requires accessibility permissions".to_string(),
+            "macOS mouse automation requires accessibility permissions".to_string(),
         ))
     }
 
     pub fn click_mouse(_button: MouseButton) -> Result<(), InputError> {
-        // TODO: Implement using CoreGraphics
         Err(InputError::PlatformError(
-            "macOS mouse control requires accessibility permissions".to_string(),
+            "macOS mouse automation requires accessibility permissions".to_string(),
         ))
     }
 
     pub fn scroll(_direction: ScrollDirection, _amount: i32) -> Result<(), InputError> {
-        // TODO: Implement using CoreGraphics
         Err(InputError::PlatformError(
-            "macOS mouse control requires accessibility permissions".to_string(),
+            "macOS mouse automation requires accessibility permissions".to_string(),
         ))
     }
 
     pub fn get_mouse_position() -> Result<(i32, i32), InputError> {
-        // TODO: Implement using CoreGraphics
-        // Return placeholder
-        Ok((0, 0))
+        Err(InputError::PlatformError(
+            "macOS mouse position requires accessibility permissions".to_string(),
+        ))
     }
 }
 

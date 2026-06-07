@@ -87,7 +87,7 @@ tokio-tungstenite = "0.24"  # For CLI WebSocket client
 tauri-plugin-updater = "2.9.0"
 tauri-plugin-notification = "2"
 
-# macOS specific bindings - using objc2 for low-level control
+# macOS specific bindings - using core-graphics for low-level control
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.5"
 core-graphics = "0.23"

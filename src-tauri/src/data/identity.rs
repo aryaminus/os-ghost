@@ -504,7 +504,7 @@ pub fn generate_personality_genome(keystrokes: String) -> PersonalityGenome {
     ];
 
     // Temperaments (8 options)
-    let temperaments = vec![
+    let temperaments = [
         "playful and associative",
         "methodical and precise",
         "intuitive and exploratory",

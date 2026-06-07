@@ -15,33 +15,23 @@ pub mod macos {
     use super::*;
 
     pub fn type_text(_text: &str) -> Result<(), InputError> {
-        // TODO: Implement using CoreGraphics
+        // macOS keyboard automation requires accessibility permissions and proper CGEvent implementation
+        // This is intentionally disabled to prevent runtime crashes until fully implemented
         Err(InputError::PlatformError(
-            "macOS keyboard control requires accessibility permissions".to_string(),
+            "macOS keyboard automation requires accessibility permissions".to_string(),
         ))
     }
 
     pub fn press_key(_key: Key) -> Result<(), InputError> {
-        // TODO: Implement using CoreGraphics
         Err(InputError::PlatformError(
-            "macOS keyboard control requires accessibility permissions".to_string(),
+            "macOS keyboard automation requires accessibility permissions".to_string(),
         ))
     }
 
     pub fn press_combo(_keys: &[Key]) -> Result<(), InputError> {
-        // TODO: Implement using CoreGraphics
         Err(InputError::PlatformError(
-            "macOS keyboard control requires accessibility permissions".to_string(),
+            "macOS keyboard automation requires accessibility permissions".to_string(),
         ))
-    }
-
-    fn _map_key_to_macos_keycode(_key: Key) -> u16 {
-        // Placeholder - would map to CGKeyCode values
-        0
-    }
-
-    fn _is_modifier(_key: Key) -> bool {
-        matches!(_key, Key::Command | Key::Control | Key::Shift | Key::Option)
     }
 }
 
